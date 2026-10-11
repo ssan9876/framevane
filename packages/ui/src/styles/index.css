@@ -1,0 +1,37 @@
+@import "tailwindcss";
+@import "./tailwind-theme.css";
+@import "./tokens.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* Scan the component sources wherever this stylesheet is imported from (gallery, desktop app). */
+@source "../";
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-bg text-fg font-sans text-sm antialiased;
+    font-feature-settings: "cv11", "tnum";   /* Inter: single-storey a off, tabular numbers on for timecodes/values */
+    -webkit-user-select: none;
+    user-select: none;                     /* editor chrome; inputs and text areas re-enable it */
+    overflow: hidden;
+  }
+  input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
+  :focus { outline: none; }
+  :focus-visible { outline: 2px solid var(--reel-color-focus); outline-offset: 1px; border-radius: var(--reel-radius-sm); }
+  ::selection { background: var(--reel-color-accent-soft); }
+  * { scrollbar-width: thin; scrollbar-color: var(--reel-color-border-strong) transparent; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+  }
+}
+
+@utility scroll-y { overflow-y: auto; overscroll-behavior: contain; }
+@utility focus-ring { outline: 2px solid var(--reel-color-focus); outline-offset: 1px; }
+@utility checker {
+  background-image: conic-gradient(#3a3c43 25%, #2a2b31 0 50%, #3a3c43 0 75%, #2a2b31 0);
+  background-size: 10px 10px;
+}
+@keyframes reel-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@keyframes reel-shimmer { from { background-position: -200px 0; } to { background-position: 200px 0; } }
+@keyframes reel-pop-in { from { opacity: 0; transform: scale(.97) translateY(2px); } to { opacity: 1; transform: none; } }

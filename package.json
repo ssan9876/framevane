@@ -1,0 +1,12 @@
+{
+  "name": "reel",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "tokens": "node replica/design/build-tokens.mjs && python replica/design/contrast.py replica/design/tokens.json",
+    "gallery": "pnpm --filter @reel/ui gallery",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

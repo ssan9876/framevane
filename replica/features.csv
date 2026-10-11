@@ -1,0 +1,145 @@
+feature,area,priority,original,clone,notes
+Home screen with project grid (create open rename duplicate delete),projects,must,yes,no,S01
+Project settings: ratio resolution fps (incl. adapt to first clip),projects,must,yes,no,S02
+Autosave and crash recovery,projects,must,yes,no,draft autosave
+Relink missing media,projects,should,yes,no,
+Copy media into project vs link originals,projects,could,yes,no,S02
+Import video audio images by picker and drag-drop,import,must,yes,no,S04
+Wide codec support incl. HEVC VFR phone footage,import,must,yes,no,FFmpeg decode
+Proxy mode for 4K footage,import,should,yes,no,
+Hardware-accelerated decode and encode,import,should,yes,no,NVENC/QSV/AMF
+Smart search of media by content or speech,import,could,yes,no,local CLIP + transcript index
+Multi-track timeline (main track + overlay + audio + text tracks),timeline,must,yes,no,S20
+Split at playhead (Ctrl+B) and split all tracks,timeline,must,yes,no,
+Trim by dragging clip edges,timeline,must,yes,no,
+Ripple delete left/right of playhead (Q/W),timeline,must,yes,no,
+Main track magnet / ripple,timeline,must,yes,no,
+Auto snapping,timeline,must,yes,no,
+Audio-video linkage and detach audio,timeline,must,yes,no,CapCut: extract audio partly PRO
+Undo/redo for every edit,timeline,must,yes,no,shared op log with agents
+Copy/cut/paste/duplicate clips,timeline,must,yes,no,
+Timeline zoom and fit (Shift+Z),timeline,must,yes,no,
+Track lock hide mute,timeline,must,yes,no,
+Markers (M) with colors,timeline,should,yes,no,
+Enable/disable clip (V),timeline,should,yes,no,
+Group / ungroup clips,timeline,should,yes,no,
+Compound clips,timeline,could,yes,no,
+Freeze frame,timeline,should,yes,no,
+Reverse clip,timeline,should,yes,no,
+Mirror rotate crop,timeline,must,yes,no,
+Preview axis (hover scrub),timeline,could,yes,no,
+Speed 0.1x-100x with keep pitch,speed,must,yes,no,S16
+Curve speed (presets + custom),speed,should,yes,no,
+Smooth slow-mo (optical flow / frame interpolation),speed,should,yes,no,RIFE local
+Real-time player preview with frame-accurate seek,player,must,yes,no,hard part #1
+On-canvas move scale rotate with snap guides,player,must,yes,no,
+Preview quality setting,player,should,yes,no,
+Fullscreen preview,player,should,yes,no,
+Keyframes on transform opacity volume and effect params,keyframes,must,yes,no,S14 diamonds
+Keyframe graph panel with easing curves,keyframes,should,yes,no,S21
+Blend modes and opacity,compositing,must,yes,no,
+Picture-in-picture / overlay tracks,compositing,must,yes,no,
+Canvas background (color blur image),compositing,must,yes,no,
+Masks (linear mirror circle rectangle heart star) with feather invert keyframes,compositing,should,yes,no,
+Chroma key with intensity shadow edge,compositing,must,yes,no,
+Video stabilization (3 levels),compositing,should,yes,no,CapCut: possibly PRO on Windows; ffmpeg vidstab
+Motion tracking (attach text/sticker to subject),compositing,could,yes,no,CapCut: conflicting gating
+Add text with font size color stroke shadow background spacing,text,must,yes,no,S19
+Import local / system fonts,text,must,yes,no,
+Text presets (our own),text,should,yes,no,CapCut: PRO styles
+Text animations in/out/loop,text,should,yes,no,
+Text templates (our own),text,could,yes,no,CapCut: PRO
+Text-to-speech with multiple voices,text,must,yes,no,CapCut: PRO/credits; Piper/Kokoro local or user API
+Auto captions from speech (multi-language),captions,must,yes,no,CapCut: PRO; Whisper local
+Caption styling with apply-to-all,captions,must,yes,no,
+Keyword highlight / word-by-word karaoke captions,captions,should,yes,no,
+Bilingual / translated captions,captions,should,yes,no,LLM translate
+Import SRT,captions,should,yes,no,
+Export SRT / TXT captions,captions,must,yes,no,
+Transcript-based editing (delete words to cut),captions,should,yes,no,S30
+Remove filler words and silences,captions,should,yes,no,
+Add local music and audio files,audio,must,yes,no,
+Volume and volume keyframes,audio,must,yes,no,
+Fade in / fade out,audio,must,yes,no,
+Waveform display,audio,must,yes,no,
+Noise reduction,audio,must,yes,no,CapCut: PRO; RNNoise/DeepFilterNet
+Normalize loudness,audio,should,yes,no,CapCut: PRO; ffmpeg loudnorm
+Enhance voice,audio,should,yes,no,CapCut: PRO
+Vocal isolation / stem separation,audio,should,yes,no,Demucs local
+Voice changer effects,audio,should,yes,no,
+Beat detection and beat markers,audio,should,yes,no,
+Auto ducking music under voice,audio,should,no,no,CapCut lacks a toggle; easy win
+Voiceover recording,audio,should,yes,no,
+Voice cloning / AI dubbing,audio,could,yes,no,CapCut: PRO/credits; via user API or local model
+Video effects (our authored shader presets),effects,must,yes,no,CapCut: PRO pack; write our own GLSL
+Transitions (our authored set) with duration and apply-to-all,effects,must,yes,no,CapCut: PRO pack
+Filters / looks with intensity,effects,must,yes,no,CapCut: PRO pack
+Import .cube LUTs,effects,must,yes,no,
+Stickers / emoji / shapes (import PNG GIF Lottie),effects,should,yes,no,use OpenMoji/Twemoji
+Clip in/out/combo animations,effects,should,yes,no,
+Body effects (person-segmented effects),effects,could,yes,no,
+Adjustment layers,color,should,yes,no,
+Basic color adjust (exposure contrast temp tint sat etc),color,must,yes,no,S18
+HSL,color,should,yes,no,
+Curves,color,should,yes,no,
+Color wheels,color,could,yes,no,
+Auto adjust / AI color correction,color,should,yes,no,CapCut: PRO
+Save and apply color presets,color,should,yes,no,
+Remove background auto (people/objects),ai,must,yes,no,CapCut: credits; RVM/SAM2/rembg local
+Custom background removal brush,ai,should,yes,no,SAM2 click prompts
+Auto reframe to 9:16 / 1:1 (subject tracking),ai,must,yes,no,CapCut: likely PRO
+Enhance quality / upscale video,ai,should,yes,no,Real-ESRGAN local
+Retouch (skin smooth face),ai,could,yes,no,CapCut: PRO
+Relight,ai,could,yes,no,
+Remove video flicker,ai,could,yes,no,
+Auto cut: scene detection and split scenes,ai,should,yes,no,PySceneDetect
+Auto cut: beat sync,ai,could,yes,no,
+Long video to shorts,ai,should,yes,no,agent recipe
+Script to video,ai,could,yes,no,agent recipe + user gen-AI keys
+AI image / video generation in media panel,ai,could,yes,no,via MCP (e.g. Higgsfield) on user's account
+AI avatars / presenter,ai,could,yes,no,via MCP provider only
+Export MP4/MOV H.264 HEVC up to 4K 60fps no watermark,export,must,yes,no,CapCut: 4K/60fps/no-watermark PRO
+Export resolution beyond 4K and high fps,export,could,no,no,
+Custom bitrate and quality presets,export,must,yes,no,
+Export audio only (MP3 WAV AAC),export,should,yes,no,
+Export GIF and WebM/ProRes,export,could,yes,no,
+Export selected range / in-out,export,should,yes,no,
+Export progress with cancel,export,must,yes,no,
+Background export queue / batch export,export,could,no,no,
+Export frame as image,export,should,yes,no,
+Photo editor: open image crop resize rotate,photo,must,yes,no,S25
+Photo editor: layers (image text sticker shape) reorder lock hide,photo,must,yes,no,
+Photo editor: adjust and filters,photo,must,yes,no,
+Photo editor: remove background / cutout,photo,must,yes,no,CapCut: credits
+Photo editor: AI expand / outpaint,photo,should,yes,no,via MCP or local SD
+Photo editor: inpaint / remove object,photo,should,yes,no,LaMa local
+Photo editor: upscale,photo,should,yes,no,Real-ESRGAN
+Photo editor: retouch,photo,could,yes,no,
+Photo editor: export PNG JPG WebP with transparency,photo,must,yes,no,
+Photo editor: batch apply to many photos,photo,should,no,no,agent recipe
+Keyboard shortcuts matching common CapCut keys,shortcuts,must,yes,no,S24
+Rebind shortcuts,shortcuts,should,yes,no,
+Settings: performance cache project folder,settings,must,yes,no,S23
+Agent panel: chat with an agent about the open project,agents,must,no,no,S27; CapCut EditPilot is the nearest analog
+Typed edit-op API shared by UI undo/redo and agents,agents,must,no,no,foundation for all agent work
+Editor exposed as an MCP server (timeline read + edit ops + render frame),agents,must,no,no,lets Claude Code / any agent drive the editor
+MCP client: plug in external MCP servers as agent tools,agents,must,no,no,S28
+Claude API provider with model picker and user key,agents,must,no,no,
+Local AI tools registered as agent tools (Whisper rembg ESRGAN RIFE Demucs TTS),agents,must,no,no,
+Edit proposal review with accept/reject per op,agents,must,no,no,S29
+Per-tool permission (auto / ask / never),agents,must,no,no,
+Agent sees frames (send sampled frames to vision model),agents,should,no,no,
+Saved agents / recipes library with built-ins,agents,should,no,no,S31
+Batch run an agent across many clips or photos,agents,should,no,no,F14
+Conflict handling when user edits during an agent run,agents,should,no,no,
+Agent cost / token tracking per run,agents,could,no,no,
+Plugin SDK (JS) for custom tools and effects,agents,could,no,no,
+CapCut music library,content,could,yes,skip,licensed platform material; use local files or free libraries (Pixabay/Freesound)
+CapCut sound effects library,content,could,yes,skip,licensed; use Freesound/CC0 packs
+CapCut stickers / effects / filters / transitions packs,content,could,yes,skip,licensed; we author our own
+CapCut fonts,content,could,yes,skip,licensed; ship OFL fonts + system fonts
+CapCut template marketplace,content,could,yes,skip,their content and network
+Stock media library,content,could,yes,skip,licensed; optional Pexels/Pixabay API with user key
+Accounts login and cloud Space,cloud,could,yes,skip,single-user local app
+Teams and brand kit,cloud,could,yes,skip,not needed for personal use
+Hosted gen-AI models (Seedance Seedream Veo Kling Sora),ai,could,yes,skip,third-party models; reachable through user's own MCP/API keys
