@@ -1,4 +1,4 @@
-# Bugs: reel (M0)
+# Bugs: framevane (M0)
 
 Found by `npx playwright test` (apps/desktop/e2e/specs) on 2026-10-11, Windows 11 / Electron 44 (Chromium 152), 1600×960.
 Only reproduced bugs are listed. Each one has a test that failed before the fix and passes after it.
@@ -13,8 +13,9 @@ Only reproduced bugs are listed. Each one has a test that failed before the fix 
 | BUG-006 | S3 | Tabs in Settings and the inspector point aria-controls at panels that don't exist | fixed in 16aa598 |
 | BUG-007 | S3 | Inspector slider thumbs have no accessible name | fixed in 16aa598 |
 | BUG-008 | S4 | Home requests project covers before their thumbnails exist (404) | fixed in 16aa598 |
+| BUG-009 | S3 | Review dialog preview is black (only captions draw) | fixed in {{FIX2}} |
 
-Open: none. No S1 bugs found.
+Open: none. No S1 bugs found. BUG-009 was a regression from the BUG-005 fix, caught by eye on the rebranded screenshots and then by a new pixel assertion.
 
 ---
 
@@ -98,8 +99,8 @@ Steps
 2. Delete the source file, then reopen the project.
 
 Expected: no failed requests, and the clip shows "Media offline".
-Actual: `reel-media://asset/<id>` returns 404 (console error) and the clip looks normal. The same request happens for an AVI while its mezzanine transcode is still running.
-Evidence: run2 failed requests `[{"url":"reel-media://asset/…","status":404}]`.
+Actual: `framevane-media://asset/<id>` returns 404 (console error) and the clip looks normal. The same request happens for an AVI while its mezzanine transcode is still running.
+Evidence: run2 failed requests `[{"url":"framevane-media://asset/…","status":404}]`.
 Fix: the player decodes only media whose status is `ready`, and only once the media list has loaded. It redraws when statuses change. The timeline marks missing sources "Media offline".
 Status: fixed in 16aa598
 
@@ -144,9 +145,26 @@ Steps
 1. Create a project from files, then go straight back to Projects.
 
 Expected: placeholder icon, no failed request.
-Actual: `reel-media://thumb/<id>` returns 404.
+Actual: `framevane-media://thumb/<id>` returns 404.
 Fix: `projects.list` joins the cover asset and only returns `coverUrl` when its poster exists on disk.
 Status: fixed in 16aa598
+
+### BUG-009: Review dialog preview is black
+
+- Severity: S3 (you can't see the result before you apply the agent's edits)
+- Flow / case: F12 / F12-H1
+- Screen: S29
+- Build: 24268c9 + rebrand
+
+Steps
+1. Ask the agent for "Cut the silences and add captions", then open Review edits.
+
+Expected: the mini preview shows the video with the edits.
+Actual: black frame; only the caption text is drawn.
+Evidence: replica/clone-screens/S29-review.png (rebrand run); F12-H1 pixel assertion "Expected > 30, Received 0".
+Suspected cause: the BUG-005 fix made players decode only media marked ready. The review dialog's own player was never told what is ready, so it decoded nothing.
+Fix: the review player gets the same availability as the main player.
+Status: fixed in {{FIX2}}
 
 ---
 

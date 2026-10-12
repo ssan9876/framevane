@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 
 /**
- * TEST DOUBLE for the Messages API, enabled only with REEL_FAKE_AGENT=1 (e2e runs without an API key).
+ * TEST DOUBLE for the Messages API, enabled only with FRAMEVANE_FAKE_AGENT=1 (e2e runs without an API key).
  * A fixed policy that plays the "cut the silences and add captions" request through the real tools, so the whole
  * pipeline (tool execution, forked doc, proposal, review, apply, undo) is exercised. It is not an AI.
  */

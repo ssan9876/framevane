@@ -1,5 +1,5 @@
--- reel (working name): app index database
--- SQLite (better-sqlite3), one file at %APPDATA%\reel\app.db, opened only by the Electron main process.
+-- framevane (working name): app index database
+-- SQLite (better-sqlite3), one file at %APPDATA%\framevane\app.db, opened only by the Electron main process.
 --
 -- This database is an INDEX and a job/agent log. Each project's timeline lives in its own folder as
 -- project.json (see architecture.md "Project document"), so a project can be copied, backed up or

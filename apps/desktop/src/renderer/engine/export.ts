@@ -1,7 +1,7 @@
 import {
   AudioBufferSource, CanvasSource, canEncodeAudio, canEncodeVideo, Mp4OutputFormat, Output, StreamTarget, type StreamTargetChunk,
 } from 'mediabunny'
-import { projectDurationUs, type Project } from '@reel/doc'
+import { projectDurationUs, type Project } from '@framevane/doc'
 import type { ExportSettings } from '../../shared/api'
 import { renderMix } from './audio'
 import { drawFrame, ensureFonts, fetchVisuals } from './compositor'
@@ -24,13 +24,13 @@ export async function exportProject(doc: Project, s: ExportSettings, onProgress:
   }
   await ensureFonts(doc)
   const pool = new MediaPool()
-  const { handle } = await window.reel.export.open(s.outputPath)
+  const { handle } = await window.framevane.export.open(s.outputPath)
   let finished = false
   try {
     const canvas = new OffscreenCanvas(W, H)
     const ctx = canvas.getContext('2d', { alpha: false })!
     const writable = new WritableStream<StreamTargetChunk>({
-      write: (chunk) => window.reel.export.write(handle, chunk.position, chunk.data),
+      write: (chunk) => window.framevane.export.write(handle, chunk.position, chunk.data),
     })
     const output = new Output({ format: new Mp4OutputFormat(), target: new StreamTarget(writable, { chunked: true, chunkSize: 4 * 1024 * 1024 }) })
     const video = new CanvasSource(canvas, { codec: s.codec, bitrate: s.bitrate, keyFrameInterval: 2, latencyMode: 'quality' } as ConstructorParameters<typeof CanvasSource>[1])
@@ -79,10 +79,10 @@ export async function exportProject(doc: Project, s: ExportSettings, onProgress:
     onProgress({ phase: 'finalizing', progress: 1, frame: frames, frames, fps: 0, etaSeconds: 0 })
     await output.finalize()
     finished = true
-    const r = await window.reel.export.close(handle, {})
+    const r = await window.framevane.export.close(handle, {})
     return { ...r, audioCodec }
   } finally {
-    if (!finished) await window.reel.export.close(handle, { abort: true }).catch(() => {})
+    if (!finished) await window.framevane.export.close(handle, { abort: true }).catch(() => {})
     await pool.dispose()
   }
 }

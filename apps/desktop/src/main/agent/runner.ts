@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { safeStorage } from 'electron'
-import { applyOps, describeOp, findClip, Op, OpError, projectDurationUs, type OpInput, type Project } from '@reel/doc'
+import { applyOps, describeOp, findClip, Op, OpError, projectDurationUs, type OpInput, type Project } from '@framevane/doc'
 import type { AgentContext, AgentEvent, AgentRunStatus, AgentSettings, ProposedOp } from '../../shared/api'
 import { now, uuid7, type Db } from '../db'
 import type { Analysis } from '../analysis'
@@ -65,7 +65,7 @@ export class AgentRunner {
 
   settings(): AgentSettings {
     const key = this.storedKey()
-    const env = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.REEL_FAKE_AGENT === '1')
+    const env = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.FRAMEVANE_FAKE_AGENT === '1')
     return {
       hasApiKey: !!key || env,
       credentialSource: key ? 'app_key' : env ? 'environment' : 'none',
@@ -99,7 +99,7 @@ export class AgentRunner {
   }
 
   private client(): Anthropic {
-    if (process.env.REEL_FAKE_AGENT === '1') return fakeClient() // e2e test double, never in normal use
+    if (process.env.FRAMEVANE_FAKE_AGENT === '1') return fakeClient() // e2e test double, never in normal use
     const key = this.storedKey()
     // zero-arg client resolves ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / an `ant auth login` profile
     return key ? new Anthropic({ apiKey: key }) : new Anthropic()

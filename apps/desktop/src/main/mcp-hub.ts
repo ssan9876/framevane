@@ -30,9 +30,9 @@ export class McpHub {
       if (!existsSync(join(this.opts.sidecarDir, 'pyproject.toml'))) throw new Error(`Local AI sidecar not found at ${this.opts.sidecarDir}`)
       return new StdioClientTransport({
         command: uv,
-        args: ['run', '--project', this.opts.sidecarDir, '--frozen', 'python', '-m', 'reel_sidecar'],
+        args: ['run', '--project', this.opts.sidecarDir, '--frozen', 'python', '-m', 'framevane_sidecar'],
         cwd: this.opts.sidecarDir,
-        env: { ...cleanEnv(), REEL_MODELS_DIR: this.opts.modelsDir, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8' },
+        env: { ...cleanEnv(), FRAMEVANE_MODELS_DIR: this.opts.modelsDir, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8' },
         stderr: 'pipe',
       })
     }, true)
@@ -77,7 +77,7 @@ export class McpHub {
       if (isSidecar) this.sidecarStatus = 'starting'
       const transport = makeTransport()
       transport.stderr?.on('data', (d: Buffer) => process.stderr.write(`[${provider}] ${d}`))
-      const client = new Client({ name: 'reel', version: '0.1.0' })
+      const client = new Client({ name: 'framevane', version: '0.1.0' })
       transport.onclose = () => { this.conns.delete(provider); if (isSidecar) this.sidecarStatus = 'unknown' }
       await client.connect(transport)
       const { tools } = await client.listTools()
@@ -94,7 +94,7 @@ export class McpHub {
 }
 
 export function findUv(): string | null {
-  if (process.env.REEL_UV && existsSync(process.env.REEL_UV)) return process.env.REEL_UV
+  if (process.env.FRAMEVANE_UV && existsSync(process.env.FRAMEVANE_UV)) return process.env.FRAMEVANE_UV
   const r = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['uv'], { encoding: 'utf8' })
   if (r.status === 0) {
     const first = r.stdout.split(/\r?\n/).find(Boolean)
@@ -105,7 +105,7 @@ export function findUv(): string | null {
 }
 
 export function defaultSidecarDir(appPath: string, resourcesPath?: string) {
-  if (process.env.REEL_SIDECAR_DIR) return process.env.REEL_SIDECAR_DIR
+  if (process.env.FRAMEVANE_SIDECAR_DIR) return process.env.FRAMEVANE_SIDECAR_DIR
   const packaged = resourcesPath ? join(resourcesPath, 'sidecar') : null
   if (packaged && existsSync(packaged)) return packaged
   return resolve(appPath, '..', '..', 'sidecar')

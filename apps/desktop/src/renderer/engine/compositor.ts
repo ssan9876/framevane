@@ -1,4 +1,4 @@
-import { clipEnd, DEFAULT_CAPTION_STYLE, sourceTimeAt, type CaptionClip, type Clip, type MediaClip, type Project, type TextClip, type TextStyle } from '@reel/doc'
+import { clipEnd, DEFAULT_CAPTION_STYLE, sourceTimeAt, type CaptionClip, type Clip, type MediaClip, type Project, type TextClip, type TextStyle } from '@framevane/doc'
 import type { VideoSample } from 'mediabunny'
 import type { MediaPool } from './sources'
 

@@ -1,10 +1,10 @@
-import { projectDurationUs } from '@reel/doc'
+import { projectDurationUs } from '@framevane/doc'
 import type { ExternalActivity } from '../../shared/api'
 import { exportProject } from '../engine/export'
 import { useApp } from './store'
 
 /**
- * Renderer side of "Reel as an MCP server": tells the main process what is open (so connected agents edit the right
+ * Renderer side of "Framevane as an MCP server": tells the main process what is open (so connected agents edit the right
  * project and know the playhead/selection), opens projects and runs exports on request (WebCodecs lives here).
  */
 export function connectMcpBridge(onActivity: (a: ExternalActivity) => void) {
@@ -16,7 +16,7 @@ export function connectMcpBridge(onActivity: (a: ExternalActivity) => void) {
     const key = JSON.stringify(state)
     if (key === last) return
     last = key
-    window.reel.mcp.reportUiState(state)
+    window.framevane.mcp.reportUiState(state)
   }
   // project switches are reported at once; playhead/selection changes are throttled
   const unsub = useApp.subscribe((s, prev) => {
@@ -25,7 +25,7 @@ export function connectMcpBridge(onActivity: (a: ExternalActivity) => void) {
   })
   report()
 
-  const offOpen = window.reel.mcp.onOpenProject(async ({ requestId, projectId }) => {
+  const offOpen = window.framevane.mcp.onOpenProject(async ({ requestId, projectId }) => {
     const s = useApp.getState()
     if (s.dialog) s.openDialog(null)
     s.go({ name: 'editor', projectId })
@@ -35,13 +35,13 @@ export function connectMcpBridge(onActivity: (a: ExternalActivity) => void) {
       const off = useApp.subscribe((x) => { if (x.doc?.id === projectId) { report(); done(true) } })
       if (useApp.getState().doc?.id === projectId) done(true)
     })
-    window.reel.mcp.replyOpenProject(requestId, ok)
+    window.framevane.mcp.replyOpenProject(requestId, ok)
   })
 
-  const offExport = window.reel.mcp.onExport(async (req) => {
+  const offExport = window.framevane.mcp.onExport(async (req) => {
     const doc = useApp.getState().doc
-    if (!doc || doc.id !== req.projectId) return window.reel.mcp.replyExport(req.requestId, { ok: false, error: 'That project is not open in Reel.' })
-    if (projectDurationUs(doc) === 0) return window.reel.mcp.replyExport(req.requestId, { ok: false, error: 'The timeline is empty.' })
+    if (!doc || doc.id !== req.projectId) return window.framevane.mcp.replyExport(req.requestId, { ok: false, error: 'That project is not open in Framevane.' })
+    if (projectDurationUs(doc) === 0) return window.framevane.mcp.replyExport(req.requestId, { ok: false, error: 'The timeline is empty.' })
     const even = (n: number) => Math.max(2, Math.round(n / 2) * 2)
     const portrait = doc.canvas.height > doc.canvas.width
     const ar = doc.canvas.width / doc.canvas.height
@@ -50,12 +50,12 @@ export function connectMcpBridge(onActivity: (a: ExternalActivity) => void) {
     try {
       onActivity({ id: req.requestId, client: 'Connected agent', tool: 'export_video', summary: `${width}×${height} · rendering`, status: 'running', mutates: false })
       const r = await exportProject(doc, { projectId: doc.id, outputPath: req.outputPath, width, height, fps: req.fps, bitrate: Math.round(width * height * req.fps * 0.12), codec: req.codec }, () => {}, new AbortController().signal)
-      window.reel.mcp.replyExport(req.requestId, { ok: true, path: r.path, bytes: r.bytes })
+      window.framevane.mcp.replyExport(req.requestId, { ok: true, path: r.path, bytes: r.bytes })
     } catch (e) {
-      window.reel.mcp.replyExport(req.requestId, { ok: false, error: e instanceof Error ? e.message : String(e) })
+      window.framevane.mcp.replyExport(req.requestId, { ok: false, error: e instanceof Error ? e.message : String(e) })
     }
   })
 
-  const offActivity = window.reel.mcp.onActivity(onActivity)
+  const offActivity = window.framevane.mcp.onActivity(onActivity)
   return () => { unsub(); offOpen(); offExport(); offActivity(); if (timer) clearTimeout(timer) }
 }

@@ -5,8 +5,8 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { clips, expect, ffprobe, newProjectFromFiles, projectDuration, test } from '../fixtures'
 import { files } from '../global-setup'
 
-/** Reel as an MCP server: an external agent (Claude Code) edits the open project live. Uses a real MCP client. */
-const PORT = 47899 // not the default, so a running Reel doesn't interfere
+/** Framevane as an MCP server: an external agent (Claude Code) edits the open project live. Uses a real MCP client. */
+const PORT = 47899 // not the default, so a running Framevane doesn't interfere
 
 async function connect(token: string) {
   const client = new Client({ name: 'e2e-claude-code', version: '1.0.0' })
@@ -15,14 +15,14 @@ async function connect(token: string) {
 }
 const text = (r: Awaited<ReturnType<Client['callTool']>>) => (r.content as { type: string; text?: string }[]).filter((c) => c.type === 'text').map((c) => c.text).join('\n')
 
-test.describe('F13 connect Claude Code (Reel as an MCP server)', () => {
-  test.use({ pickFiles: [files.talk], reelEnv: { REEL_MCP_PORT: String(PORT) } })
+test.describe('F13 connect Claude Code (Framevane as an MCP server)', () => {
+  test.use({ pickFiles: [files.talk], reelEnv: { FRAMEVANE_MCP_PORT: String(PORT) } })
 
-  test('F13-H1 an MCP client edits the open project live; Ctrl+Z undoes; export works', async ({ reel }) => {
-    const { page } = reel
-    const info = await page.evaluate(() => window.reel.mcp.info())
+  test('F13-H1 an MCP client edits the open project live; Ctrl+Z undoes; export works', async ({ framevane }) => {
+    const { page } = framevane
+    const info = await page.evaluate(() => window.framevane.mcp.info())
     expect(info.listening).toBe(true)
-    expect(info.claudeCommand).toContain(`claude mcp add --scope user --transport http reel http://127.0.0.1:${PORT}/mcp`)
+    expect(info.claudeCommand).toContain(`claude mcp add --scope user --transport http framevane http://127.0.0.1:${PORT}/mcp`)
 
     const client = await connect(info.token)
     const tools = (await client.listTools()).tools.map((t) => t.name)
@@ -58,7 +58,7 @@ test.describe('F13 connect Claude Code (Reel as an MCP server)', () => {
     await page.keyboard.press('Control+z')
     await expect(clips(page, 'cap-')).toHaveCount(0)
 
-    const out = join(reel.exportsDir, 'from-claude.mp4')
+    const out = join(framevane.exportsDir, 'from-claude.mp4')
     const exp = await client.callTool({ name: 'export_video', arguments: { outputPath: out, height: 720 } }, undefined, { timeout: 300_000 })
     expect(exp.isError).toBeFalsy()
     expect(existsSync(out)).toBe(true)
@@ -66,9 +66,9 @@ test.describe('F13 connect Claude Code (Reel as an MCP server)', () => {
     await client.close()
   })
 
-  test('F13-H2 create a project from files and open it in the window', async ({ reel }) => {
-    const { page } = reel
-    const client = await connect((await page.evaluate(() => window.reel.mcp.info())).token)
+  test('F13-H2 create a project from files and open it in the window', async ({ framevane }) => {
+    const { page } = framevane
+    const client = await connect((await page.evaluate(() => window.framevane.mcp.info())).token)
     const r = await client.callTool({ name: 'create_project', arguments: { name: 'Made by an agent', files: [files.talk, files.broll] } })
     expect(r.isError).toBeFalsy()
     await expect(page.getByRole('heading', { level: 1, name: 'Made by an agent' })).toBeVisible()
@@ -78,9 +78,9 @@ test.describe('F13 connect Claude Code (Reel as an MCP server)', () => {
     await client.close()
   })
 
-  test('F13-N1 wrong token, browser origin and foreign host are refused', async ({ reel }) => {
-    const { page } = reel
-    const token = (await page.evaluate(() => window.reel.mcp.info())).token
+  test('F13-N1 wrong token, browser origin and foreign host are refused', async ({ framevane }) => {
+    const { page } = framevane
+    const token = (await page.evaluate(() => window.framevane.mcp.info())).token
     const post = (headers: Record<string, string>) => fetch(`http://127.0.0.1:${PORT}/mcp`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...headers }, body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' })
     expect((await post({})).status).toBe(401)
     expect((await post({ Authorization: 'Bearer nope' })).status).toBe(401)
@@ -88,11 +88,11 @@ test.describe('F13 connect Claude Code (Reel as an MCP server)', () => {
     await expect(connect('nope')).rejects.toThrow()
   })
 
-  test('F13-E1 the settings section shows the connect command', async ({ reel }) => {
-    const { page } = reel
+  test('F13-E1 the settings section shows the connect command', async ({ framevane }) => {
+    const { page } = framevane
     await page.getByRole('button', { name: 'Settings' }).click()
     await page.getByRole('tab', { name: 'Agents & AI' }).click()
-    await expect(page.getByRole('heading', { name: 'Use Reel from Claude Code' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Use Framevane from Claude Code' })).toBeVisible()
     await expect(page.getByText(new RegExp(`Ready on 127\\.0\\.0\\.1:${PORT}`))).toBeVisible()
     await expect(page.getByRole('button', { name: 'Add to Claude Code' })).toBeEnabled()
     await page.screenshot({ path: '../../replica/clone-screens/S28-connect-claude.png' })

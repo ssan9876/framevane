@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Trash2, Captions, Construction } from 'lucide-react'
-import { Button, ColorPicker, EmptyState, PanelHeader, Segmented, SliderField, Switch, TabPanel, UnderlineTabs } from '@reel/ui'
-import { DEFAULT_CAPTION_STYLE, findClip, formatUs, projectDurationUs, type CaptionClip, type MediaClip, type OpInput, type Project, type Track } from '@reel/doc'
+import { Button, ColorPicker, EmptyState, PanelHeader, Segmented, SliderField, Switch, TabPanel, UnderlineTabs } from '@framevane/ui'
+import { DEFAULT_CAPTION_STYLE, findClip, formatUs, projectDurationUs, type CaptionClip, type MediaClip, type OpInput, type Project, type Track } from '@framevane/doc'
 import { useApp } from '../app/store'
 import { deleteSelection } from './actions'
 

@@ -1,4 +1,4 @@
-import { clipEnd, findClip, type Clip, type OpInput, type Project } from '@reel/doc'
+import { clipEnd, findClip, type Clip, type OpInput, type Project } from '@framevane/doc'
 import { useApp } from '../app/store'
 
 /** Editing commands shared by the toolbar, keyboard shortcuts and context menus. All go through ops. */

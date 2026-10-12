@@ -14,9 +14,9 @@ import { appPaths } from './paths'
 import { Projects } from './projects'
 import { handleMediaProtocol, registerSchemePrivileges } from './protocol'
 
-app.setName('Reel')
+app.setName('Framevane')
 // isolated profiles for tests and side-by-side dev
-if (process.env.REEL_USER_DATA) app.setPath('userData', process.env.REEL_USER_DATA)
+if (process.env.FRAMEVANE_USER_DATA) app.setPath('userData', process.env.FRAMEVANE_USER_DATA)
 registerSchemePrivileges()
 
 // Prefer the discrete GPU (RTX) for WebGPU/WebCodecs over the integrated one.
@@ -41,7 +41,7 @@ async function main() {
   const agent = new AgentRunner(db, projects, analysis, media, (e: AgentEvent) => broadcast('agent:event', e))
   handleMediaProtocol(media)
 
-  /* ── Reel as an MCP server (Claude Code connects here) ── */
+  /* ── Framevane as an MCP server (Claude Code connects here) ── */
   let ui: UiState = { projectId: null, playheadUs: 0, selection: [] }
   const uiWaiters: ((s: UiState) => void)[] = []
   ipcMain.on('mcp:ui-state', (_e, s: UiState) => { ui = s; for (const w of uiWaiters.splice(0)) w(s) })
@@ -50,9 +50,9 @@ async function main() {
   ipcMain.on('mcp:export:reply', (_e, id: string, result: unknown) => pending.get(id)?.(result))
   const ask = <T>(channel: string, payload: Record<string, unknown>, timeoutMs: number) => new Promise<T>((resolve, reject) => {
     const win = BrowserWindow.getAllWindows()[0]
-    if (!win) return reject(new Error('The Reel window is closed.'))
+    if (!win) return reject(new Error('The Framevane window is closed.'))
     const requestId = uuid7()
-    const t = setTimeout(() => { pending.delete(requestId); reject(new Error('The Reel window did not respond in time.')) }, timeoutMs)
+    const t = setTimeout(() => { pending.delete(requestId); reject(new Error('The Framevane window did not respond in time.')) }, timeoutMs)
     pending.set(requestId, (v) => { clearTimeout(t); pending.delete(requestId); resolve(v as T) })
     win.webContents.send(channel, { requestId, ...payload })
   })
@@ -64,7 +64,7 @@ async function main() {
       if (ui.projectId === projectId) return
       projects.list().find((p) => p.id === projectId) ?? (() => { throw new Error(`No project with id ${projectId}`) })()
       const ok = await ask<boolean>('mcp:open-project', { projectId }, 20_000)
-      if (!ok) throw new Error('Reel could not open that project.')
+      if (!ok) throw new Error('Framevane could not open that project.')
     },
     exportInUi: async (projectId, s) => {
       const r = await ask<{ ok: true; path: string; bytes: number } | { ok: false; error: string }>('mcp:export', { projectId, ...s }, 60 * 60_000)
@@ -85,7 +85,7 @@ async function main() {
   }))
   ipcMain.handle('app:pickFiles', async (e, opts: { kind: 'media' | 'image' }) => {
     // test hook: e2e runs can't click native dialogs
-    if (process.env.REEL_TEST_PICK_FILES) return process.env.REEL_TEST_PICK_FILES.split(';').filter(Boolean)
+    if (process.env.FRAMEVANE_TEST_PICK_FILES) return process.env.FRAMEVANE_TEST_PICK_FILES.split(';').filter(Boolean)
     const win = BrowserWindow.fromWebContents(e.sender)!
     const r = await dialog.showOpenDialog(win, {
       properties: ['openFile', 'multiSelections'],
@@ -96,7 +96,7 @@ async function main() {
     return r.canceled ? [] : r.filePaths
   })
   ipcMain.handle('app:pickSavePath', async (e, opts: { defaultName: string; ext: string }) => {
-    if (process.env.REEL_TEST_SAVE_DIR) return join(process.env.REEL_TEST_SAVE_DIR, `${opts.defaultName}.${opts.ext}`)
+    if (process.env.FRAMEVANE_TEST_SAVE_DIR) return join(process.env.FRAMEVANE_TEST_SAVE_DIR, `${opts.defaultName}.${opts.ext}`)
     const win = BrowserWindow.fromWebContents(e.sender)!
     const r = await dialog.showSaveDialog(win, { defaultPath: join(app.getPath('videos'), `${opts.defaultName}.${opts.ext}`), filters: [{ name: opts.ext.toUpperCase(), extensions: [opts.ext] }] })
     return r.canceled ? null : r.filePath
@@ -121,7 +121,7 @@ async function main() {
         if (clip) t += dur
         return clip ? [...add, clip] : add
       })
-      // match the canvas to the first video (CapCut's "Original" ratio)
+      // match the canvas to the first video (an "Original" ratio project)
       const first = infos.find((m) => m.asset.kind === 'video' && m.asset.width && m.asset.height)
       const canvas = first && !opts.width ? [{ type: 'set_canvas' as const, canvas: { width: first.asset.width!, height: first.asset.height!, ...(first.asset.fps ? { fps: first.asset.fps } : {}) } }] : []
       projects.apply(projectId, doc.version, [...canvas, ...ops], 'load')
@@ -192,7 +192,7 @@ function createWindow() {
     minWidth: 1280,
     minHeight: 720,
     backgroundColor: '#0e0f11',
-    title: 'Reel',
+    title: 'Framevane',
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -209,12 +209,12 @@ function createWindow() {
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(process.env.VITE_DEV_SERVER_URL ?? 'file:')) e.preventDefault() })
   if (isDev) void win.loadURL(process.env.VITE_DEV_SERVER_URL!)
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
-  if (process.env.REEL_DEVTOOLS === '1') win.webContents.openDevTools({ mode: 'detach' })
+  if (process.env.FRAMEVANE_DEVTOOLS === '1') win.webContents.openDevTools({ mode: 'detach' })
 }
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 
 main().catch((e) => {
-  dialog.showErrorBox('Reel could not start', e instanceof Error ? `${e.message}\n\n${e.stack}` : String(e))
+  dialog.showErrorBox('Framevane could not start', e instanceof Error ? `${e.message}\n\n${e.stack}` : String(e))
   app.quit()
 })

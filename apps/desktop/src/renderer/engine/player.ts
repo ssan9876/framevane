@@ -1,4 +1,4 @@
-import { projectDurationUs, type Project } from '@reel/doc'
+import { projectDurationUs, type Project } from '@framevane/doc'
 import { loadAudio, schedule } from './audio'
 import { drawFrame, ensureFonts, fetchVisuals } from './compositor'
 import { MediaPool } from './sources'

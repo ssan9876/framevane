@@ -142,7 +142,7 @@ export interface CurvePoint { x: number; y: number }
  * Points in 0..1, x strictly increasing, first/last pinned to x=0/x=1.
  * Drag a point · double-click empty space to add · select + Delete to remove · arrows nudge the selected point.
  */
-export function CurveEditor({ points, onChange, color = 'var(--reel-color-fg)', label, size = 200 }: { points: CurvePoint[]; onChange: (p: CurvePoint[]) => void; color?: string; label: string; size?: number }) {
+export function CurveEditor({ points, onChange, color = 'var(--fv-color-fg)', label, size = 200 }: { points: CurvePoint[]; onChange: (p: CurvePoint[]) => void; color?: string; label: string; size?: number }) {
   const svg = useRef<SVGSVGElement>(null)
   const [sel, setSel] = useState<number | null>(null)
   const toLocal = (e: { clientX: number; clientY: number }) => {
@@ -195,7 +195,7 @@ export function CurveEditor({ points, onChange, color = 'var(--reel-color-fg)', 
           cx={p.x * size}
           cy={(1 - p.y) * size}
           r={sel === i ? 5 : 4}
-          fill={sel === i ? color : 'var(--reel-color-bg)'}
+          fill={sel === i ? color : 'var(--fv-color-bg)'}
           stroke={color}
           strokeWidth={1.5}
           className="cursor-grab"

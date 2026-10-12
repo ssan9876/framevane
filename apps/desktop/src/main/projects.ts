@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync,
 import { join } from 'node:path'
 import {
   applyOps, emptyProject, Op, OpError, Project, projectDurationUs, type OpInput, type Project as ProjectT,
-} from '@reel/doc'
+} from '@framevane/doc'
 import type { DocEvent, ProjectSummary } from '../shared/api'
 import { now, uuid7, type Db } from './db'
 import type { AppPaths } from './paths'
@@ -231,7 +231,7 @@ export class Projects {
     return {
       id: r.id, type: r.type, name: r.name, dirPath: r.dir_path,
       // cover_path holds the asset id of the first main-track clip; its poster is served by the media protocol
-      coverUrl: r.cover_path && r.cover_thumb && existsSync(r.cover_thumb) ? `reel-media://thumb/${r.cover_path}` : null,
+      coverUrl: r.cover_path && r.cover_thumb && existsSync(r.cover_thumb) ? `framevane-media://thumb/${r.cover_path}` : null,
       width: r.width, height: r.height, durationUs: r.duration_us,
       status: existsSync(r.dir_path) ? r.status : 'missing_dir',
       updatedAt: r.updated_at, openedAt: r.opened_at,

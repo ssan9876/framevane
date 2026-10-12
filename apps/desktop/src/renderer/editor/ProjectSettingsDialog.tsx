@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Dialog, Select, TextField } from '@reel/ui'
+import { Button, Dialog, Select, TextField } from '@framevane/ui'
 import { useApp } from '../app/store'
 
 const RATIOS = [
@@ -27,7 +27,7 @@ export function ProjectSettingsDialog() {
   const H = r ? even(r.w >= r.h ? s : (s * r.h) / r.w) : doc.canvas.height
 
   async function save() {
-    if (name.trim() && name.trim() !== doc.name) await window.reel.projects.rename(doc.id, name)
+    if (name.trim() && name.trim() !== doc.name) await window.framevane.projects.rename(doc.id, name)
     await useApp.getState().apply([{ type: 'set_canvas', canvas: { width: W, height: H, fps: { num: Number(fps), den: 1 } } }])
     close()
   }

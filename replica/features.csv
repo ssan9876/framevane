@@ -121,7 +121,7 @@ Keyboard shortcuts matching common CapCut keys,shortcuts,must,yes,partial,S24 | 
 Rebind shortcuts,shortcuts,should,yes,no,
 Settings: performance cache project folder,settings,must,yes,partial,S23 | M0: S23 shows paths/status; cache and proxy controls M6
 Agent panel: chat with an agent about the open project,agents,must,no,yes,"S27; CapCut EditPilot is the nearest analog | M0: S27 streaming transcript, tool steps, progress notes, cost"
-Typed edit-op API shared by UI undo/redo and agents,agents,must,no,yes,"foundation for all agent work | M0: @reel/doc ops, 20 unit tests"
+Typed edit-op API shared by UI undo/redo and agents,agents,must,no,yes,"foundation for all agent work | M0: @framevane/doc ops, 20 unit tests"
 Editor exposed as an MCP server (timeline read + edit ops + render frame),agents,must,no,yes,"lets Claude Code / any agent drive the editor | M2 early: streamable HTTP on 127.0.0.1:47821, bearer token, 23 tools, live edits = one undo step each, one-click ""Add to Claude Code""; review-mode for external agents not built"
 MCP client: plug in external MCP servers as agent tools,agents,must,no,partial,S28 | M0: MCP client hub runs the local sidecar; user-added servers M2
 Claude API provider with model picker and user key,agents,must,no,yes,M0: Opus 5.5 default; key in DPAPI; not yet run against the live API (no key on this machine)

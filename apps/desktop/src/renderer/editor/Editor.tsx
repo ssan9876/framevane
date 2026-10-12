@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Bot, Download, Redo2, Settings, Undo2, Loader2, Check } from 'lucide-react'
-import { Badge, Button, IconButton, JobProgress, Popover, Spinner, EmptyState } from '@reel/ui'
-import { projectDurationUs, type Project } from '@reel/doc'
+import { Badge, Button, IconButton, JobProgress, Popover, Spinner, EmptyState } from '@framevane/ui'
+import { projectDurationUs, type Project } from '@framevane/doc'
 import { useApp } from '../app/store'
 import { Player } from '../engine/player'
 import { AssetPanel } from './AssetPanel'
@@ -26,9 +26,9 @@ export function Editor({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     let alive = true
-    window.reel.projects.open(projectId).then((e) => { if (alive) useApp.getState().setDoc(e.doc, e.canUndo, e.canRedo) }).catch((e) => setLoadError(e instanceof Error ? e.message : String(e)))
+    window.framevane.projects.open(projectId).then((e) => { if (alive) useApp.getState().setDoc(e.doc, e.canUndo, e.canRedo) }).catch((e) => setLoadError(e instanceof Error ? e.message : String(e)))
     useApp.setState({ mediaLoaded: false })
-    window.reel.media.list(projectId).then((m) => alive && useApp.setState({ media: m, mediaLoaded: true })).catch(() => {})
+    window.framevane.media.list(projectId).then((m) => alive && useApp.setState({ media: m, mediaLoaded: true })).catch(() => {})
     return () => { alive = false }
   }, [projectId])
 
@@ -79,22 +79,22 @@ function EditorLoaded({ doc }: { doc: Project }) {
       <div className="flex min-h-0 flex-1 flex-col">
         <TopBar doc={doc} agentOpen={agentOpen} onToggleAgent={() => setAgentOpen(!agentOpen)} />
         <div className="flex min-h-0 flex-[1_1_62%]">
-          <section aria-label="Media and assets" className="flex w-[var(--reel-asset-panel-w-default)] min-w-[var(--reel-asset-panel-w-min)] shrink-0 flex-col border-r border-border bg-surface">
+          <section aria-label="Media and assets" className="flex w-[var(--fv-asset-panel-w-default)] min-w-[var(--fv-asset-panel-w-min)] shrink-0 flex-col border-r border-border bg-surface">
             <AssetPanel />
           </section>
           <section aria-label="Preview" className="flex min-w-0 flex-1 flex-col bg-bg">
             <Viewer />
           </section>
-          <section aria-label="Properties" className="flex w-[var(--reel-inspector-w-default)] shrink-0 flex-col border-l border-border bg-surface">
+          <section aria-label="Properties" className="flex w-[var(--fv-inspector-w-default)] shrink-0 flex-col border-l border-border bg-surface">
             <Inspector />
           </section>
           {agentOpen && (
-            <section aria-label="Agent" className="flex w-[var(--reel-agent-dock-w-default)] shrink-0 flex-col border-l border-border bg-surface">
+            <section aria-label="Agent" className="flex w-[var(--fv-agent-dock-w-default)] shrink-0 flex-col border-l border-border bg-surface">
               <AgentPanel />
             </section>
           )}
         </div>
-        <section aria-label="Timeline" className="flex min-h-[var(--reel-timeline-h-min)] flex-[1_1_38%] flex-col border-t border-border bg-timeline-bg">
+        <section aria-label="Timeline" className="flex min-h-[var(--fv-timeline-h-min)] flex-[1_1_38%] flex-col border-t border-border bg-timeline-bg">
           <Timeline />
         </section>
       </div>
@@ -110,11 +110,11 @@ function TopBar({ doc, agentOpen, onToggleAgent }: { doc: Project; agentOpen: bo
   const canRedo = useApp((s) => s.canRedo)
   const empty = projectDurationUs(doc) === 0
   return (
-    <header className="flex h-[var(--reel-titlebar-h)] shrink-0 items-center gap-2 border-b border-border bg-surface px-2">
+    <header className="flex h-[var(--fv-titlebar-h)] shrink-0 items-center gap-2 border-b border-border bg-surface px-2">
       <Button variant="ghost" size="sm" icon={<ArrowLeft className="size-3.5" />} onClick={() => useApp.getState().go({ name: 'home' })}>Projects</Button>
       <span className="mx-1 h-4 w-px bg-border" />
-      <IconButton size="sm" label="Undo" shortcut="Ctrl+Z" icon={<Undo2 />} disabled={!canUndo} onClick={() => void window.reel.doc.undo(doc.id)} />
-      <IconButton size="sm" label="Redo" shortcut="Ctrl+Shift+Z" icon={<Redo2 />} disabled={!canRedo} onClick={() => void window.reel.doc.redo(doc.id)} />
+      <IconButton size="sm" label="Undo" shortcut="Ctrl+Z" icon={<Undo2 />} disabled={!canUndo} onClick={() => void window.framevane.doc.undo(doc.id)} />
+      <IconButton size="sm" label="Redo" shortcut="Ctrl+Shift+Z" icon={<Redo2 />} disabled={!canRedo} onClick={() => void window.framevane.doc.redo(doc.id)} />
       <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
         <h1 className="truncate text-sm" title={doc.name}>{doc.name}</h1>
         <SaveState version={doc.version} />
@@ -160,7 +160,7 @@ function JobsTray() {
         {list.map((j) => (
           <div key={j.id}>
             <JobProgress title={j.title} value={j.status === 'queued' ? undefined : j.progress} detail={j.status === 'failed' ? j.error : j.status === 'queued' ? 'Waiting' : j.detail}
-              onCancel={j.status === 'running' || j.status === 'queued' ? () => void window.reel.jobs.cancel(j.id) : undefined} />
+              onCancel={j.status === 'running' || j.status === 'queued' ? () => void window.framevane.jobs.cancel(j.id) : undefined} />
           </div>
         ))}
       </div>

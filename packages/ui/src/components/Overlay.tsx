@@ -4,7 +4,7 @@ import { X, CheckCircle2, AlertTriangle, Info, XCircle } from 'lucide-react'
 import { cn } from '../cn'
 import { Kbd } from './Misc'
 
-const popSurface = 'z-[var(--reel-z-popover)] rounded-md bg-surface-2 shadow-pop animate-[reel-pop-in_var(--reel-dur-fast)_var(--reel-ease)]'
+const popSurface = 'z-[var(--fv-z-popover)] rounded-md bg-surface-2 shadow-pop animate-[framevane-pop-in_var(--fv-dur-fast)_var(--fv-ease)]'
 
 /* ─────────── Tooltip ─────────── */
 export function TooltipProvider({ children }: { children: ReactNode }) {
@@ -19,7 +19,7 @@ export function Tooltip({ content, shortcut, side = 'top', children }: { content
         <RTooltip.Content
           side={side}
           sideOffset={6}
-          className="z-[var(--reel-z-tooltip)] flex items-center gap-2 rounded-sm bg-surface-3 px-2 py-1 text-sm text-fg shadow-pop"
+          className="z-[var(--fv-z-tooltip)] flex items-center gap-2 rounded-sm bg-surface-3 px-2 py-1 text-sm text-fg shadow-pop"
         >
           {content}
           {shortcut && <Kbd>{shortcut}</Kbd>}
@@ -46,11 +46,11 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
   return (
     <RDialog.Root open={open} onOpenChange={(o) => (!busy || o) && onOpenChange(o)}>
       <RDialog.Portal>
-        <RDialog.Overlay className="fixed inset-0 z-[var(--reel-z-modal)] bg-scrim/60" />
+        <RDialog.Overlay className="fixed inset-0 z-[var(--fv-z-modal)] bg-scrim/60" />
         <RDialog.Content
           style={{ width }}
           {...(description ? {} : { 'aria-describedby': undefined })}
-          className="fixed left-1/2 top-1/2 z-[var(--reel-z-modal)] max-h-[85vh] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex flex-col rounded-lg bg-surface shadow-modal animate-[reel-pop-in_var(--reel-dur-base)_var(--reel-ease)]"
+          className="fixed left-1/2 top-1/2 z-[var(--fv-z-modal)] max-h-[85vh] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex flex-col rounded-lg bg-surface shadow-modal animate-[framevane-pop-in_var(--fv-dur-base)_var(--fv-ease)]"
         >
           <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
             <div>
@@ -166,7 +166,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             type={t.tone === 'error' ? 'foreground' : 'background'}
             duration={t.tone === 'error' ? Infinity : 4000}
             onOpenChange={(o) => !o && setItems((xs) => xs.filter((x) => x.id !== t.id))}
-            className="flex w-80 items-start gap-2.5 rounded-md bg-surface-2 p-3 shadow-pop data-[state=open]:animate-[reel-pop-in_var(--reel-dur-base)_var(--reel-ease)]"
+            className="flex w-80 items-start gap-2.5 rounded-md bg-surface-2 p-3 shadow-pop data-[state=open]:animate-[framevane-pop-in_var(--fv-dur-base)_var(--fv-ease)]"
           >
             {toneIcon[t.tone]}
             <div className="min-w-0 flex-1">
@@ -185,7 +185,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             </RToast.Close>
           </RToast.Root>
         ))}
-        <RToast.Viewport className="fixed bottom-4 right-4 z-[var(--reel-z-toast)] flex flex-col gap-2 outline-none" />
+        <RToast.Viewport className="fixed bottom-4 right-4 z-[var(--fv-z-toast)] flex flex-col gap-2 outline-none" />
       </RToast.Provider>
     </ToastCtx.Provider>
   )

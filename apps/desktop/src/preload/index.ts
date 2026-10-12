@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { ReelApi } from '../shared/api'
 
-/** window.reel: the only door from the renderer to the main process. Every call is a typed invoke. */
+/** window.framevane: the only door from the renderer to the main process. Every call is a typed invoke. */
 
 const on = <T>(channel: string) => (cb: (e: T) => void) => {
   const fn = (_: unknown, e: T) => cb(e)
@@ -74,4 +74,4 @@ api.mcp = {
   replyExport: (requestId, result) => ipcRenderer.send('mcp:export:reply', requestId, result),
 }
 
-contextBridge.exposeInMainWorld('reel', api)
+contextBridge.exposeInMainWorld('framevane', api)

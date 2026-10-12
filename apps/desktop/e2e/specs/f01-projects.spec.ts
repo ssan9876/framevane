@@ -8,11 +8,11 @@ test.describe('F01 project management', () => {
     await page.getByRole('button', { name: /New project/ }).click()
     await page.getByRole('tab', { name: 'Media' }).waitFor()
     await page.getByRole('button', { name: 'Projects' }).click()
-    await page.getByRole('heading', { name: 'Start something' }).waitFor()
+    await page.getByRole('heading', { name: 'What are we making?' }).waitFor()
   }
 
-  test('F01-E7 a 200-character name with emoji is saved', async ({ reel }) => {
-    const { page } = reel
+  test('F01-E7 a 200-character name with emoji is saved', async ({ framevane }) => {
+    const { page } = framevane
     await makeProject(page)
     const long = `Café 🎬 ${'Very long project name '.repeat(9)}`.slice(0, 200)
     await page.getByRole('button', { name: /^More actions for / }).click({ force: true })
@@ -23,8 +23,8 @@ test.describe('F01 project management', () => {
     await expect(page.getByText(long, { exact: true })).toHaveAttribute('title', long)
   })
 
-  test('F01-E8 an empty name is refused', async ({ reel }) => {
-    const { page } = reel
+  test('F01-E8 an empty name is refused', async ({ framevane }) => {
+    const { page } = framevane
     await makeProject(page)
     await page.getByRole('button', { name: /^More actions for / }).click({ force: true })
     await page.getByRole('menuitem', { name: 'Rename' }).click()
@@ -33,8 +33,8 @@ test.describe('F01 project management', () => {
     await expect(page.getByText('Give the project a name.')).toBeVisible()
   })
 
-  test('duplicate and delete', async ({ reel }) => {
-    const { page } = reel
+  test('duplicate and delete', async ({ framevane }) => {
+    const { page } = framevane
     await makeProject(page)
     await page.getByRole('button', { name: /^More actions for / }).click({ force: true })
     await page.getByRole('menuitem', { name: 'Duplicate' }).click()
@@ -45,19 +45,19 @@ test.describe('F01 project management', () => {
     await expect(page.getByRole('button', { name: /^Open / })).toHaveCount(1)
   })
 
-  test('F01-N3 a project whose folder was deleted shows as missing and can be removed', async ({ reel }) => {
-    const page = reel.page
+  test('F01-N3 a project whose folder was deleted shows as missing and can be removed', async ({ framevane }) => {
+    const page = framevane.page
     await makeProject(page)
-    const projectsDir = join(reel.root, 'projects')
+    const projectsDir = join(framevane.root, 'projects')
     for (const d of readdirSync(projectsDir)) rmSync(join(projectsDir, d), { recursive: true, force: true })
-    const fresh = await reel.relaunch()
+    const fresh = await framevane.relaunch()
     await expect(fresh.getByText('Folder missing').first()).toBeVisible()
     const broken = fresh.getByRole('button', { name: /^Open Project/ }).first()
     await expect(broken).toBeDisabled()
   })
 
-  test('search filters projects', async ({ reel }) => {
-    const { page } = reel
+  test('search filters projects', async ({ framevane }) => {
+    const { page } = framevane
     await makeProject(page)
     await page.getByRole('textbox', { name: 'Search projects' }).fill('zzz-no-match')
     await expect(page.getByText(/No projects match/)).toBeVisible()

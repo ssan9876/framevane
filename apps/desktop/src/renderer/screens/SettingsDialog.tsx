@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Button, Dialog, Kbd, Select, Switch, TextField, UnderlineTabs, TabPanel, Badge, useToast } from '@reel/ui'
+import { Button, Dialog, Kbd, Select, Switch, TextField, UnderlineTabs, TabPanel, Badge, useToast } from '@framevane/ui'
 import type { AgentSettings, McpConnectInfo } from '../../shared/api'
 import { useApp } from '../app/store'
 import { SHORTCUTS } from '../editor/shortcuts'
@@ -27,8 +27,8 @@ export function SettingsDialog() {
 }
 
 function General() {
-  const [info, setInfo] = useState<Awaited<ReturnType<typeof window.reel.app.info>> | null>(null)
-  useEffect(() => { void window.reel.app.info().then(setInfo) }, [])
+  const [info, setInfo] = useState<Awaited<ReturnType<typeof window.framevane.app.info>> | null>(null)
+  useEffect(() => { void window.framevane.app.info().then(setInfo) }, [])
   if (!info) return null
   const rows: [string, string][] = [['Version', info.version], ['Projects folder', info.projectsDir], ['App data', info.userData], ['FFmpeg', info.ffmpeg ?? 'Not found'], ['Local AI', info.sidecar]]
   return (
@@ -42,7 +42,7 @@ function Agents() {
   const [s, setS] = useState<AgentSettings | null>(null)
   const [key, setKey] = useState('')
   const toast = useToast()
-  useEffect(() => { void window.reel.agent.settings().then(setS) }, [])
+  useEffect(() => { void window.framevane.agent.settings().then(setS) }, [])
   if (!s) return null
   return (
     <div className="flex flex-col gap-4">
@@ -50,20 +50,20 @@ function Agents() {
       <section className="flex flex-col gap-2">
         <h3 className="text-base">Built-in agent panel (optional)</h3>
         <p className="text-sm text-muted">
-          The agent panel inside Reel needs an Anthropic API key and is billed by Anthropic per use. Not needed if you use Claude Code above. The key is encrypted with Windows DPAPI and never written to your project files.
+          The agent panel inside Framevane needs an Anthropic API key and is billed by Anthropic per use. Not needed if you use Claude Code above. The key is encrypted with Windows DPAPI and never written to your project files.
         </p>
         <div className="flex items-center gap-2 text-sm">
-          Status: {s.credentialSource === 'app_key' ? <Badge tone="success">Key saved in Reel</Badge> : s.credentialSource === 'environment' ? <Badge tone="accent">Using ANTHROPIC_API_KEY from the environment</Badge> : <Badge tone="warning">No key</Badge>}
+          Status: {s.credentialSource === 'app_key' ? <Badge tone="success">Key saved in Framevane</Badge> : s.credentialSource === 'environment' ? <Badge tone="accent">Using ANTHROPIC_API_KEY from the environment</Badge> : <Badge tone="warning">No key</Badge>}
         </div>
         <div className="flex items-end gap-2">
           <div className="flex-1"><TextField label="Anthropic API key" type="password" placeholder="sk-ant-…" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" /></div>
-          <Button variant="primary" disabled={!key.trim().startsWith('sk-')} onClick={async () => { setS(await window.reel.agent.setApiKey(key)); setKey(''); toast({ tone: 'success', title: 'API key saved' }) }}>Save key</Button>
-          {s.credentialSource === 'app_key' && <Button variant="ghost" onClick={async () => setS(await window.reel.agent.setApiKey(null))}>Remove</Button>}
+          <Button variant="primary" disabled={!key.trim().startsWith('sk-')} onClick={async () => { setS(await window.framevane.agent.setApiKey(key)); setKey(''); toast({ tone: 'success', title: 'API key saved' }) }}>Save key</Button>
+          {s.credentialSource === 'app_key' && <Button variant="ghost" onClick={async () => setS(await window.framevane.agent.setApiKey(null))}>Remove</Button>}
         </div>
         <div className="flex gap-4">
-          <Select label="Model" value={s.model} width={200} onValueChange={async (m) => setS(await window.reel.agent.setModel(m, s.effort))}
+          <Select label="Model" value={s.model} width={200} onValueChange={async (m) => setS(await window.framevane.agent.setModel(m, s.effort))}
             options={[{ value: 'claude-opus-5-5', label: 'Claude Opus 5.5', hint: 'default' }, { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', hint: 'cheaper' }, { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', hint: 'cheapest' }, { value: 'claude-fable-5-1', label: 'Claude Fable 5.1', hint: 'most capable' }]} />
-          <Select label="Effort" value={s.effort} width={120} onValueChange={async (e) => setS(await window.reel.agent.setModel(s.model, e as AgentSettings['effort']))}
+          <Select label="Effort" value={s.effort} width={120} onValueChange={async (e) => setS(await window.framevane.agent.setModel(s.model, e as AgentSettings['effort']))}
             options={['low', 'medium', 'high', 'xhigh', 'max'].map((v) => ({ value: v, label: v }))} />
         </div>
       </section>
@@ -75,18 +75,18 @@ function Agents() {
   )
 }
 
-/** S28 · Let Claude Code (or any MCP client) edit in Reel with its own login: no API key needed here. */
+/** S28 · Let Claude Code (or any MCP client) edit in Framevane with its own login: no API key needed here. */
 function ConnectClaude() {
   const [info, setInfo] = useState<McpConnectInfo | null>(null)
   const [busy, setBusy] = useState(false)
   const toast = useToast()
-  useEffect(() => { void window.reel.mcp.info().then(setInfo) }, [])
+  useEffect(() => { void window.framevane.mcp.info().then(setInfo) }, [])
   if (!info) return null
   const copy = async () => { await navigator.clipboard.writeText(info.claudeCommand); toast({ tone: 'success', title: 'Command copied', description: 'Paste it in a terminal, then start a new Claude Code session.' }) }
   return (
     <section className="flex flex-col gap-2 rounded-md border border-agent/40 bg-agent-soft/40 p-3">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-base">Use Reel from Claude Code</h3>
+        <h3 className="text-base">Use Framevane from Claude Code</h3>
         {info.listening ? <Badge tone="success">Ready on {info.url.replace('http://', '')}</Badge> : info.enabled ? <Badge tone="danger">Not listening</Badge> : <Badge>Off</Badge>}
       </div>
       <p className="text-sm text-muted">
@@ -96,7 +96,7 @@ function ConnectClaude() {
       <div className="flex gap-2">
         <Button variant="agent" loading={busy} disabled={!info.listening} onClick={async () => {
           setBusy(true)
-          const r = await window.reel.mcp.connectClaudeCode()
+          const r = await window.framevane.mcp.connectClaudeCode()
           setBusy(false)
           toast({ tone: r.ok ? 'success' : 'warning', title: r.ok ? 'Connected to Claude Code' : "Couldn't add it automatically", description: r.message })
         }}>Add to Claude Code</Button>
@@ -104,8 +104,8 @@ function ConnectClaude() {
       </div>
       <code className="block break-all rounded-sm bg-bg p-2 font-mono text-xs text-muted [user-select:text]">{info.claudeCommand}</code>
       <div className="flex flex-wrap gap-3 text-sm">
-        <Switch label="Allow connected agents" checked={info.enabled} onCheckedChange={async (v) => setInfo(await window.reel.mcp.setEnabled(v))} />
-        <Button size="sm" variant="ghost" onClick={async () => { setInfo(await window.reel.mcp.resetToken()); toast({ tone: 'info', title: 'New token', description: 'Connected sessions must be added again with the new command.' }) }}>Reset token</Button>
+        <Switch label="Allow connected agents" checked={info.enabled} onCheckedChange={async (v) => setInfo(await window.framevane.mcp.setEnabled(v))} />
+        <Button size="sm" variant="ghost" onClick={async () => { setInfo(await window.framevane.mcp.resetToken()); toast({ tone: 'info', title: 'New token', description: 'Connected sessions must be added again with the new command.' }) }}>Reset token</Button>
       </div>
     </section>
   )

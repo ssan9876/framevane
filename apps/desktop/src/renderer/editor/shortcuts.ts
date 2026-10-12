@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { projectDurationUs } from '@reel/doc'
+import { projectDurationUs } from '@framevane/doc'
 import { useApp } from '../app/store'
 import { deleteSelection, rippleDeleteSide, splitAtPlayhead, stepFrames } from './actions'
 
@@ -37,8 +37,8 @@ export function useEditorShortcuts(ctx: { seek(us: number): void; togglePlay(): 
       const k = e.key
       const handled = () => { e.preventDefault(); e.stopPropagation() }
       if (k === ' ' && !el.closest('button')) { handled(); ctx.togglePlay(); return }
-      if (ctrl && k.toLowerCase() === 'z' && !e.shiftKey) { handled(); void window.reel.doc.undo(doc.id); return }
-      if (ctrl && ((k.toLowerCase() === 'z' && e.shiftKey) || k.toLowerCase() === 'y')) { handled(); void window.reel.doc.redo(doc.id); return }
+      if (ctrl && k.toLowerCase() === 'z' && !e.shiftKey) { handled(); void window.framevane.doc.undo(doc.id); return }
+      if (ctrl && ((k.toLowerCase() === 'z' && e.shiftKey) || k.toLowerCase() === 'y')) { handled(); void window.framevane.doc.redo(doc.id); return }
       if (ctrl && k.toLowerCase() === 'b') { handled(); splitAtPlayhead(); return }
       if (ctrl && k.toLowerCase() === 'e') { handled(); s.openDialog('export'); return }
       if (ctrl && k.toLowerCase() === 'a') { handled(); s.select(doc.tracks.filter((t) => !t.locked).flatMap((t) => t.clips.map((c) => c.id))); return }
@@ -51,7 +51,7 @@ export function useEditorShortcuts(ctx: { seek(us: number): void; togglePlay(): 
       if (k === 'w' || k === 'W') { handled(); rippleDeleteSide('right'); return }
       if (k === 'p' || k === 'P') { handled(); useApp.setState({ magnet: !s.magnet }); return }
       if (k === 'n' || k === 'N') { handled(); useApp.setState({ snapping: !s.snapping }); return }
-      if (k === 'Z' && e.shiftKey) { handled(); window.dispatchEvent(new CustomEvent('reel:fit-timeline')); return }
+      if (k === 'Z' && e.shiftKey) { handled(); window.dispatchEvent(new CustomEvent('framevane:fit-timeline')); return }
       if (e.altKey && (k === 'k' || k === 'K')) { handled(); s.setError('The keyframe graph (S21) arrives in M1 with keyframes.'); return }
       const n = e.shiftKey ? Math.round(doc.canvas.fps.num / doc.canvas.fps.den) : 1
       if (k === 'ArrowLeft') { handled(); ctx.seek(stepFrames(doc, s.playheadUs, -n)); return }

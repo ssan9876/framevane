@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent as RPointerEvent } from 'react'
 import { ArrowLeftRight, Magnet, MousePointer2, Scissors, Trash2, ChevronsLeft, ChevronsRight, Maximize2, ZoomIn, ZoomOut } from 'lucide-react'
-import { ContextMenu, IconButton, IconToggle, Ruler, SnapGuide, TimelineClip, TrackHeader, Playhead as PlayheadMark, type ClipKind } from '@reel/ui'
-import { clipEnd, findClip, projectDurationUs, type Clip, type MediaClip, type OpInput, type Project, type Track } from '@reel/doc'
+import { ContextMenu, IconButton, IconToggle, Ruler, SnapGuide, TimelineClip, TrackHeader, Playhead as PlayheadMark, type ClipKind } from '@framevane/ui'
+import { clipEnd, findClip, projectDurationUs, type Clip, type MediaClip, type OpInput, type Project, type Track } from '@framevane/doc'
 import { useApp } from '../app/store'
 import { useEditor } from './Editor'
 import { addAssetToTimeline, deleteSelection, newId, rippleDeleteSide, splitAtPlayhead } from './actions'
@@ -58,8 +58,8 @@ export function Timeline() {
     if (d > 0) useApp.getState().setZoom(((scroller.current?.clientWidth ?? 1000) - HEADER_W - 40) / (d / 1e6))
   }, [])
   useEffect(() => {
-    window.addEventListener('reel:fit-timeline', fit)
-    return () => window.removeEventListener('reel:fit-timeline', fit)
+    window.addEventListener('framevane:fit-timeline', fit)
+    return () => window.removeEventListener('framevane:fit-timeline', fit)
   }, [fit])
   // fit once when a project opens with content
   useEffect(() => { if (durationUs > 0) fit() }, [doc.id]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -210,7 +210,7 @@ export function Timeline() {
 
   /* ── drop from the media panel ── */
   const onDrop = (e: DragEvent) => {
-    const assetId = e.dataTransfer.getData('application/x-reel-asset')
+    const assetId = e.dataTransfer.getData('application/x-framevane-asset')
     if (!assetId) return
     e.preventDefault()
     const at = xToUs(e.clientX)
@@ -259,13 +259,13 @@ export function Timeline() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onDragOver={(e) => { if (e.dataTransfer.types.includes('application/x-reel-asset')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' } }}
+        onDragOver={(e) => { if (e.dataTransfer.types.includes('application/x-framevane-asset')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' } }}
         onDrop={onDrop}
       >
         <div style={{ width: HEADER_W + contentW }} className="relative">
           {/* ruler */}
-          <div className="sticky top-0 z-[var(--reel-z-timeline-overlay)] flex" style={{ height: RULER_H }}>
-            <div className="sticky left-0 z-[calc(var(--reel-z-timeline-overlay)+2)] shrink-0 border-r border-b border-border bg-surface" style={{ width: HEADER_W }} />
+          <div className="sticky top-0 z-[var(--fv-z-timeline-overlay)] flex" style={{ height: RULER_H }}>
+            <div className="sticky left-0 z-[calc(var(--fv-z-timeline-overlay)+2)] shrink-0 border-r border-b border-border bg-surface" style={{ width: HEADER_W }} />
             <div className="cursor-pointer border-b border-border" onPointerDown={(e) => onLanePointerDown(e, null)}>
               <Ruler width={contentW} pxPerSec={pxPerSec} markers={doc.markers.map((m) => ({ at: m.atUs / 1e6, color: m.color, label: m.label }))} />
             </div>
@@ -273,7 +273,7 @@ export function Timeline() {
           {/* tracks */}
           {tracks.map((track) => (
             <div key={track.id} role="row" className="flex" style={{ height: trackH(track) }}>
-              <div className="sticky left-0 z-[calc(var(--reel-z-timeline-overlay)+1)] border-r border-border">
+              <div className="sticky left-0 z-[calc(var(--fv-z-timeline-overlay)+1)] border-r border-border">
                 <TrackHeader
                   name={track.name} kind={(track.kind === 'caption' ? 'caption' : track.kind) as ClipKind} height={trackH(track)} main={track.main}
                   locked={track.locked} onLocked={(v) => void useApp.getState().apply([{ type: 'set_track_flags', trackId: track.id, locked: v }])}
@@ -283,7 +283,7 @@ export function Timeline() {
               </div>
               <div className={`relative border-b border-border ${track.main ? 'bg-surface/40' : ''}`} style={{ width: contentW }} onPointerDown={(e) => onLanePointerDown(e, track)}>
                 {track.main && track.clips.length === 0 && (
-                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted">Drag media here, or press + on a clip in the media panel</span>
+                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted">Drop clips here, or press + on anything in Media</span>
                 )}
                 {track.clips.map((c) => {
                   const p = preview(c, track)
@@ -326,7 +326,7 @@ function ClipView({ doc, clip, track, start, dur, pxPerUs, selected, peaks, medi
     const assetW = (asset.durationUs / media.speed) * pxPerUs
     stripStyle = { backgroundImage: `url("${info.urls.filmstrip}")`, backgroundSize: `${assetW}px 100%`, backgroundPositionX: `${-(media.inUs / media.speed) * pxPerUs}px`, backgroundRepeat: 'no-repeat' }
   } else if (media && media.kind === 'image' && asset && info?.urls.thumb) {
-    stripStyle = { backgroundImage: `url("reel-media://thumb/${asset.id}")`, backgroundSize: 'auto 100%', backgroundRepeat: 'repeat-x' }
+    stripStyle = { backgroundImage: `url("framevane-media://thumb/${asset.id}")`, backgroundSize: 'auto 100%', backgroundRepeat: 'repeat-x' }
   }
   let waveform: number[] | undefined
   const p = media && asset?.hasAudio ? peaks.get(asset.id) : undefined
@@ -367,7 +367,7 @@ function Toolbar({ onFit }: { onFit: () => void }) {
   const pxPerSec = useApp((s) => s.pxPerSec)
   const hasSel = useApp((s) => s.selection.length > 0)
   return (
-    <div role="toolbar" aria-label="Timeline tools" className="flex h-[var(--reel-toolbar-h)] shrink-0 items-center gap-0.5 border-b border-border bg-surface px-2">
+    <div role="toolbar" aria-label="Timeline tools" className="flex h-[var(--fv-toolbar-h)] shrink-0 items-center gap-0.5 border-b border-border bg-surface px-2">
       <IconButton label="Select" shortcut="A" icon={<MousePointer2 />} className="bg-surface-3 text-fg" />
       <span className="mx-1 h-4 w-px bg-border" />
       <IconButton label="Split at playhead" shortcut="Ctrl+B" icon={<Scissors />} onClick={splitAtPlayhead} />
@@ -379,7 +379,7 @@ function Toolbar({ onFit }: { onFit: () => void }) {
       <IconToggle label="Snapping" shortcut="N" icon={<ArrowLeftRight />} pressed={snapping} onPressedChange={(v) => useApp.setState({ snapping: v })} />
       <span className="mx-1 h-4 w-px bg-border" />
       <IconButton label="Zoom out" shortcut="Ctrl+-" icon={<ZoomOut />} onClick={() => useApp.getState().setZoom(pxPerSec / 1.25)} />
-      <input type="range" aria-label="Timeline zoom" min={Math.log(2)} max={Math.log(600)} step={0.01} value={Math.log(pxPerSec)} onChange={(e) => useApp.getState().setZoom(Math.exp(Number(e.target.value)))} className="w-28 accent-[var(--reel-color-accent)]" />
+      <input type="range" aria-label="Timeline zoom" min={Math.log(2)} max={Math.log(600)} step={0.01} value={Math.log(pxPerSec)} onChange={(e) => useApp.getState().setZoom(Math.exp(Number(e.target.value)))} className="w-28 accent-[var(--fv-color-accent)]" />
       <IconButton label="Zoom in" shortcut="Ctrl+=" icon={<ZoomIn />} onClick={() => useApp.getState().setZoom(pxPerSec * 1.25)} />
       <IconButton label="Fit to window" shortcut="Shift+Z" icon={<Maximize2 />} onClick={onFit} />
     </div>

@@ -1,4 +1,4 @@
-"""reel local AI sidecar: an MCP server over stdio.
+"""framevane local AI sidecar: an MCP server over stdio.
 
 The editor's agents call these tools exactly like any third-party MCP server. Tools take file paths, write any
 outputs under the cache dir the editor passes, and report progress. stdout is the MCP channel: log to stderr only.
@@ -38,11 +38,11 @@ def _add_cuda_dll_dirs() -> list[str]:
 
 
 CUDA_DIRS = _add_cuda_dll_dirs()
-MODELS_DIR = os.environ.get("REEL_MODELS_DIR") or str(Path.home() / ".cache" / "reel-models")
+MODELS_DIR = os.environ.get("FRAMEVANE_MODELS_DIR") or str(Path.home() / ".cache" / "framevane-models")
 
 mcp = MCPServer(
-    "reel-local-ai",
-    instructions="Local AI tools for the reel video editor. Paths are absolute. Long tools report progress.",
+    "framevane-local-ai",
+    instructions="Local AI tools for the framevane video editor. Paths are absolute. Long tools report progress.",
 )
 
 _models: dict[tuple[str, str, str], Any] = {}
@@ -52,7 +52,7 @@ _gpu_lock = threading.Lock()  # one GPU model runs at a time (8 GB card)
 def _whisper(model: str):
     from faster_whisper import WhisperModel
 
-    attempts = [("cuda", "float16"), ("cpu", "int8")] if os.environ.get("REEL_FORCE_CPU") != "1" else [("cpu", "int8")]
+    attempts = [("cuda", "float16"), ("cpu", "int8")] if os.environ.get("FRAMEVANE_FORCE_CPU") != "1" else [("cpu", "int8")]
     last: Exception | None = None
     for device, compute in attempts:
         key = (model, device, compute)

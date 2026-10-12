@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { OpInput, Project } from '@reel/doc'
+import type { OpInput, Project } from '@framevane/doc'
 import type { AgentEvent, AgentRunStatus, ExternalActivity, JobEvent, MediaInfo, ProjectSummary, ProposedOp } from '../../shared/api'
 
 /**
@@ -92,12 +92,12 @@ export const useApp = create<State>((set, get) => ({
 
   go(route) {
     const cur = get().route
-    if (cur.name === 'editor' && (route.name !== 'editor' || route.projectId !== cur.projectId)) void window.reel.projects.close(cur.projectId)
+    if (cur.name === 'editor' && (route.name !== 'editor' || route.projectId !== cur.projectId)) void window.framevane.projects.close(cur.projectId)
     set({ route, ...(route.name !== 'editor' ? { doc: null, media: [], mediaLoaded: false, selection: [], playheadUs: 0, agentRuns: [] } : {}) })
   },
 
   async loadProjects() {
-    set({ projects: await window.reel.projects.list() })
+    set({ projects: await window.framevane.projects.list() })
   },
 
   setDoc(doc, canUndo, canRedo) {
@@ -108,7 +108,7 @@ export const useApp = create<State>((set, get) => ({
   async apply(ops) {
     const { doc } = get()
     if (!doc || !ops.length) return false
-    const r = await window.reel.doc.apply(doc.id, doc.version, ops)
+    const r = await window.framevane.doc.apply(doc.id, doc.version, ops)
     if (!r.ok) {
       // a stale version means another edit landed first (e.g. an agent); the next doc:change brings us up to date
       if (r.code !== 'stale') set({ error: r.message })
@@ -175,17 +175,17 @@ export const useApp = create<State>((set, get) => ({
 /** Wire main-process events into the store once. */
 export function connectEvents() {
   const offs = [
-    window.reel.doc.onChange((e) => {
+    window.framevane.doc.onChange((e) => {
       const { route } = useApp.getState()
       if (route.name === 'editor' && route.projectId === e.projectId) useApp.getState().setDoc(e.doc, e.canUndo, e.canRedo)
     }),
-    window.reel.media.onChange((m) => {
+    window.framevane.media.onChange((m) => {
       const mm = m as MediaInfo & { projectId: string }
       const { route, media } = useApp.getState()
       if (route.name !== 'editor' || route.projectId !== mm.projectId) return
       useApp.setState({ media: media.some((x) => x.asset.id === mm.asset.id) ? media.map((x) => (x.asset.id === mm.asset.id ? mm : x)) : [...media, mm] })
     }),
-    window.reel.jobs.onEvent((j) => {
+    window.framevane.jobs.onEvent((j) => {
       useApp.setState((s) => {
         const jobs = { ...s.jobs, [j.id]: j }
         // keep finished jobs briefly for the tray, then drop them
@@ -193,7 +193,7 @@ export function connectEvents() {
         return { jobs }
       })
     }),
-    window.reel.agent.onEvent((e) => useApp.getState().agentEvent(e)),
+    window.framevane.agent.onEvent((e) => useApp.getState().agentEvent(e)),
   ]
   return () => offs.forEach((f) => f())
 }

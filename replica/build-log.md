@@ -1,4 +1,4 @@
-# Build log: reel (M0 vertical slice)
+# Build log: framevane (M0 vertical slice)
 
 Branch `build/m0-vertical-slice`. Screenshots in `replica/clone-screens/` come from the e2e runs at 1600×960.
 Desktop app: the minimum window is 1280×720, so the skill's 390 px mobile check doesn't apply (no mobile target in scope).
@@ -13,7 +13,7 @@ node e2e/vertical-slice.mjs                                        # F01 F02 F04
 node e2e/agent-flow.mjs                                            # F12 with the test-double model (no API key needed)
 cd ../../packages/doc && npx vitest run                            # 20 op/timeline tests
 ```
-The local AI sidecar needs `uv` (installed). The first transcription downloads Whisper large-v3-turbo (~1.6 GB) to `%APPDATA%\Reel\models`.
+The local AI sidecar needs `uv` (installed). The first transcription downloads Whisper large-v3-turbo (~1.6 GB) to `%APPDATA%\Framevane\models`.
 
 ## Screens
 
@@ -58,7 +58,7 @@ Count: 31 screens. 12 done, 9 partial, 10 stub. Every screen is reachable.
 
 ## What is not proven yet (said plainly)
 
-- **The live Claude API has not been called.** There is no Anthropic key on this machine, so F12 ran on a deterministic test double (`REEL_FAKE_AGENT=1`, `src/main/agent/fake-model.ts`). It drives the real tools, fork, review and apply, but not the model's own judgement or the request format against the real API (betas, `fallbacks: "default"`, thinking display "updates"). First thing to do with a key: run "cut the silences and add captions" on `replica/seed-media/talk.mp4`.
+- **The live Claude API has not been called.** There is no Anthropic key on this machine, so F12 ran on a deterministic test double (`FRAMEVANE_FAKE_AGENT=1`, `src/main/agent/fake-model.ts`). It drives the real tools, fork, review and apply, but not the model's own judgement or the request format against the real API (betas, `fallbacks: "default"`, thinking display "updates"). First thing to do with a key: run "cut the silences and add captions" on `replica/seed-media/talk.mp4`.
 - **Codecs:** real phone footage (HEVC 10-bit HDR, VFR) and ProRes/AVI have not been tested. The mezzanine path is written but unexercised.
 - **Crash recovery:** journal replay is implemented, but no kill-mid-edit test exists yet.
 - **Long media:** preview audio decodes the whole file into memory. That is fine up to about 20 minutes; streaming decode is needed for long recordings.
@@ -74,12 +74,12 @@ Count: 31 screens. 12 done, 9 partial, 10 stub. Every screen is reachable.
 
 ## Connect Claude Code (2026-10-11, pulled forward from M2)
 
-Reel is now an MCP server, so a Claude Code session (your own login, no API key in Reel) edits the open project directly.
+Framevane is now an MCP server, so a Claude Code session (your own login, no API key in Framevane) edits the open project directly.
 - `src/main/editor-mcp.ts`: streamable HTTP on `127.0.0.1:47821/mcp` (stateless), bearer token (settings table), refuses non-local Host and any browser Origin.
 - Tools: the 12 agent tools plus list_projects, open_project, create_project, import_media, add_to_timeline, undo, redo, export_video (23).
 - Every mutating call is one op batch, so it's one undo step. Edits show live, with a toast (Undo) and an activity feed in the agent panel.
 - The window reports the open project, playhead and selection, so "caption the selected clip" works. Export is delegated to the window (WebCodecs).
-- Settings → Agents & AI: "Add to Claude Code" runs `claude mcp add --scope user --transport http reel …` with the token; there's also Copy command, Reset token, and an on/off switch.
+- Settings → Agents & AI: "Add to Claude Code" runs `claude mcp add --scope user --transport http framevane …` with the token; there's also Copy command, Reset token, and an on/off switch.
 - Harder than expected:
   - The first report of the open project could lag the agent's first call; there's now a fallback to the project loaded in main.
   - Transcription jobs linked MCP calls to a non-existent agent run (FK error). Only real in-app runs link now.

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { FolderOpen } from 'lucide-react'
-import { Button, Dialog, JobProgress, Select, TextField, useToast } from '@reel/ui'
-import { formatUs, projectDurationUs } from '@reel/doc'
+import { Button, Dialog, JobProgress, Select, TextField, useToast } from '@framevane/ui'
+import { formatUs, projectDurationUs } from '@framevane/doc'
 import { useApp } from '../app/store'
 import { exportProject, type ExportProgress } from '../engine/export'
 
@@ -38,7 +38,7 @@ export function ExportDialog() {
   const sizeMb = (bitrate / 8 / 1e6) * (projectDurationUs(doc) / 1e6)
 
   async function start() {
-    const outputPath = await window.reel.app.pickSavePath({ defaultName: name, ext: 'mp4' })
+    const outputPath = await window.framevane.app.pickSavePath({ defaultName: name, ext: 'mp4' })
     if (!outputPath) return
     setError(null)
     abort.current = new AbortController()
@@ -47,7 +47,7 @@ export function ExportDialog() {
       const r = await exportProject(doc, { projectId: doc.id, outputPath, width: W, height: H, fps: Number(fps), bitrate, codec }, setProgress, abort.current.signal)
       setProgress(null)
       useApp.getState().openDialog(null)
-      toast({ tone: 'success', title: 'Export finished', description: `${r.path.split(/[\\/]/).pop()} · ${(r.bytes / 1e6).toFixed(1)} MB`, action: { label: 'Show file', onClick: () => void window.reel.app.showItemInFolder(r.path) } })
+      toast({ tone: 'success', title: 'Your video is ready', description: `${r.path.split(/[\\/]/).pop()} · ${(r.bytes / 1e6).toFixed(1)} MB`, action: { label: 'Show file', onClick: () => void window.framevane.app.showItemInFolder(r.path) } })
     } catch (e) {
       if ((e as Error).name === 'AbortError') { setProgress(null); return }
       setError(e instanceof Error ? e.message : String(e))
@@ -55,7 +55,7 @@ export function ExportDialog() {
   }
 
   return (
-    <Dialog open onOpenChange={(o) => !o && close()} title="Export video" description="Rendered with the same engine as the preview, on your GPU." busy={busy} width={480}
+    <Dialog open onOpenChange={(o) => !o && close()} title="Export video" description="Exactly what the preview shows, rendered on your GPU. Never a watermark." busy={busy} width={480}
       footer={busy
         ? <Button variant="secondary" onClick={() => abort.current?.abort()}>Cancel export</Button>
         : <><Button variant="ghost" onClick={close}>Close</Button><Button variant="primary" icon={<FolderOpen className="size-3.5" />} onClick={() => void start()}>Export…</Button></>}>

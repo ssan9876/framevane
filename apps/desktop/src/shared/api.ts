@@ -1,6 +1,6 @@
-import type { AssetRef, OpInput, Project } from '@reel/doc'
+import type { AssetRef, OpInput, Project } from '@framevane/doc'
 
-/** The typed bridge between renderer and main (exposed as window.reel by the preload). */
+/** The typed bridge between renderer and main (exposed as window.framevane by the preload). */
 
 export interface ProjectSummary {
   id: string
@@ -18,7 +18,7 @@ export interface ProjectSummary {
 
 export interface MediaInfo {
   asset: AssetRef
-  /** reel-media:// URLs the renderer can fetch. */
+  /** framevane-media:// URLs the renderer can fetch. */
   urls: { media: string; thumb: string | null; peaks: string | null; filmstrip: string | null }
   status: 'ready' | 'preparing' | 'missing' | 'unsupported'
   /** Present while a background job prepares the asset (mezzanine transcode, thumbnails, waveform). */
@@ -129,7 +129,7 @@ export interface ReelApi {
     previewDoc(runId: string, includeOpIds: string[]): Promise<Project | null>
     onEvent(cb: (e: AgentEvent) => void): () => void
   }
-  /** Reel as an MCP server for Claude Code and other agents. */
+  /** Framevane as an MCP server for Claude Code and other agents. */
   mcp: {
     info(): Promise<McpConnectInfo>
     setEnabled(on: boolean): Promise<McpConnectInfo>
@@ -146,5 +146,5 @@ export interface ReelApi {
 }
 
 declare global {
-  interface Window { reel: ReelApi }
+  interface Window { framevane: ReelApi }
 }

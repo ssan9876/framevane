@@ -218,7 +218,7 @@ export function Select({ label, value, onValueChange, options, hideLabel, width 
           <RSelect.Icon><ChevronDown className="size-3.5 text-muted" /></RSelect.Icon>
         </RSelect.Trigger>
         <RSelect.Portal>
-          <RSelect.Content position="popper" sideOffset={4} className="z-[var(--reel-z-popover)] max-h-72 min-w-[var(--radix-select-trigger-width)] rounded-md bg-surface-2 p-1 shadow-pop">
+          <RSelect.Content position="popper" sideOffset={4} className="z-[var(--fv-z-popover)] max-h-72 min-w-[var(--radix-select-trigger-width)] rounded-md bg-surface-2 p-1 shadow-pop">
             <RSelect.Viewport>
               {options.map((o) => (
                 <RSelect.Item key={o.value} value={o.value} disabled={o.disabled} className="flex h-7 cursor-default items-center gap-2 rounded-sm pr-2 pl-6 text-sm outline-none relative data-[highlighted]:bg-accent-soft data-[disabled]:text-disabled">

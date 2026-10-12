@@ -1,5 +1,5 @@
 import { ALL_FORMATS, AudioBufferSink, Input, UrlSource, VideoSampleSink, type InputVideoTrack, type VideoSample } from 'mediabunny'
-import type { AssetRef } from '@reel/doc'
+import type { AssetRef } from '@framevane/doc'
 
 /**
  * Decoded media for the compositor and the audio graph.
@@ -7,7 +7,7 @@ import type { AssetRef } from '@reel/doc'
  * a jump restarts the reader from the nearest keyframe. Images: ImageBitmap. Audio: one AudioBuffer per asset.
  */
 
-export const mediaUrl = (assetId: string) => `reel-media://asset/${encodeURIComponent(assetId)}`
+export const mediaUrl = (assetId: string) => `framevane-media://asset/${encodeURIComponent(assetId)}`
 
 class Lock {
   private p: Promise<unknown> = Promise.resolve()

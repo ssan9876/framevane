@@ -35,7 +35,7 @@ export function AssetCard({ title, kind, thumb, duration, state = 'ready', progr
   const busy = state === 'generating'
   return (
     <div
-      className="group relative flex w-[var(--reel-asset-card-w)] flex-col gap-1"
+      className="group relative flex w-[var(--fv-asset-card-w)] flex-col gap-1"
       draggable={state === 'ready' || state === 'added'}
       onMouseEnter={() => onPreview?.(true)}
       onMouseLeave={() => onPreview?.(false)}
@@ -46,13 +46,13 @@ export function AssetCard({ title, kind, thumb, duration, state = 'ready', progr
         aria-label={`${title}${duration ? `, ${duration}` : ''}${state === 'missing' ? ', file missing' : ''}`}
         onClick={onSelect}
         className={cn(
-          'relative h-[var(--reel-asset-card-h)] overflow-hidden rounded-sm bg-surface-3 bg-cover bg-center outline-offset-1',
+          'relative h-[var(--fv-asset-card-h)] overflow-hidden rounded-sm bg-surface-3 bg-cover bg-center outline-offset-1',
           selected ? 'ring-2 ring-accent' : 'ring-1 ring-border group-hover:ring-border-strong',
         )}
         style={thumb ? { background: thumb } : undefined}
       >
         {!thumb && <span className="absolute inset-0 grid place-items-center text-muted [&_svg]:size-5">{kindIcon[kind]}</span>}
-        {busy && <span className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent)] bg-[length:200px_100%] animate-[reel-shimmer_1.2s_linear_infinite]" />}
+        {busy && <span className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent)] bg-[length:200px_100%] animate-[framevane-shimmer_1.2s_linear_infinite]" />}
         {state === 'missing' && (
           <span className="absolute inset-0 grid place-items-center bg-scrim/60 text-warning"><AlertTriangle className="size-5" /></span>
         )}
@@ -76,7 +76,7 @@ export function AssetCard({ title, kind, thumb, duration, state = 'ready', progr
         </button>
       )}
       {busy && (
-        <div className="absolute inset-x-1 top-[calc(var(--reel-asset-card-h)-8px)]">
+        <div className="absolute inset-x-1 top-[calc(var(--fv-asset-card-h)-8px)]">
           <ProgressBar value={progress} label={`Preparing ${title}`} />
         </div>
       )}

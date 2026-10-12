@@ -1,17 +1,17 @@
-// F12 · Ask the agent to edit → review proposal (S29) → apply → undo. Uses the test double model (REEL_FAKE_AGENT=1)
+// F12 · Ask the agent to edit → review proposal (S29) → apply → undo. Uses the test double model (FRAMEVANE_FAKE_AGENT=1)
 // so it runs without an API key; every tool, the forked doc, the review UI and apply/undo are real.
 import { resolve } from 'node:path'
 import { launch } from './harness.mjs'
 
 const SHOTS = resolve('../../replica/clone-screens')
 const talk = resolve('../../replica/seed-media/talk.mp4')
-const { app, page, errors } = await launch({ pickFiles: [talk], env: { REEL_FAKE_AGENT: '1' } })
+const { app, page, errors } = await launch({ pickFiles: [talk], env: { FRAMEVANE_FAKE_AGENT: '1' } })
 const step = (s) => console.log(`· ${s}`)
 const shot = (id) => page.screenshot({ path: `${SHOTS}/${id}.png`, timeout: 10_000 })
 const dur = async () => (await page.locator('dt:text("Duration") + dd').textContent())?.trim()
 
 try {
-  await page.getByRole('heading', { name: 'Start something' }).waitFor()
+  await page.getByRole('heading', { name: 'What are we making?' }).waitFor()
   await page.getByText('choose files').click()
   await page.locator('[data-clip-id]').first().waitFor({ timeout: 30_000 })
   await page.waitForTimeout(1500)

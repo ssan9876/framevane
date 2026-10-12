@@ -1,5 +1,5 @@
 {
-  "name": "@reel/desktop",
+  "name": "@framevane/desktop",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -14,8 +14,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "0.133.0",
     "@modelcontextprotocol/sdk": "1.32.1",
-    "@reel/doc": "workspace:^",
-    "@reel/ui": "workspace:^",
+    "@framevane/doc": "workspace:^",
+    "@framevane/ui": "workspace:^",
     "electron": "44.7.0",
     "lucide-react": "1.55.0",
     "mediabunny": "1.61.3",

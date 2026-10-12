@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { ToastProvider, TooltipProvider, useToast } from '@reel/ui'
+import { ToastProvider, TooltipProvider, useToast } from '@framevane/ui'
 import { connectEvents, useApp } from './store'
 import { connectMcpBridge } from './mcpBridge'
 import { Home } from '../screens/Home'
@@ -25,7 +25,7 @@ function McpBridge() {
     useApp.getState().pushActivity(a)
     const doc = useApp.getState().doc
     if (a.status === 'done' && a.mutates && doc) {
-      toast({ tone: 'info', title: `${a.client}: ${a.tool.replace(/_/g, ' ')}`, description: a.summary || undefined, action: { label: 'Undo', onClick: () => void window.reel.doc.undo(doc.id) } })
+      toast({ tone: 'info', title: `${a.client}: ${a.tool.replace(/_/g, ' ')}`, description: a.summary || undefined, action: { label: 'Undo', onClick: () => void window.framevane.doc.undo(doc.id) } })
     } else if (a.status === 'error') {
       toast({ tone: 'warning', title: `${a.client}: ${a.tool.replace(/_/g, ' ')} failed`, description: a.summary })
     }

@@ -10,8 +10,8 @@ test.describe('F04 auto captions', () => {
   test.describe('with speech', () => {
     test.use({ pickFiles: [files.talk] })
 
-    test('F04-H1 + E3 captions are generated, drawn, and regenerating replaces them', async ({ reel }) => {
-      const { page } = reel
+    test('F04-H1 + E3 captions are generated, drawn, and regenerating replaces them', async ({ framevane }) => {
+      const { page } = framevane
       await newProjectFromFiles(page)
       await generate(page)
       await expect(page.getByText(/Added \d+ caption lines/).first()).toBeVisible({ timeout: 180_000 })
@@ -37,8 +37,8 @@ test.describe('F04 auto captions', () => {
       await expect(clips(page, 'cap-')).toHaveCount(n)
     })
 
-    test('F04-E4 caption text with emoji and accents persists after restart', async ({ reel }) => {
-      let page = reel.page
+    test('F04-E4 caption text with emoji and accents persists after restart', async ({ framevane }) => {
+      let page = framevane.page
       await newProjectFromFiles(page)
       await generate(page)
       await expect(page.getByText(/Added \d+ caption lines/).first()).toBeVisible({ timeout: 180_000 })
@@ -47,7 +47,7 @@ test.describe('F04 auto captions', () => {
       await box.fill('Café ☕ ünïcode — ok')
       await box.press('Enter')
       await expect(clips(page, 'cap-').first()).toContainText('Café ☕')
-      page = await reel.relaunch()
+      page = await framevane.relaunch()
       await page.getByRole('button', { name: /^Open / }).first().click()
       await expect(clips(page, 'cap-').first()).toContainText('Café ☕ ünïcode — ok')
     })
@@ -55,8 +55,8 @@ test.describe('F04 auto captions', () => {
 
   test.describe('no audio', () => {
     test.use({ pickFiles: [files.broll] })
-    test('F04-E1 a clip without sound disables Generate', async ({ reel }) => {
-      const { page } = reel
+    test('F04-E1 a clip without sound disables Generate', async ({ framevane }) => {
+      const { page } = framevane
       await newProjectFromFiles(page)
       await page.getByRole('tab', { name: 'Captions' }).click()
       await expect(page.getByRole('button', { name: /Generate captions/ })).toBeDisabled()
@@ -66,8 +66,8 @@ test.describe('F04 auto captions', () => {
 
   test.describe('no speech', () => {
     test.use({ pickFiles: [files.avi] })
-    test('F04-E2 tone-only audio reports no speech and adds nothing', async ({ reel }) => {
-      const { page } = reel
+    test('F04-E2 tone-only audio reports no speech and adds nothing', async ({ framevane }) => {
+      const { page } = framevane
       await newProjectFromFiles(page)
       await expect(clips(page)).toHaveCount(1, { timeout: 60_000 })
       await generate(page)
@@ -77,9 +77,9 @@ test.describe('F04 auto captions', () => {
   })
 
   test.describe('sidecar unavailable', () => {
-    test.use({ pickFiles: [files.talk], reelEnv: { REEL_SIDECAR_DIR: 'C:/nowhere/reel-sidecar' } })
-    test('F04-N1 a missing local AI runtime gives a clear error, not a hang', async ({ reel }) => {
-      const { page } = reel
+    test.use({ pickFiles: [files.talk], reelEnv: { FRAMEVANE_SIDECAR_DIR: 'C:/nowhere/framevane-sidecar' } })
+    test('F04-N1 a missing local AI runtime gives a clear error, not a hang', async ({ framevane }) => {
+      const { page } = framevane
       await newProjectFromFiles(page)
       await generate(page)
       await expect(page.getByText("Captions couldn't be generated").first()).toBeVisible({ timeout: 60_000 })

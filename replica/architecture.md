@@ -1,4 +1,4 @@
-# Architecture: reel (working name), a rebuild of CapCut Desktop's core features plus a pluggable agent layer
+# Architecture: framevane (working name), a rebuild of CapCut Desktop's core features plus a pluggable agent layer
 
 Inputs: `recon.md` (S01–S31, F01–F15), `features.csv` (61 must / 52 should / 22 could / 9 skip).
 Target machine: Windows 11, Ryzen 7 7700X, 32 GB RAM, RTX 4060 (CUDA + NVENC) plus an AMD iGPU.
@@ -24,7 +24,7 @@ accounts and no payments. The only network calls are the user's own API keys and
 | encode | **WebCodecs VideoEncoder** (NVENC H.264/HEVC/AV1), muxed by Mediabunny | **The same compositor renders preview and export**, so what you see is what you export. |
 | audio | Web Audio for preview; **OfflineAudioContext** renders the export mix to WAV | One graph definition is built for both contexts. |
 | FFmpeg (bundled, LGPL build) | probe, proxy/mezzanine transcode, waveforms, thumbnails, final mux + AAC/MP3/Opus encode, GIF/ProRes/WebM, loudnorm, vidstab | Covers what WebCodecs can't do. Runs as a child process in the main process. |
-| local AI | **Python sidecar** (uv-managed, Python 3.12, PyTorch CUDA 12 + ONNX Runtime CUDA/DirectML), served as an **MCP server over stdio** | The editor's agents call local AI the same way they call any third-party MCP server. Models download on first use to `%LOCALAPPDATA%\reel\models`. |
+| local AI | **Python sidecar** (uv-managed, Python 3.12, PyTorch CUDA 12 + ONNX Runtime CUDA/DirectML), served as an **MCP server over stdio** | The editor's agents call local AI the same way they call any third-party MCP server. Models download on first use to `%LOCALAPPDATA%\framevane\models`. |
 | local models | faster-whisper large-v3-turbo (captions, word timings) · RobustVideoMatting + BiRefNet + SAM 2 (background removal, cutout, brush) · Real-ESRGAN (upscale) · RIFE (frame interpolation) · Demucs v4 (stems) · DeepFilterNet 3 (noise reduction / enhance voice) · Kokoro / Piper (TTS) · LaMa (inpaint) · PySceneDetect · librosa beats · YOLO/face tracker (auto reframe) | All free, with open weights. Each fits in 8 GB of VRAM on its own. The sidecar runs one GPU model at a time. |
 | agents (in-app) | **Anthropic TS SDK `@anthropic-ai/sdk`**, Tool Runner (`client.beta.messages.toolRunner` + `betaZodTool`), model **`claude-opus-5-5`** by default (picker: Sonnet 5.5 / Haiku 5.5 for cheap batch agents) | Edit-op schemas are already zod, so they become tools for free. Per-turn hooks provide permission gates and cancellation. |
 | agent tools from elsewhere | **`@modelcontextprotocol/sdk` client** in the main process (stdio + streamable HTTP) | Supports local stdio servers (the AI sidecar, filesystem tools) and remote ones (Higgsfield etc.). The API's server-side MCP connector is URL-only, so a local client is required. |

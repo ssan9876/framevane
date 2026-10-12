@@ -3,7 +3,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import {
   applyOps, buildCaptionClips, clipEnd, findClip, formatUs, mergeRanges, projectDurationUs, sourceTimeAt, timelineSilences, timelineWords,
   type MediaClip, type OpInput, type Project, type SourceWord,
-} from '@reel/doc'
+} from '@framevane/doc'
 import { runFfmpeg } from '../ffmpeg'
 import type { Analysis } from '../analysis'
 import type { Media } from '../media'

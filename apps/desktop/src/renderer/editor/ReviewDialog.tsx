@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Checkbox, Dialog, OpRow, useToast } from '@reel/ui'
-import { formatUs, projectDurationUs, type Project } from '@reel/doc'
+import { Button, Checkbox, Dialog, OpRow, useToast } from '@framevane/ui'
+import { formatUs, projectDurationUs, type Project } from '@framevane/doc'
 import { useApp } from '../app/store'
 import { Player } from '../engine/player'
 
@@ -19,7 +19,7 @@ export function ReviewDialog() {
   useEffect(() => {
     if (!runId) return
     let alive = true
-    void window.reel.agent.previewDoc(runId, [...included]).then((d) => alive && setPreview(d))
+    void window.framevane.agent.previewDoc(runId, [...included]).then((d) => alive && setPreview(d))
     return () => { alive = false }
   }, [runId, included])
 
@@ -30,10 +30,10 @@ export function ReviewDialog() {
   async function apply() {
     if (!runId) return
     setBusy(true)
-    const r = await window.reel.agent.review(runId, [...included], 'apply')
+    const r = await window.framevane.agent.review(runId, [...included], 'apply')
     setBusy(false)
     if (r.ok) {
-      toast({ tone: 'success', title: `Applied ${r.applied} edit${r.applied === 1 ? '' : 's'}`, description: r.conflicted ? `${r.conflicted} no longer fit the timeline and were skipped.` : 'Undo with Ctrl+Z.', action: { label: 'Undo', onClick: () => void window.reel.doc.undo(doc.id) } })
+      toast({ tone: 'success', title: `Applied ${r.applied} edit${r.applied === 1 ? '' : 's'}`, description: r.conflicted ? `${r.conflicted} no longer fit the timeline and were skipped.` : 'Undo with Ctrl+Z.', action: { label: 'Undo', onClick: () => void window.framevane.doc.undo(doc.id) } })
       close()
     } else {
       toast({ tone: 'warning', title: "The edits weren't applied", description: r.message })
@@ -44,7 +44,7 @@ export function ReviewDialog() {
   return (
     <Dialog open onOpenChange={(o) => !o && close()} title="Review the agent's edits" description={`${run.proposal.summary}. Untick anything you don't want.`} width={880} busy={busy}
       footer={<>
-        <Button variant="ghost" onClick={async () => { await window.reel.agent.review(run.runId, [], 'reject'); close() }}>Discard all</Button>
+        <Button variant="ghost" onClick={async () => { await window.framevane.agent.review(run.runId, [], 'reject'); close() }}>Discard all</Button>
         <Button variant="primary" loading={busy} disabled={included.size === 0} onClick={() => void apply()}>Apply {included.size} edit{included.size === 1 ? '' : 's'}</Button>
       </>}>
       <div className="grid grid-cols-[1fr_340px] gap-4">
@@ -76,16 +76,23 @@ function MiniPreview({ doc }: { doc: Project }) {
   const [playing, setPlaying] = useState(false)
   const player = useMemo(() => new Player(doc, (us) => setT(us), () => setPlaying(false)), []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { player.setDoc(doc) }, [doc, player])
+  // like the main player, decode only media that is ready (BUG-009: without this the preview stayed black)
+  const media = useApp((s) => s.media)
+  const mediaLoaded = useApp((s) => s.mediaLoaded)
+  useEffect(() => {
+    const ready = new Set(media.filter((m) => m.status === 'ready').map((m) => m.asset.id))
+    player.setAvailability((id) => mediaLoaded && ready.has(id))
+  }, [media, mediaLoaded, player])
   useEffect(() => { player.attach(canvas.current); return () => { void player.dispose() } }, [player])
   const dur = projectDurationUs(doc)
   const w = 340
   const h = Math.round((w * doc.canvas.height) / doc.canvas.width)
   return (
     <div className="flex flex-col gap-2">
-      <canvas ref={canvas} width={w * 2} height={h * 2} style={{ width: w, height: h }} className="rounded-md bg-scrim" />
+      <canvas ref={canvas} width={w * 2} height={h * 2} style={{ width: w, height: h }} className="rounded-md bg-scrim" role="img" aria-label="Preview of the proposed edits" />
       <div className="flex items-center gap-2">
         <Button size="sm" onClick={() => { if (playing) { player.pause(); setPlaying(false) } else { void player.play(t); setPlaying(true) } }}>{playing ? 'Pause' : 'Play'}</Button>
-        <input type="range" aria-label="Preview position" min={0} max={dur} value={t} onChange={(e) => { const v = Number(e.target.value); setT(v); player.seek(v) }} className="flex-1 accent-[var(--reel-color-agent)]" />
+        <input type="range" aria-label="Preview position" min={0} max={dur} value={t} onChange={(e) => { const v = Number(e.target.value); setT(v); player.seek(v) }} className="flex-1 accent-[var(--fv-color-agent)]" />
         <span className="font-mono text-xs text-muted">{formatUs(t)}</span>
       </div>
     </div>

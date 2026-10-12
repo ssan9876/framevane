@@ -5,12 +5,12 @@ import { Readable } from 'node:stream'
 import type { Media } from './media'
 
 /**
- * reel-media:// serves ONLY registered assets (by id), never arbitrary paths:
+ * framevane-media:// serves ONLY registered assets (by id), never arbitrary paths:
  *   asset/<id>  the playable file (original or mezzanine), with HTTP Range support for WebCodecs demuxing
  *   thumb/<id>  poster jpg · strip/<id> filmstrip jpg · peaks/<id> waveform peaks (Uint8, 100/s)
  */
 
-export const SCHEME = 'reel-media'
+export const SCHEME = 'framevane-media'
 
 export function registerSchemePrivileges() {
   protocol.registerSchemesAsPrivileged([

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import { open, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
-import type { AssetRef } from '@reel/doc'
+import type { AssetRef } from '@framevane/doc'
 import type { MediaInfo } from '../shared/api'
 import { now, uuid7, type Db } from './db'
 import { hasEncoder, parseRate, probe, runFfmpeg, type ProbeResult } from './ffmpeg'
@@ -191,10 +191,10 @@ export class Media {
     return {
       asset,
       urls: {
-        media: `reel-media://asset/${r.id}`,
-        thumb: r.thumbs_path ? `reel-media://thumb/${r.id}?v=${encodeURIComponent(String(r.thumbs_path.length))}` : null,
-        filmstrip: r.thumbs_path && r.kind === 'video' ? `reel-media://strip/${r.id}` : null,
-        peaks: r.waveform_path ? `reel-media://peaks/${r.id}` : null,
+        media: `framevane-media://asset/${r.id}`,
+        thumb: r.thumbs_path ? `framevane-media://thumb/${r.id}?v=${encodeURIComponent(String(r.thumbs_path.length))}` : null,
+        filmstrip: r.thumbs_path && r.kind === 'video' ? `framevane-media://strip/${r.id}` : null,
+        peaks: r.waveform_path ? `framevane-media://peaks/${r.id}` : null,
       },
       status: r.status === 'missing' ? 'missing' : r.status === 'unsupported' ? 'unsupported' : ready ? 'ready' : 'preparing',
     }

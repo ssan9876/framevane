@@ -14,7 +14,7 @@ export function ProgressBar({ value, label, tone = 'accent', className }: { valu
       className={cn('relative h-1 w-full overflow-hidden rounded-pill bg-surface-3', className)}
     >
       {value === undefined ? (
-        <span className={cn('absolute inset-y-0 w-2/5 rounded-pill animate-[reel-indeterminate_1.1s_var(--reel-ease)_infinite]', fill)} />
+        <span className={cn('absolute inset-y-0 w-2/5 rounded-pill animate-[framevane-indeterminate_1.1s_var(--fv-ease)_infinite]', fill)} />
       ) : (
         <span className={cn('absolute inset-y-0 left-0 rounded-pill transition-[width] duration-150', fill)} style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%` }} />
       )}

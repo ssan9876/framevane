@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Clapperboard, Copy, Film, ImageIcon, MoreHorizontal, Pencil, Plus, Search, Settings, Sparkles, Trash2, AlertTriangle } from 'lucide-react'
-import { Badge, Button, Dialog, DropdownMenu, DropZone, EmptyState, IconButton, TextField, useToast } from '@reel/ui'
-import { formatUs } from '@reel/doc'
+import { Badge, Button, Dialog, DropdownMenu, DropZone, EmptyState, IconButton, TextField, useToast } from '@framevane/ui'
+import { formatUs } from '@framevane/doc'
 import type { ProjectSummary } from '../../shared/api'
 import { useApp } from '../app/store'
 
@@ -24,7 +24,7 @@ export function Home() {
     setCreating(true)
     try {
       const name = files.length ? files[0]!.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, '') : `Project ${new Date().toLocaleDateString()}`
-      const { projectId } = await window.reel.projects.create({ name, files })
+      const { projectId } = await window.framevane.projects.create({ name, files })
       go({ name: 'editor', projectId })
     } catch (e) {
       toast({ tone: 'error', title: 'Could not create the project', description: e instanceof Error ? e.message : String(e) })
@@ -35,10 +35,10 @@ export function Home() {
 
   return (
     <main className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-[var(--reel-titlebar-h)] shrink-0 items-center justify-between border-b border-border bg-surface px-4">
+      <header className="flex h-[var(--fv-titlebar-h)] shrink-0 items-center justify-between border-b border-border bg-surface px-4">
         <div className="flex items-center gap-2">
           <Clapperboard className="size-4 text-accent" aria-hidden />
-          <span className="text-base">Reel</span>
+          <span className="text-base">Framevane</span>
           <Badge>M0 preview</Badge>
         </div>
         <IconButton label="Settings" shortcut="Ctrl+," icon={<Settings />} onClick={() => openDialog('settings')} />
@@ -47,7 +47,7 @@ export function Home() {
       <div className="scroll-y flex-1">
         <div className="mx-auto flex max-w-6xl flex-col gap-8 px-8 py-8">
           <section aria-labelledby="start-h" className="flex flex-col gap-3">
-            <h1 id="start-h" className="text-display">Start something</h1>
+            <h1 id="start-h" className="text-display">What are we making?</h1>
             <div className="grid grid-cols-[1.4fr_1fr_1fr] gap-3">
               <button
                 type="button"
@@ -57,16 +57,16 @@ export function Home() {
               >
                 <Plus className="size-6" aria-hidden />
                 <span className="text-lg">New project</span>
-                <span className="text-sm opacity-80">Empty timeline · 1920×1080 · 30 fps</span>
+                <span className="text-sm opacity-80">A blank 1080p timeline</span>
               </button>
               <QuickCard icon={<ImageIcon />} title="Photo editor" body="Edit a single image" onClick={() => go({ name: 'photo' })} />
               <QuickCard icon={<Sparkles />} title="Script to video" body="Rough cut from a script" onClick={() => go({ name: 'ai-maker' })} />
             </div>
             <DropZone
-              label="Drop clips here to start a project with them"
+              label="Drop footage here and we'll set up a project around it"
               hint="or choose files"
-              onFiles={(files) => void create(files.map((f) => window.reel.app.pathForFile(f)).filter(Boolean))}
-              onBrowse={async () => { const files = await window.reel.app.pickFiles({ kind: 'media' }); if (files.length) void create(files) }}
+              onFiles={(files) => void create(files.map((f) => window.framevane.app.pathForFile(f)).filter(Boolean))}
+              onBrowse={async () => { const files = await window.framevane.app.pickFiles({ kind: 'media' }); if (files.length) void create(files) }}
               disabled={creating}
             />
           </section>
@@ -77,14 +77,14 @@ export function Home() {
               <div className="w-64"><TextField label="Search projects" hideLabel placeholder="Search projects" leading={<Search />} value={query} onChange={(e) => setQuery(e.target.value)} /></div>
             </div>
             {loaded && projects.length === 0 && (
-              <EmptyState icon={<Film />} title="No projects yet" body="Make a new project, or drop a few clips above and we'll set one up for you." />
+              <EmptyState icon={<Film />} title="Nothing here yet" body="Your projects will live here. Start one above, or drop in some footage." />
             )}
             {projects.length > 0 && shown.length === 0 && <p className="py-6 text-center text-sm text-muted">No projects match “{query}”.</p>}
             <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
               {shown.map((p) => (
                 <ProjectCard key={p.id} p={p} onOpen={() => go({ name: 'editor', projectId: p.id })}
                   onRename={() => setRenaming(p)}
-                  onDuplicate={async () => { await window.reel.projects.duplicate(p.id); await loadProjects() }}
+                  onDuplicate={async () => { await window.framevane.projects.duplicate(p.id); await loadProjects() }}
                   onDelete={() => setDeleting(p)} />
               ))}
             </ul>
@@ -95,7 +95,7 @@ export function Home() {
       {renaming && <RenameDialog p={renaming} onClose={() => setRenaming(null)} />}
       {deleting && (
         <Dialog open onOpenChange={(o) => !o && setDeleting(null)} title={`Delete “${deleting.name}”?`} description="The project folder moves to the Recycle Bin. Your original media files are not touched."
-          footer={<><Button variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button><Button variant="danger" onClick={async () => { await window.reel.projects.remove(deleting.id); setDeleting(null); await loadProjects() }}>Delete project</Button></>}>
+          footer={<><Button variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button><Button variant="danger" onClick={async () => { await window.framevane.projects.remove(deleting.id); setDeleting(null); await loadProjects() }}>Delete project</Button></>}>
           <p className="text-sm text-muted">{deleting.dirPath}</p>
         </Dialog>
       )}
@@ -144,7 +144,7 @@ function RenameDialog({ p, onClose }: { p: ProjectSummary; onClose: () => void }
   const [name, setName] = useState(p.name)
   const save = async () => {
     if (!name.trim()) return
-    await window.reel.projects.rename(p.id, name)
+    await window.framevane.projects.rename(p.id, name)
     await useApp.getState().loadProjects()
     onClose()
   }

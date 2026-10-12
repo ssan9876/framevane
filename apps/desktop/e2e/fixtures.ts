@@ -13,7 +13,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
  * Every test fails on console errors and on media-protocol 5xx responses. a11y() runs axe on the current screen.
  */
 
-export interface Reel {
+export interface Framevane {
   app: ElectronApplication
   page: Page
   errors: string[]
@@ -26,23 +26,23 @@ export interface Reel {
 
 type Options = { pickFiles: string[]; reelEnv: Record<string, string>; allowConsoleErrors: RegExp[] }
 
-export const test = base.extend<Options & { reel: Reel }>({
+export const test = base.extend<Options & { framevane: Framevane }>({
   pickFiles: [[], { option: true }],
   reelEnv: [{}, { option: true }],
   allowConsoleErrors: [[], { option: true }],
-  reel: async ({ pickFiles, reelEnv, allowConsoleErrors }, use, testInfo) => {
-    const root = mkdtempSync(join(tmpdir(), 'reel-test-'))
+  framevane: async ({ pickFiles, reelEnv, allowConsoleErrors }, use, testInfo) => {
+    const root = mkdtempSync(join(tmpdir(), 'framevane-test-'))
     const exportsDir = join(root, 'exports')
     mkdirSync(exportsDir, { recursive: true })
     const errors: string[] = []
     const failedRequests: { url: string; status: number }[] = []
     const env = {
       ...process.env,
-      REEL_USER_DATA: join(root, 'userdata'),
-      REEL_PROJECTS_DIR: join(root, 'projects'),
-      REEL_MODELS_DIR: process.env.REEL_MODELS_DIR ?? join(process.env.APPDATA ?? '', 'Reel', 'models'),
-      REEL_TEST_PICK_FILES: pickFiles.join(';'),
-      REEL_TEST_SAVE_DIR: exportsDir,
+      FRAMEVANE_USER_DATA: join(root, 'userdata'),
+      FRAMEVANE_PROJECTS_DIR: join(root, 'projects'),
+      FRAMEVANE_MODELS_DIR: process.env.FRAMEVANE_MODELS_DIR ?? join(process.env.APPDATA ?? '', 'Framevane', 'models'),
+      FRAMEVANE_TEST_PICK_FILES: pickFiles.join(';'),
+      FRAMEVANE_TEST_SAVE_DIR: exportsDir,
       ...reelEnv,
     } as Record<string, string>
 
@@ -58,12 +58,12 @@ export const test = base.extend<Options & { reel: Reel }>({
       })
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
       page.on('response', (r) => { if (r.status() >= 400) failedRequests.push({ url: r.url(), status: r.status() }) })
-      await page.getByRole('heading', { name: 'Start something' }).waitFor()
+      await page.getByRole('heading', { name: 'What are we making?' }).waitFor()
       return { app, page }
     }
 
     let cur = await start()
-    const reel: Reel = {
+    const framevane: Framevane = {
       get app() { return cur.app },
       get page() { return cur.page },
       errors,
@@ -78,7 +78,7 @@ export const test = base.extend<Options & { reel: Reel }>({
         return cur.page
       },
     }
-    await use(reel)
+    await use(framevane)
     if (testInfo.status !== testInfo.expectedStatus) await cur.page.screenshot({ path: testInfo.outputPath('failure.png') }).catch(() => {})
     await cur.app.close().catch(() => {})
     expect(errors, `console errors (failed requests: ${JSON.stringify(failedRequests)})`).toEqual([])

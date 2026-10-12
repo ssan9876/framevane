@@ -28,7 +28,7 @@ export class Analysis {
   }
 
   transcript(projectId: string, assetId: string, opts: { language?: string; force?: boolean; model?: string; agentRunId?: string } = {}): Promise<Transcript> {
-    const model = opts.model ?? process.env.REEL_WHISPER_MODEL ?? DEFAULT_WHISPER
+    const model = opts.model ?? process.env.FRAMEVANE_WHISPER_MODEL ?? DEFAULT_WHISPER
     if (!opts.force) {
       const hit = this.cachedTranscript(assetId, model)
       if (hit) return Promise.resolve(hit)

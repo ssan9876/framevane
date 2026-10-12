@@ -26,7 +26,7 @@ const timeline = () => page.getByRole('grid', { name: 'Timeline tracks' })
 
 try {
   step('S01 home (empty)')
-  await page.getByRole('heading', { name: 'Start something' }).waitFor()
+  await page.getByRole('heading', { name: 'What are we making?' }).waitFor()
   await shot('S01-empty')
 
   step('F01 new project + import via the media panel')
@@ -96,7 +96,7 @@ try {
   await page.getByRole('dialog', { name: 'Export video' }).waitFor()
   await shot('S22-export')
   await page.getByRole('button', { name: 'Export…' }).click()
-  await page.getByText('Export finished').first().waitFor({ timeout: 300_000 })
+  await page.getByText('Your video is ready').first().waitFor({ timeout: 300_000 })
   const out = readdirSync(exportsDir).find((f) => f.endsWith('.mp4'))
   const file = resolve(exportsDir, out)
   step(`  exported ${file} (${(statSync(file).size / 1e6).toFixed(2)} MB)`)
@@ -104,7 +104,7 @@ try {
 
   step('back home (S01 filled)')
   await page.getByRole('button', { name: 'Projects' }).click()
-  await page.getByRole('heading', { name: 'Start something' }).waitFor()
+  await page.getByRole('heading', { name: 'What are we making?' }).waitFor()
   await page.waitForTimeout(800)
   await shot('S01-filled')
 } catch (e) {

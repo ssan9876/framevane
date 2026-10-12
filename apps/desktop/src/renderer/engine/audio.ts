@@ -1,4 +1,4 @@
-import { clipEnd, type MediaClip, type Project } from '@reel/doc'
+import { clipEnd, type MediaClip, type Project } from '@framevane/doc'
 import type { MediaPool } from './sources'
 
 /**

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ArrowLeftRight, Captions, Film, Music, Palette, Plus, SlidersHorizontal, Sparkles, Sticker, Type, Construction, Wand2 } from 'lucide-react'
-import { AssetCard, Badge, Button, CategoryList, DropZone, EmptyState, PanelTabs, Select, TabPanel, Checkbox, useToast } from '@reel/ui'
-import { buildCaptionClips, formatUs, timelineWords } from '@reel/doc'
+import { AssetCard, Badge, Button, CategoryList, DropZone, EmptyState, PanelTabs, Select, TabPanel, Checkbox, useToast } from '@framevane/ui'
+import { buildCaptionClips, formatUs, timelineWords } from '@framevane/doc'
 import type { MediaInfo } from '../../shared/api'
 import { useApp } from '../app/store'
 import { addAssetToTimeline } from './actions'
@@ -49,7 +49,7 @@ function useImport() {
   return async (paths: string[]) => {
     if (!doc || !paths.length) return
     try {
-      const infos = await window.reel.media.import(doc.id, paths)
+      const infos = await window.framevane.media.import(doc.id, paths)
       useApp.setState((s) => ({ media: [...s.media.filter((m) => !infos.some((i) => i.asset.id === m.asset.id)), ...infos] }))
       // register assets with the project document right away so agents and undo know them
       const fresh = infos.filter((i) => !doc.assets[i.asset.id] && i.status !== 'unsupported')
@@ -57,7 +57,7 @@ function useImport() {
       const bad = infos.filter((i) => i.status === 'unsupported')
       if (bad.length) toast({ tone: 'warning', title: `${bad.length} file${bad.length > 1 ? 's' : ''} couldn't be read`, description: bad.map((b) => b.asset.name).join(', ') })
     } catch (e) {
-      toast({ tone: 'error', title: 'Import failed', description: e instanceof Error ? e.message : String(e) })
+      toast({ tone: 'error', title: "That file didn't come in", description: e instanceof Error ? e.message : String(e) })
     }
   }
 }
@@ -71,13 +71,13 @@ function MediaTab() {
   const doImport = useImport()
   const used = useMemo(() => new Set(doc?.tracks.flatMap((t) => t.clips.flatMap((c) => ('assetId' in c ? [c.assetId] : [])))), [doc])
   const shown = media.filter((m) => filter === 'all' || m.asset.kind === filter)
-  const browse = async () => doImport(await window.reel.app.pickFiles({ kind: 'media' }))
+  const browse = async () => doImport(await window.framevane.app.pickFiles({ kind: 'media' }))
 
   return (
     <div
       className="flex min-h-0 flex-1 flex-col"
       onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }}
-      onDrop={(e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); void doImport([...e.dataTransfer.files].map((f) => window.reel.app.pathForFile(f)).filter(Boolean)) }}
+      onDrop={(e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); void doImport([...e.dataTransfer.files].map((f) => window.framevane.app.pathForFile(f)).filter(Boolean)) }}
     >
       <div className="flex items-center justify-between gap-2 px-3 py-2">
         <Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => void browse()}>Import</Button>
@@ -85,11 +85,11 @@ function MediaTab() {
           options={[{ value: 'all', label: 'All media' }, { value: 'video', label: 'Videos' }, { value: 'audio', label: 'Audio' }, { value: 'image', label: 'Images' }]} />
       </div>
       {media.length === 0 ? (
-        <div className="p-3"><DropZone onBrowse={() => void browse()} onFiles={(f) => void doImport(f.map((x) => window.reel.app.pathForFile(x)).filter(Boolean))} /></div>
+        <div className="p-3"><DropZone onBrowse={() => void browse()} onFiles={(f) => void doImport(f.map((x) => window.framevane.app.pathForFile(x)).filter(Boolean))} /></div>
       ) : (
-        <ul className="scroll-y grid flex-1 grid-cols-[repeat(auto-fill,var(--reel-asset-card-w))] content-start gap-2 px-3 pb-3" aria-label="Project media">
+        <ul className="scroll-y grid flex-1 grid-cols-[repeat(auto-fill,var(--fv-asset-card-w))] content-start gap-2 px-3 pb-3" aria-label="Project media">
           {shown.map((m) => (
-            <li key={m.asset.id} onDragStart={(e) => { e.dataTransfer.setData('application/x-reel-asset', m.asset.id); e.dataTransfer.effectAllowed = 'copy' }}>
+            <li key={m.asset.id} onDragStart={(e) => { e.dataTransfer.setData('application/x-framevane-asset', m.asset.id); e.dataTransfer.effectAllowed = 'copy' }}>
               <AssetCard
                 title={m.asset.name}
                 kind={m.asset.kind}
@@ -127,10 +127,10 @@ function AudioTab() {
               {audio.map((m) => <AudioRow key={m.asset.id} m={m} />)}
             </ul>
           ) : (
-            <EmptyState icon={<Music />} title="No audio yet" body="Import music or voice-over files. Your own files only, so there's nothing to license." action={<Button size="sm" onClick={async () => void doImport(await window.reel.app.pickFiles({ kind: 'media' }))}>Import audio</Button>} />
+            <EmptyState icon={<Music />} title="No audio yet" body="Import music or voice-over files. Your own files only, so there's nothing to license." action={<Button size="sm" onClick={async () => void doImport(await window.framevane.app.pickFiles({ kind: 'media' }))}>Import audio</Button>} />
           )
         ) : (
-          <EmptyState icon={<Construction />} title="Coming later" body="A free CC0 library (Freesound, Pixabay) using your own API key is planned. CapCut's licensed catalogue can't be copied." />
+          <EmptyState icon={<Construction />} title="Coming later" body="A free CC0 library (Freesound, Pixabay) is on the way, using your own API key. Licensed music from other apps can't come along." />
         )}
       </div>
     </>
@@ -139,7 +139,7 @@ function AudioTab() {
 
 function AudioRow({ m }: { m: MediaInfo }) {
   return (
-    <li className="flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-surface-2" draggable onDragStart={(e) => e.dataTransfer.setData('application/x-reel-asset', m.asset.id)}>
+    <li className="flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-surface-2" draggable onDragStart={(e) => e.dataTransfer.setData('application/x-framevane-asset', m.asset.id)}>
       <Music className="size-4 text-muted" aria-hidden />
       <span className="min-w-0 flex-1 truncate text-sm">{m.asset.name}</span>
       <span className="font-mono text-xs text-muted">{m.asset.durationUs ? formatUs(m.asset.durationUs) : ''}</span>
@@ -164,7 +164,7 @@ function CaptionsTab() {
     setBusy(true)
     try {
       const transcripts: Record<string, { text: string; start: number; end: number }[]> = {}
-      for (const id of audioAssets) transcripts[id] = (await window.reel.analysis.transcript(doc.id, id, language === 'auto' ? {} : { language })).words
+      for (const id of audioAssets) transcripts[id] = (await window.framevane.analysis.transcript(doc.id, id, language === 'auto' ? {} : { language })).words
       const current = useApp.getState().doc!
       const clips = buildCaptionClips(timelineWords(current, transcripts), { idPrefix: `cap-${Date.now().toString(36)}` })
       if (!clips.length) { toast({ tone: 'warning', title: 'No speech found on the main track' }); return }

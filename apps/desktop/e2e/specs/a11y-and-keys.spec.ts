@@ -3,10 +3,10 @@ import { files } from '../global-setup'
 
 /** X-A11Y axe on every built screen · X-KB transport keys · F05 partial (music) · S21 stub. */
 test.describe('accessibility and keyboard', () => {
-  test.use({ pickFiles: [files.talk, files.music], reelEnv: { REEL_FAKE_AGENT: '1' } })
+  test.use({ pickFiles: [files.talk, files.music], reelEnv: { FRAMEVANE_FAKE_AGENT: '1' } })
 
-  test('X-A11Y axe WCAG 2.2 AA on every built screen', async ({ reel }) => {
-    const { page } = reel
+  test('X-A11Y axe WCAG 2.2 AA on every built screen', async ({ framevane }) => {
+    const { page } = framevane
     const all: Awaited<ReturnType<typeof a11y>> = []
     all.push(...(await a11y(page, 'S01 empty')))
     await newProjectFromFiles(page)
@@ -40,8 +40,8 @@ test.describe('accessibility and keyboard', () => {
     expect(all).toEqual([])
   })
 
-  test('X-KB Space, arrows, Home/End move the playhead', async ({ reel }) => {
-    const { page } = reel
+  test('X-KB Space, arrows, Home/End move the playhead', async ({ framevane }) => {
+    const { page } = framevane
     await newProjectFromFiles(page)
     const tc = page.getByRole('img', { name: /^Preview at / })
     await timeline(page).click({ position: { x: 160, y: 10 } })
@@ -61,8 +61,8 @@ test.describe('accessibility and keyboard', () => {
     expect(label).not.toBe('Preview at 00:00:00:00')
   })
 
-  test('F05-H1 + E1 music on its own track, quieter after −20 dB', async ({ reel }) => {
-    const { page } = reel
+  test('F05-H1 + E1 music on its own track, quieter after −20 dB', async ({ framevane }) => {
+    const { page } = framevane
     await newProjectFromFiles(page)
     await page.getByRole('tab', { name: 'Audio' }).click()
     await page.getByRole('button', { name: 'Add music.m4a at the playhead' }).click()
@@ -74,8 +74,8 @@ test.describe('accessibility and keyboard', () => {
     await expect(page.getByRole('button', { name: 'Reset Volume' })).toBeVisible()
   })
 
-  test('S21 stub: Alt+K explains the keyframe graph is coming', async ({ reel }) => {
-    const { page } = reel
+  test('S21 stub: Alt+K explains the keyframe graph is coming', async ({ framevane }) => {
+    const { page } = framevane
     await newProjectFromFiles(page)
     await timeline(page).click({ position: { x: 160, y: 10 } })
     await page.keyboard.press('Alt+k')

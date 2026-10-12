@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bot, KeyRound, AlertCircle, Library } from 'lucide-react'
-import { AgentComposer, AgentNote, Button, ChatMessage, EmptyState, PanelHeader, Popover, ProposalCard, ToolStep, Badge, IconButton } from '@reel/ui'
-import { formatUs } from '@reel/doc'
+import { AgentComposer, AgentNote, Button, ChatMessage, EmptyState, PanelHeader, Popover, ProposalCard, ToolStep, Badge, IconButton } from '@framevane/ui'
+import { formatUs } from '@framevane/doc'
 import type { AgentSettings } from '../../shared/api'
 import { useApp, type AgentRunView } from '../app/store'
 
@@ -26,7 +26,7 @@ export function AgentPanel() {
   // synchronous guard: a double click fires twice before the store sees the first run (BUG-002)
   const sending = useRef(false)
 
-  useEffect(() => { void window.reel.agent.settings().then(setSettings) }, [])
+  useEffect(() => { void window.framevane.agent.settings().then(setSettings) }, [])
   useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight }) }, [runs])
 
   async function send(text = draft) {
@@ -35,7 +35,7 @@ export function AgentPanel() {
     sending.current = true
     setDraft('')
     try {
-      const { runId } = await window.reel.agent.run(doc.id, prompt, { selection, playheadUs })
+      const { runId } = await window.framevane.agent.run(doc.id, prompt, { selection, playheadUs })
       useApp.getState().startAgentRun(runId, prompt)
     } catch (e) {
       useApp.getState().setError(e instanceof Error ? e.message : String(e))
@@ -44,7 +44,7 @@ export function AgentPanel() {
     }
   }
 
-  const stop = () => { for (const r of runs) if (r.status === 'running') void window.reel.agent.cancel(r.runId) }
+  const stop = () => { for (const r of runs) if (r.status === 'running') void window.framevane.agent.cancel(r.runId) }
   const chips = [selection.length ? `${selection.length} clip${selection.length > 1 ? 's' : ''} selected` : 'Whole project', `Playhead ${formatUs(playheadUs)}`]
 
   return (
@@ -74,7 +74,7 @@ export function AgentPanel() {
               action={<div className="flex gap-2"><Button size="sm" variant="agent" onClick={() => useApp.getState().openDialog('settings', 'agents')}>Connect Claude Code</Button><Button size="sm" onClick={() => useApp.getState().openDialog('settings', 'agents')}>Add API key</Button></div>} />
           ) : (
             <div className="flex flex-col gap-3">
-              <EmptyState icon={<Bot />} title="Ask for an edit" body="The agent edits a copy of your project. You review every change before it's applied." className="py-4" />
+              <EmptyState icon={<Bot />} title="Tell me what to change" body="I work on a copy. Nothing touches your project until you approve it." className="py-4" />
               <div className="flex flex-col gap-1.5">
                 {SUGGESTIONS.map((s) => (
                   <button key={s} type="button" onClick={() => void send(s)} className="rounded-md border border-border bg-surface-2 px-3 py-2 text-left text-sm text-muted hover:border-agent/50 hover:text-fg">{s}</button>
@@ -111,7 +111,7 @@ function RunView({ run }: { run: AgentRunView }) {
       {run.proposal && run.status === 'awaiting_review' && (
         <ProposalCard opCount={run.proposal.ops.length} summary={run.proposal.summary} cost={`$${(run.proposal.costMicroUsd / 1e6).toFixed(3)}`}
           onReview={() => { useApp.setState({ reviewRunId: run.runId }); useApp.getState().openDialog('review') }}
-          onDiscard={() => void window.reel.agent.review(run.runId, [], 'reject')} />
+          onDiscard={() => void window.framevane.agent.review(run.runId, [], 'reject')} />
       )}
       {(run.status === 'applied' || run.status === 'partially_applied') && run.proposal && <AgentNote>{run.status === 'applied' ? 'Edits applied. Undo with Ctrl+Z.' : 'Some edits applied. Undo with Ctrl+Z.'}</AgentNote>}
       {run.status === 'rejected' && <AgentNote>Edits discarded.</AgentNote>}

@@ -10,13 +10,13 @@ async function seekSeconds(page: Page, s: number) {
 
 test.describe('F02 cut and trim', () => {
   test.use({ pickFiles: [files.talk] })
-  test.beforeEach(async ({ reel }) => {
-    await newProjectFromFiles(reel.page)
-    await expect(clips(reel.page)).toHaveCount(1)
+  test.beforeEach(async ({ framevane }) => {
+    await newProjectFromFiles(framevane.page)
+    await expect(clips(framevane.page)).toHaveCount(1)
   })
 
-  test('F02-H1 split, delete (ripple), undo, redo', async ({ reel }) => {
-    const { page } = reel
+  test('F02-H1 split, delete (ripple), undo, redo', async ({ framevane }) => {
+    const { page } = framevane
     await seekSeconds(page, 5)
     await page.keyboard.press('Control+b')
     await expect(clips(page)).toHaveCount(2)
@@ -31,8 +31,8 @@ test.describe('F02 cut and trim', () => {
     await expect(clips(page)).toHaveCount(1)
   })
 
-  test('F02-H2 Q deletes left of the playhead, W deletes right', async ({ reel }) => {
-    const { page } = reel
+  test('F02-H2 Q deletes left of the playhead, W deletes right', async ({ framevane }) => {
+    const { page } = framevane
     await seekSeconds(page, 3)
     await page.keyboard.press('q')
     await expect.poll(() => projectDuration(page)).toBe('0:26.1')
@@ -41,8 +41,8 @@ test.describe('F02 cut and trim', () => {
     await expect.poll(() => projectDuration(page)).toBe('0:10.0')
   })
 
-  test('F02-H3 dragging the right edge trims and ripples', async ({ reel }) => {
-    const { page } = reel
+  test('F02-H3 dragging the right edge trims and ripples', async ({ framevane }) => {
+    const { page } = framevane
     const clip = clips(page).first()
     const box = (await clip.boundingBox())!
     await page.mouse.move(box.x + box.width - 3, box.y + box.height / 2)
@@ -54,8 +54,8 @@ test.describe('F02 cut and trim', () => {
     expect(Number(d!.split(':')[1])).toBeLessThan(20)
   })
 
-  test('F02-E7 trimming cannot extend past the end of the source', async ({ reel }) => {
-    const { page } = reel
+  test('F02-E7 trimming cannot extend past the end of the source', async ({ framevane }) => {
+    const { page } = framevane
     const clip = clips(page).first()
     const box = (await clip.boundingBox())!
     await page.mouse.move(box.x + box.width - 3, box.y + box.height / 2)
@@ -66,8 +66,8 @@ test.describe('F02 cut and trim', () => {
     await expect.poll(() => projectDuration(page)).toBe('0:29.1')
   })
 
-  test('F02-H4 dragging a main-track clip before another reorders without gaps', async ({ reel }) => {
-    const { page } = reel
+  test('F02-H4 dragging a main-track clip before another reorders without gaps', async ({ framevane }) => {
+    const { page } = framevane
     await seekSeconds(page, 10)
     await page.keyboard.press('Control+b')
     await expect(clips(page)).toHaveCount(2)
@@ -82,24 +82,24 @@ test.describe('F02 cut and trim', () => {
     await expect.poll(() => projectDuration(page)).toBe('0:29.1')
   })
 
-  test('F02-E1 splitting exactly at a clip boundary does nothing', async ({ reel }) => {
-    const { page } = reel
+  test('F02-E1 splitting exactly at a clip boundary does nothing', async ({ framevane }) => {
+    const { page } = framevane
     await seekSeconds(page, 0)
     await page.keyboard.press('Control+b')
     await page.waitForTimeout(300)
     await expect(clips(page)).toHaveCount(1)
   })
 
-  test('F02-E3 Delete with nothing selected does nothing', async ({ reel }) => {
-    const { page } = reel
+  test('F02-E3 Delete with nothing selected does nothing', async ({ framevane }) => {
+    const { page } = framevane
     await page.keyboard.press('Escape')
     await page.keyboard.press('Delete')
     await page.waitForTimeout(300)
     await expect(clips(page)).toHaveCount(1)
   })
 
-  test('F02-E4 a locked track refuses split and delete', async ({ reel }) => {
-    const { page } = reel
+  test('F02-E4 a locked track refuses split and delete', async ({ framevane }) => {
+    const { page } = framevane
     await page.getByRole('button', { name: 'Lock Main' }).click()
     await seekSeconds(page, 4)
     await page.keyboard.press('Control+b')
@@ -111,8 +111,8 @@ test.describe('F02 cut and trim', () => {
     await page.getByRole('button', { name: 'Unlock Main' }).click()
   })
 
-  test('F02-E5 undo stops at the first state', async ({ reel }) => {
-    const { page } = reel
+  test('F02-E5 undo stops at the first state', async ({ framevane }) => {
+    const { page } = framevane
     await seekSeconds(page, 4)
     await page.keyboard.press('Control+b')
     await expect(clips(page)).toHaveCount(2)
@@ -121,13 +121,13 @@ test.describe('F02 cut and trim', () => {
     await expect(page.getByRole('banner').getByRole('button', { name: 'Undo' })).toBeDisabled()
   })
 
-  test('F02-E6 an edit survives the app being killed right after it', async ({ reel }) => {
-    let page = reel.page
+  test('F02-E6 an edit survives the app being killed right after it', async ({ framevane }) => {
+    let page = framevane.page
     await seekSeconds(page, 6)
     await page.keyboard.press('Control+b')
     await expect(clips(page)).toHaveCount(2)
     // kill well inside the 2 s autosave window: only the op journal has the split
-    page = await reel.relaunch({ kill: true })
+    page = await framevane.relaunch({ kill: true })
     await page.getByRole('button', { name: /^Open / }).first().click()
     await expect(clips(page)).toHaveCount(2)
   })

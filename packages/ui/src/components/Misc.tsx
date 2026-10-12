@@ -32,7 +32,7 @@ export function Badge({ tone = 'neutral', icon, children, className }: { tone?: 
 
 export function PanelHeader({ title, actions, className }: { title: ReactNode; actions?: ReactNode; className?: string }) {
   return (
-    <div className={cn('flex h-[var(--reel-panel-header-h)] shrink-0 items-center justify-between gap-2 border-b border-border px-3', className)}>
+    <div className={cn('flex h-[var(--fv-panel-header-h)] shrink-0 items-center justify-between gap-2 border-b border-border px-3', className)}>
       <h2 className="truncate text-base">{title}</h2>
       {actions && <div className="flex items-center gap-0.5">{actions}</div>}
     </div>
@@ -55,7 +55,7 @@ export function EmptyState({ icon, title, body, action, className }: { icon?: Re
  * File drop target. The visible button is the keyboard path (drag and drop is never the only way).
  * States: idle, drag-over (accent dashed border), disabled.
  */
-export function DropZone({ onFiles, onBrowse, label = 'Drop videos, photos or audio here', hint = 'or browse your files', disabled, className, forceDragOver }: {
+export function DropZone({ onFiles, onBrowse, label = 'Drop video, photos or audio here', hint = 'or browse your files', disabled, className, forceDragOver }: {
   onFiles: (files: File[]) => void
   onBrowse: () => void
   label?: string

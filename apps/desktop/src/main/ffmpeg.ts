@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 
 /**
  * FFmpeg/ffprobe as child processes. Arguments are always arrays (paths with spaces are safe; nothing goes through a shell).
- * Lookup: REEL_FFMPEG env → bundled resources/ffmpeg → PATH.
+ * Lookup: FRAMEVANE_FFMPEG env → bundled resources/ffmpeg → PATH.
  */
 
 let resolved: { ffmpeg: string; ffprobe: string } | null | undefined
@@ -12,7 +12,7 @@ let resolved: { ffmpeg: string; ffprobe: string } | null | undefined
 export function ffmpegPaths(): { ffmpeg: string; ffprobe: string } | null {
   if (resolved !== undefined) return resolved
   const candidates: string[] = []
-  if (process.env.REEL_FFMPEG) candidates.push(process.env.REEL_FFMPEG)
+  if (process.env.FRAMEVANE_FFMPEG) candidates.push(process.env.FRAMEVANE_FFMPEG)
   if (process.resourcesPath) candidates.push(join(process.resourcesPath, 'ffmpeg', 'ffmpeg.exe'))
   const where = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['ffmpeg'], { encoding: 'utf8' })
   if (where.status === 0) candidates.push(...where.stdout.split(/\r?\n/).filter(Boolean))
@@ -25,7 +25,7 @@ export function ffmpegPaths(): { ffmpeg: string; ffprobe: string } | null {
 
 function need() {
   const p = ffmpegPaths()
-  if (!p) throw new Error('FFmpeg was not found. Install it or set REEL_FFMPEG to ffmpeg.exe.')
+  if (!p) throw new Error('FFmpeg was not found. Install it or set FRAMEVANE_FFMPEG to ffmpeg.exe.')
   return p
 }
 

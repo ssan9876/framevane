@@ -92,7 +92,7 @@ export function TimelineClip({ kind, label, width, height, selected, disabled, m
       )}
       {processing !== undefined && (
         <div className="absolute inset-x-0 bottom-0 h-0.5 bg-scrim/50">
-          <div className={cn('h-full bg-agent', processing === 'indeterminate' && 'w-1/3 animate-[reel-indeterminate_1.1s_linear_infinite]')} style={processing === 'indeterminate' ? undefined : { width: `${processing * 100}%` }} />
+          <div className={cn('h-full bg-agent', processing === 'indeterminate' && 'w-1/3 animate-[framevane-indeterminate_1.1s_linear_infinite]')} style={processing === 'indeterminate' ? undefined : { width: `${processing * 100}%` }} />
         </div>
       )}
       {/* trim handles (visible on hover/selection) */}
@@ -133,7 +133,7 @@ export function TrackHeader({ name, kind, height, locked, hidden, muted, onLocke
   main?: boolean
 }) {
   return (
-    <div role="rowheader" style={{ height }} className="flex w-[var(--reel-track-header-w)] shrink-0 items-center gap-0.5 border-b border-border bg-surface px-1.5">
+    <div role="rowheader" style={{ height }} className="flex w-[var(--fv-track-header-w)] shrink-0 items-center gap-0.5 border-b border-border bg-surface px-1.5">
       <span className="mr-auto flex min-w-0 items-center gap-1 text-xs text-muted [&_svg]:size-3">
         {clipIcon[kind]}
         <span className="truncate">{name}</span>
@@ -168,7 +168,7 @@ export function Ruler({ width, pxPerSec, offsetSec = 0, markers = [], format = f
         </g>
       ))}
       {markers.map((m, i) => (
-        <path key={i} d={`M${(m.at - offsetSec) * pxPerSec - 4},14 h8 v5 l-4,4 l-4,-4z`} style={{ fill: `var(--reel-color-marker-${m.color})` }}>
+        <path key={i} d={`M${(m.at - offsetSec) * pxPerSec - 4},14 h8 v5 l-4,4 l-4,-4z`} style={{ fill: `var(--fv-color-marker-${m.color})` }}>
           {m.label && <title>{m.label}</title>}
         </path>
       ))}
@@ -179,7 +179,7 @@ export function Ruler({ width, pxPerSec, offsetSec = 0, markers = [], format = f
 /** Playhead line with grab handle. Positioned by the timeline; this is just the visual. */
 export function Playhead({ x, height }: { x: number; height: number }) {
   return (
-    <div aria-hidden className="pointer-events-none absolute top-0 z-[var(--reel-z-timeline-overlay)]" style={{ left: x, height }}>
+    <div aria-hidden className="pointer-events-none absolute top-0 z-[var(--fv-z-timeline-overlay)]" style={{ left: x, height }}>
       <svg width={12} height={12} className="absolute -left-[6px] top-0"><path d="M0 0h12v6l-6 6-6-6z" className="fill-playhead" /></svg>
       <div className="absolute left-[-0.5px] top-0 h-full w-px bg-playhead" />
     </div>

@@ -40,7 +40,7 @@ function Swatches() {
     <div className="grid grid-cols-8 gap-2">
       {roles.map((r) => (
         <div key={r} className="flex flex-col gap-1">
-          <div className="h-10 rounded-sm ring-1 ring-border" style={{ background: `var(--reel-color-${r})` }} />
+          <div className="h-10 rounded-sm ring-1 ring-border" style={{ background: `var(--fv-color-${r})` }} />
           <span className="font-mono text-[10px] text-muted">{r}</span>
         </div>
       ))}
@@ -91,7 +91,7 @@ export function Gallery() {
         <div className="scroll-y h-full">
           <header className="flex items-center justify-between border-b border-border bg-surface px-8 py-5">
             <div>
-              <h1 className="text-display">reel · design system</h1>
+              <h1 className="text-display">framevane · design system</h1>
               <p className="mt-1 text-sm text-muted">Primitives from replica/design/components.md, every state. Tokens: replica/design/tokens.json (0 WCAG AA failures).</p>
             </div>
             <Badge tone="accent">placeholder accent: replica-brand sets the real one</Badge>
@@ -231,7 +231,7 @@ export function Gallery() {
 
           <Section id="timeline" title="Timeline" note="Clip colors by kind; label text is ≥5.3:1 on every fill. Keyframes, waveforms, disabled (V), offline media, AI processing, and agent-proposed (dashed) states.">
             <div className="relative w-full overflow-hidden rounded-md border border-border bg-timeline-bg">
-              <div className="flex"><div className="w-[var(--reel-track-header-w)] shrink-0 border-r border-border bg-surface" /><Ruler width={900} pxPerSec={60} markers={[{ at: 3.2, color: 'red', label: 'Hook' }, { at: 9, color: 'green' }]} /></div>
+              <div className="flex"><div className="w-[var(--fv-track-header-w)] shrink-0 border-r border-border bg-surface" /><Ruler width={900} pxPerSec={60} markers={[{ at: 3.2, color: 'red', label: 'Hook' }, { at: 9, color: 'green' }]} /></div>
               {[
                 { name: 'Text', kind: 'text' as const, h: 28, clips: [<TimelineClip key="t" kind="text" label="SPRING SALE" width={180} height={28} keyframes={[{ at: 0.2 }, { at: 0.8, on: true }]} />, <TimelineClip key="c" kind="caption" label="Captions (42)" width={320} height={28} selected />] },
                 { name: 'Overlay', kind: 'video' as const, h: 48, clips: [<TimelineClip key="o" kind="sticker" label="badge.png" width={120} height={48} />, <TimelineClip key="e" kind="effect" label="Film grain" width={200} height={48} processing={0.6} />] },
@@ -251,7 +251,7 @@ export function Gallery() {
           <Section id="color-tools" title="Color tools">
             <Cell label="color picker (popover)"><ColorPicker label="Text color" value={color} onChange={setColor} /></Cell>
             <Cell label="curve editor (drag · dbl-click add · Del remove)"><CurveEditor label="Luma curve" points={curve} onChange={setCurve} /></Cell>
-            <Cell label="curve editor channel"><CurveEditor label="Red curve" points={[{ x: 0, y: 0.05 }, { x: 0.5, y: 0.55 }, { x: 1, y: 0.95 }]} onChange={() => {}} color="var(--reel-color-marker-red)" size={140} /></Cell>
+            <Cell label="curve editor channel"><CurveEditor label="Red curve" points={[{ x: 0, y: 0.05 }, { x: 0.5, y: 0.55 }, { x: 1, y: 0.95 }]} onChange={() => {}} color="var(--fv-color-marker-red)" size={140} /></Cell>
           </Section>
 
           <Section id="overlays" title="Menus, dialogs, toasts, progress">
