@@ -1,0 +1,182 @@
+import { app, BrowserWindow, dialog, ipcMain, shell, webContents } from 'electron'
+import { open as fsOpen, rm, type FileHandle } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { AgentEvent, DocEvent, JobEvent, MediaInfo } from '../shared/api'
+import { AgentRunner } from './agent/runner'
+import { Analysis } from './analysis'
+import { openDb, uuid7 } from './db'
+import { ffmpegPaths } from './ffmpeg'
+import { JobQueue } from './jobs'
+import { defaultSidecarDir, McpHub } from './mcp-hub'
+import { Media } from './media'
+import { appPaths } from './paths'
+import { Projects } from './projects'
+import { handleMediaProtocol, registerSchemePrivileges } from './protocol'
+
+app.setName('Reel')
+// isolated profiles for tests and side-by-side dev
+if (process.env.REEL_USER_DATA) app.setPath('userData', process.env.REEL_USER_DATA)
+registerSchemePrivileges()
+
+// Prefer the discrete GPU (RTX) for WebGPU/WebCodecs over the integrated one.
+app.commandLine.appendSwitch('force_high_performance_gpu')
+app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport,MediaFoundationD3D11VideoCapture')
+
+const isDev = !!process.env.VITE_DEV_SERVER_URL
+
+function broadcast(channel: string, payload: unknown) {
+  for (const wc of webContents.getAllWebContents()) if (!wc.isDestroyed()) wc.send(channel, payload)
+}
+
+async function main() {
+  await app.whenReady()
+  const paths = appPaths()
+  const db = openDb(paths.db)
+  const jobs = new JobQueue(db, (e: JobEvent) => broadcast('jobs:event', e))
+  const media = new Media(db, paths, jobs, (projectId: string, m: MediaInfo) => broadcast('media:change', { projectId, ...m }))
+  const projects = new Projects(db, paths, (e: DocEvent) => broadcast('doc:change', e))
+  const hub = new McpHub({ sidecarDir: defaultSidecarDir(app.getAppPath(), app.isPackaged ? process.resourcesPath : undefined), modelsDir: paths.models })
+  const analysis = new Analysis(db, paths, jobs, media, hub)
+  const agent = new AgentRunner(db, projects, analysis, media, (e: AgentEvent) => broadcast('agent:event', e))
+  handleMediaProtocol(media)
+
+  /* ── app ── */
+  ipcMain.handle('app:info', () => ({
+    version: app.getVersion(), userData: paths.userData, projectsDir: paths.projectsDir,
+    ffmpeg: ffmpegPaths()?.ffmpeg ?? null, sidecar: hub.sidecarStatus,
+  }))
+  ipcMain.handle('app:pickFiles', async (e, opts: { kind: 'media' | 'image' }) => {
+    // test hook: e2e runs can't click native dialogs
+    if (process.env.REEL_TEST_PICK_FILES) return process.env.REEL_TEST_PICK_FILES.split(';').filter(Boolean)
+    const win = BrowserWindow.fromWebContents(e.sender)!
+    const r = await dialog.showOpenDialog(win, {
+      properties: ['openFile', 'multiSelections'],
+      filters: opts.kind === 'image'
+        ? [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'avif'] }]
+        : [{ name: 'Media', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi', 'mts', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'png', 'jpg', 'jpeg', 'webp', 'gif'] }, { name: 'All files', extensions: ['*'] }],
+    })
+    return r.canceled ? [] : r.filePaths
+  })
+  ipcMain.handle('app:pickSavePath', async (e, opts: { defaultName: string; ext: string }) => {
+    if (process.env.REEL_TEST_SAVE_DIR) return join(process.env.REEL_TEST_SAVE_DIR, `${opts.defaultName}.${opts.ext}`)
+    const win = BrowserWindow.fromWebContents(e.sender)!
+    const r = await dialog.showSaveDialog(win, { defaultPath: join(app.getPath('videos'), `${opts.defaultName}.${opts.ext}`), filters: [{ name: opts.ext.toUpperCase(), extensions: [opts.ext] }] })
+    return r.canceled ? null : r.filePath
+  })
+  ipcMain.handle('app:showItemInFolder', (_e, path: string) => shell.showItemInFolder(path))
+
+  /* ── projects & doc ── */
+  ipcMain.handle('projects:list', () => projects.list())
+  ipcMain.handle('projects:create', async (_e, opts: { name: string; width?: number; height?: number; fps?: number; files?: string[] }) => {
+    const projectId = projects.create(opts.name, opts)
+    if (opts.files?.length) {
+      const infos = await media.import(projectId, opts.files)
+      const doc = projects.get(projectId)
+      let t = 0
+      const ops = infos.flatMap((m) => {
+        const add = [{ type: 'add_asset' as const, asset: m.asset }]
+        if (m.status === 'unsupported') return add
+        const dur = m.asset.durationUs ?? 5_000_000
+        const clip = m.asset.kind === 'audio'
+          ? null
+          : { type: 'add_clip' as const, trackId: 'track-main', clip: { id: `clip-${uuid7().slice(-12)}`, kind: m.asset.kind === 'image' ? ('image' as const) : ('video' as const), assetId: m.asset.id, startUs: t, durationUs: dur } }
+        if (clip) t += dur
+        return clip ? [...add, clip] : add
+      })
+      // match the canvas to the first video (CapCut's "Original" ratio)
+      const first = infos.find((m) => m.asset.kind === 'video' && m.asset.width && m.asset.height)
+      const canvas = first && !opts.width ? [{ type: 'set_canvas' as const, canvas: { width: first.asset.width!, height: first.asset.height!, ...(first.asset.fps ? { fps: first.asset.fps } : {}) } }] : []
+      projects.apply(projectId, doc.version, [...canvas, ...ops], 'load')
+      projects.close(projectId)
+    }
+    return { projectId }
+  })
+  ipcMain.handle('projects:open', (_e, id: string) => projects.load(id))
+  ipcMain.handle('projects:close', (_e, id: string) => projects.close(id))
+  ipcMain.handle('projects:rename', (_e, id: string, name: string) => projects.rename(id, name))
+  ipcMain.handle('projects:duplicate', (_e, id: string) => ({ projectId: projects.duplicate(id) }))
+  ipcMain.handle('projects:remove', async (_e, id: string) => {
+    const dir = projects.remove(id)
+    await shell.trashItem(dir).catch(() => rm(dir, { recursive: true, force: true }))
+  })
+  ipcMain.handle('doc:apply', (_e, id: string, base: number, ops: unknown[]) => projects.apply(id, base, ops as never))
+  ipcMain.handle('doc:undo', (_e, id: string) => projects.undo(id))
+  ipcMain.handle('doc:redo', (_e, id: string) => projects.redo(id))
+
+  /* ── media, jobs, analysis ── */
+  ipcMain.handle('media:import', (_e, projectId: string, files: string[]) => media.import(projectId, files))
+  ipcMain.handle('media:list', (_e, projectId: string) => media.list(projectId))
+  ipcMain.handle('jobs:cancel', (_e, id: string) => jobs.cancel(id))
+  ipcMain.handle('analysis:transcript', (_e, projectId: string, assetId: string, opts) => analysis.transcript(projectId, assetId, opts ?? {}))
+  ipcMain.handle('analysis:silences', (_e, projectId: string, assetId: string, opts) => analysis.silences(projectId, assetId, opts ?? {}))
+
+  /* ── export: the renderer encodes; main writes bytes at positions (StreamTarget) ── */
+  const exports = new Map<string, { fh: FileHandle; path: string; bytes: number }>()
+  ipcMain.handle('export:open', async (_e, path: string) => {
+    const handle = uuid7()
+    exports.set(handle, { fh: await fsOpen(path, 'w'), path, bytes: 0 })
+    return { handle }
+  })
+  ipcMain.handle('export:write', async (_e, handle: string, position: number, data: Uint8Array) => {
+    const x = exports.get(handle)
+    if (!x) throw new Error('Export is not open')
+    await x.fh.write(data, 0, data.byteLength, position)
+    x.bytes = Math.max(x.bytes, position + data.byteLength)
+  })
+  ipcMain.handle('export:close', async (_e, handle: string, opts: { abort?: boolean }) => {
+    const x = exports.get(handle)
+    if (!x) throw new Error('Export is not open')
+    await x.fh.close()
+    exports.delete(handle)
+    if (opts.abort) await rm(x.path, { force: true })
+    return { path: x.path, bytes: x.bytes }
+  })
+
+  /* ── agent ── */
+  ipcMain.handle('agent:settings', () => agent.settings())
+  ipcMain.handle('agent:setApiKey', (_e, key: string | null) => agent.setApiKey(key))
+  ipcMain.handle('agent:setModel', (_e, model: string, effort) => agent.setModel(model, effort))
+  ipcMain.handle('agent:run', (_e, projectId: string, prompt: string, context) => ({ runId: agent.start(projectId, prompt, context) }))
+  ipcMain.handle('agent:cancel', (_e, runId: string) => agent.cancel(runId))
+  ipcMain.handle('agent:permission', () => undefined) // M2: MCP tools with permission "ask"
+  ipcMain.handle('agent:review', (_e, runId: string, ids: string[], action: 'apply' | 'reject') => agent.review(runId, ids, action))
+  ipcMain.handle('agent:previewDoc', (_e, runId: string, ids: string[]) => agent.previewDoc(runId, ids))
+
+  createWindow()
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+  app.on('before-quit', () => { projects.closeAll(); void hub.closeAll() })
+}
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 1600,
+    height: 960,
+    minWidth: 1280,
+    minHeight: 720,
+    backgroundColor: '#0e0f11',
+    title: 'Reel',
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.cjs'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      spellcheck: false,
+    },
+  })
+  win.once('ready-to-show', () => win.show())
+  // links open in the browser, never inside the app
+  win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) void shell.openExternal(url); return { action: 'deny' } })
+  win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(process.env.VITE_DEV_SERVER_URL ?? 'file:')) e.preventDefault() })
+  if (isDev) void win.loadURL(process.env.VITE_DEV_SERVER_URL!)
+  else void win.loadFile(join(__dirname, '../renderer/index.html'))
+  if (process.env.REEL_DEVTOOLS === '1') win.webContents.openDevTools({ mode: 'detach' })
+}
+
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
+
+main().catch((e) => {
+  dialog.showErrorBox('Reel could not start', e instanceof Error ? `${e.message}\n\n${e.stack}` : String(e))
+  app.quit()
+})
