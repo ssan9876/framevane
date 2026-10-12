@@ -16,6 +16,7 @@ const SUGGESTIONS = [
 export function AgentPanel() {
   const doc = useApp((s) => s.doc)!
   const runs = useApp((s) => s.agentRuns)
+  const external = useApp((s) => s.externalActivity)
   const selection = useApp((s) => s.selection)
   const playheadUs = useApp((s) => s.playheadUs)
   const [draft, setDraft] = useState('')
@@ -59,10 +60,18 @@ export function AgentPanel() {
           </Popover>
         </>} />
       <div ref={log} role="log" aria-live="polite" aria-label="Agent conversation" className="scroll-y flex flex-1 flex-col gap-2.5 p-3">
-        {runs.length === 0 && (
+        {external.length > 0 && (
+          <section aria-label="Connected agent activity" className="flex flex-col gap-1.5">
+            <p className="flex items-center gap-1.5 text-xs text-muted"><span className="size-1.5 rounded-pill bg-success" aria-hidden />{external[external.length - 1]!.client} is connected and editing this project</p>
+            {external.slice(-12).map((a) => (
+              <ToolStep key={a.id} provider={a.client} tool={a.tool} summary={a.summary || '…'} status={a.status === 'running' ? 'running' : a.status === 'error' ? 'error' : 'done'} durationMs={a.durationMs} />
+            ))}
+          </section>
+        )}
+        {runs.length === 0 && external.length === 0 && (
           settings && !settings.hasApiKey ? (
-            <EmptyState icon={<KeyRound />} title="Connect an AI model" body="The agent uses Claude through your own Anthropic API key. It's stored encrypted on this computer."
-              action={<Button size="sm" variant="agent" onClick={() => useApp.getState().openDialog('settings', 'agents')}>Add API key</Button>} />
+            <EmptyState icon={<KeyRound />} title="Connect an AI model" body="Use your Claude Code session (no key needed: it edits this project live), or add an Anthropic API key for the panel here."
+              action={<div className="flex gap-2"><Button size="sm" variant="agent" onClick={() => useApp.getState().openDialog('settings', 'agents')}>Connect Claude Code</Button><Button size="sm" onClick={() => useApp.getState().openDialog('settings', 'agents')}>Add API key</Button></div>} />
           ) : (
             <div className="flex flex-col gap-3">
               <EmptyState icon={<Bot />} title="Ask for an edit" body="The agent edits a copy of your project. You review every change before it's applied." className="py-4" />

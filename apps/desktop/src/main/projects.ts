@@ -136,6 +136,9 @@ export class Projects {
 
   closeAll() { for (const id of [...this.open.keys()]) this.close(id) }
 
+  /** Projects currently loaded in memory (the one in the editor, plus any an agent opened). */
+  openIds(): string[] { return [...this.open.keys()] }
+
   rename(projectId: string, name: string) {
     const clean = name.trim().slice(0, 200)
     if (!clean) throw new Error('Name cannot be empty')

@@ -72,6 +72,19 @@ Count: 31 screens. 12 done, 9 partial, 10 stub. Every screen is reachable.
 - **Silence detection runs in the main process via ffmpeg `silencedetect`, not in the Python sidecar.** It is faster and needs no model.
 - **electron-vite doesn't support Vite 8,** so builds use esbuild for main/preload and Vite for the renderer.
 
+## Connect Claude Code (2026-10-11, pulled forward from M2)
+
+Reel is now an MCP server, so a Claude Code session (your own login, no API key in Reel) edits the open project directly.
+- `src/main/editor-mcp.ts`: streamable HTTP on `127.0.0.1:47821/mcp` (stateless), bearer token (settings table), refuses non-local Host and any browser Origin.
+- Tools: the 12 agent tools plus list_projects, open_project, create_project, import_media, add_to_timeline, undo, redo, export_video (23).
+- Every mutating call is one op batch, so it's one undo step. Edits show live, with a toast (Undo) and an activity feed in the agent panel.
+- The window reports the open project, playhead and selection, so "caption the selected clip" works. Export is delegated to the window (WebCodecs).
+- Settings → Agents & AI: "Add to Claude Code" runs `claude mcp add --scope user --transport http reel …` with the token; there's also Copy command, Reset token, and an on/off switch.
+- Harder than expected:
+  - The first report of the open project could lag the agent's first call; there's now a fallback to the project loaded in main.
+  - Transcription jobs linked MCP calls to a non-existent agent run (FK error). Only real in-app runs link now.
+- Not built: review mode for external agents (their edits apply directly; undo is the safety net).
+
 ## Next (architecture build order)
 
 - **M1 timeline must-haves:**

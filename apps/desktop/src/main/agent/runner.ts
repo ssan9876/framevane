@@ -279,6 +279,7 @@ export class AgentRunner {
     const ctx: ToolCtx = {
       projectId: run.projectId,
       runId: run.id,
+      agentRunId: run.id,
       signal: run.abort.signal,
       analysis: this.analysis,
       media: this.media,

@@ -17,6 +17,8 @@ import type { Media } from '../media'
 export interface ToolCtx {
   projectId: string
   runId: string
+  /** Set for in-app agent runs (links background jobs to agent_runs); undefined for external MCP clients. */
+  agentRunId?: string
   signal: AbortSignal
   analysis: Analysis
   media: Media
@@ -51,7 +53,7 @@ function assetsWithAudio(doc: Project) {
 async function transcripts(ctx: ToolCtx): Promise<Record<string, SourceWord[]>> {
   const out: Record<string, SourceWord[]> = {}
   for (const id of assetsWithAudio(ctx.doc())) {
-    const t = await ctx.analysis.transcript(ctx.projectId, id, { agentRunId: ctx.runId })
+    const t = await ctx.analysis.transcript(ctx.projectId, id, { agentRunId: ctx.agentRunId })
     out[id] = t.words
   }
   return out

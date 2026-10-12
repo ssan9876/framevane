@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { OpInput, Project } from '@reel/doc'
-import type { AgentEvent, AgentRunStatus, JobEvent, MediaInfo, ProjectSummary, ProposedOp } from '../../shared/api'
+import type { AgentEvent, AgentRunStatus, ExternalActivity, JobEvent, MediaInfo, ProjectSummary, ProposedOp } from '../../shared/api'
 
 /**
  * Renderer state. The project document is owned by the main process; this store mirrors it from doc:change events.
@@ -50,6 +50,8 @@ interface State {
   dialogArg: string | null
   agentRuns: AgentRunView[]
   reviewRunId: string | null
+  /** Tool calls from connected MCP clients (Claude Code…), newest last. */
+  externalActivity: ExternalActivity[]
   error: string | null
 
   go(route: Route): void
@@ -63,6 +65,7 @@ interface State {
   setError(e: string | null): void
   agentEvent(e: AgentEvent): void
   startAgentRun(runId: string, prompt: string): void
+  pushActivity(a: ExternalActivity): void
 }
 
 export const useApp = create<State>((set, get) => ({
@@ -84,6 +87,7 @@ export const useApp = create<State>((set, get) => ({
   dialogArg: null,
   agentRuns: [],
   reviewRunId: null,
+  externalActivity: [],
   error: null,
 
   go(route) {
@@ -118,6 +122,14 @@ export const useApp = create<State>((set, get) => ({
   setZoom(pxPerSec) { set({ pxPerSec: Math.min(600, Math.max(2, pxPerSec)) }) },
   openDialog(dialog, dialogArg = null) { set({ dialog, dialogArg }) },
   setError(error) { set({ error }) },
+
+  pushActivity(a) {
+    set((s) => {
+      const i = s.externalActivity.findIndex((x) => x.id === a.id)
+      const list = i >= 0 ? s.externalActivity.map((x, j) => (j === i ? a : x)) : [...s.externalActivity, a]
+      return { externalActivity: list.slice(-40) }
+    })
+  },
 
   startAgentRun(runId, prompt) {
     set((s) => ({ agentRuns: [...s.agentRuns, { runId, status: 'running', items: [{ type: 'turn', turn: { id: `${runId}-u`, role: 'user', text: prompt } }] }] }))

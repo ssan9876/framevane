@@ -72,6 +72,11 @@ export interface AgentContext { selection: string[]; playheadUs: number }
 
 export interface AgentSettings { hasApiKey: boolean; credentialSource: 'app_key' | 'environment' | 'none'; model: string; effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max' }
 
+/** Something a connected MCP client (Claude Code etc.) did in this project. */
+export interface ExternalActivity { id: string; client: string; tool: string; summary: string; status: 'running' | 'done' | 'error'; mutates: boolean; durationMs?: number }
+export interface McpConnectInfo { enabled: boolean; listening: boolean; url: string; token: string; error: string | null; claudeCommand: string }
+export interface McpExportRequest { requestId: string; projectId: string; outputPath: string; height: number; fps: number; codec: 'avc' | 'hevc' }
+
 export interface ReelApi {
   app: {
     info(): Promise<{ version: string; userData: string; projectsDir: string; ffmpeg: string | null; sidecar: 'unknown' | 'ready' | 'starting' | 'error'; gpu?: string }>
@@ -123,6 +128,20 @@ export interface ReelApi {
     review(runId: string, includeOpIds: string[], action: 'apply' | 'reject'): Promise<{ ok: boolean; applied: number; conflicted: number; message?: string }>
     previewDoc(runId: string, includeOpIds: string[]): Promise<Project | null>
     onEvent(cb: (e: AgentEvent) => void): () => void
+  }
+  /** Reel as an MCP server for Claude Code and other agents. */
+  mcp: {
+    info(): Promise<McpConnectInfo>
+    setEnabled(on: boolean): Promise<McpConnectInfo>
+    resetToken(): Promise<McpConnectInfo>
+    connectClaudeCode(): Promise<{ ok: boolean; message: string }>
+    onActivity(cb: (a: ExternalActivity) => void): () => void
+    /** The window reports which project is open, the playhead and the selection (agents read it). */
+    reportUiState(state: { projectId: string | null; playheadUs: number; selection: string[] }): void
+    onOpenProject(cb: (req: { requestId: string; projectId: string }) => void): () => void
+    replyOpenProject(requestId: string, ok: boolean): void
+    onExport(cb: (req: McpExportRequest) => void): () => void
+    replyExport(requestId: string, result: { ok: true; path: string; bytes: number } | { ok: false; error: string }): void
   }
 }
 

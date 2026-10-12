@@ -10,7 +10,7 @@ const on = <T>(channel: string) => (cb: (e: T) => void) => {
 }
 const inv = (channel: string) => (...args: unknown[]) => ipcRenderer.invoke(channel, ...args)
 
-const api: ReelApi = {
+const api = {
   app: {
     info: inv('app:info') as ReelApi['app']['info'],
     pickFiles: inv('app:pickFiles') as ReelApi['app']['pickFiles'],
@@ -59,6 +59,19 @@ const api: ReelApi = {
     previewDoc: inv('agent:previewDoc') as ReelApi['agent']['previewDoc'],
     onEvent: on('agent:event'),
   },
+} as ReelApi
+
+api.mcp = {
+  info: inv('mcp:info') as ReelApi['mcp']['info'],
+  setEnabled: inv('mcp:setEnabled') as ReelApi['mcp']['setEnabled'],
+  resetToken: inv('mcp:resetToken') as ReelApi['mcp']['resetToken'],
+  connectClaudeCode: inv('mcp:connectClaudeCode') as ReelApi['mcp']['connectClaudeCode'],
+  onActivity: on('mcp:activity'),
+  reportUiState: (s) => ipcRenderer.send('mcp:ui-state', s),
+  onOpenProject: on('mcp:open-project'),
+  replyOpenProject: (requestId, ok) => ipcRenderer.send('mcp:open-project:reply', requestId, ok),
+  onExport: on('mcp:export'),
+  replyExport: (requestId, result) => ipcRenderer.send('mcp:export:reply', requestId, result),
 }
 
 contextBridge.exposeInMainWorld('reel', api)

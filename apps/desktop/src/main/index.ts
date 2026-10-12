@@ -1,8 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents } from 'electron'
 import { open as fsOpen, rm, type FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { AgentEvent, DocEvent, JobEvent, MediaInfo } from '../shared/api'
+import type { AgentEvent, DocEvent, ExternalActivity, JobEvent, MediaInfo } from '../shared/api'
 import { AgentRunner } from './agent/runner'
+import { EditorMcp, type UiState } from './editor-mcp'
 import { Analysis } from './analysis'
 import { openDb, uuid7 } from './db'
 import { ffmpegPaths } from './ffmpeg'
@@ -39,6 +40,43 @@ async function main() {
   const analysis = new Analysis(db, paths, jobs, media, hub)
   const agent = new AgentRunner(db, projects, analysis, media, (e: AgentEvent) => broadcast('agent:event', e))
   handleMediaProtocol(media)
+
+  /* ── Reel as an MCP server (Claude Code connects here) ── */
+  let ui: UiState = { projectId: null, playheadUs: 0, selection: [] }
+  const uiWaiters: ((s: UiState) => void)[] = []
+  ipcMain.on('mcp:ui-state', (_e, s: UiState) => { ui = s; for (const w of uiWaiters.splice(0)) w(s) })
+  const pending = new Map<string, (v: unknown) => void>()
+  ipcMain.on('mcp:open-project:reply', (_e, id: string, ok: boolean) => pending.get(id)?.(ok))
+  ipcMain.on('mcp:export:reply', (_e, id: string, result: unknown) => pending.get(id)?.(result))
+  const ask = <T>(channel: string, payload: Record<string, unknown>, timeoutMs: number) => new Promise<T>((resolve, reject) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (!win) return reject(new Error('The Reel window is closed.'))
+    const requestId = uuid7()
+    const t = setTimeout(() => { pending.delete(requestId); reject(new Error('The Reel window did not respond in time.')) }, timeoutMs)
+    pending.set(requestId, (v) => { clearTimeout(t); pending.delete(requestId); resolve(v as T) })
+    win.webContents.send(channel, { requestId, ...payload })
+  })
+  const editorMcp = new EditorMcp({
+    db, projects, media, analysis,
+    emitActivity: (a: ExternalActivity) => broadcast('mcp:activity', a),
+    ui: () => ui,
+    openInUi: async (projectId) => {
+      if (ui.projectId === projectId) return
+      projects.list().find((p) => p.id === projectId) ?? (() => { throw new Error(`No project with id ${projectId}`) })()
+      const ok = await ask<boolean>('mcp:open-project', { projectId }, 20_000)
+      if (!ok) throw new Error('Reel could not open that project.')
+    },
+    exportInUi: async (projectId, s) => {
+      const r = await ask<{ ok: true; path: string; bytes: number } | { ok: false; error: string }>('mcp:export', { projectId, ...s }, 60 * 60_000)
+      if (!r.ok) throw new Error(r.error)
+      return { path: r.path, bytes: r.bytes }
+    },
+  })
+  ipcMain.handle('mcp:info', () => editorMcp.info())
+  ipcMain.handle('mcp:setEnabled', (_e, on: boolean) => editorMcp.setEnabled(on))
+  ipcMain.handle('mcp:resetToken', () => editorMcp.resetToken())
+  ipcMain.handle('mcp:connectClaudeCode', () => editorMcp.connectClaudeCode())
+  void editorMcp.start()
 
   /* ── app ── */
   ipcMain.handle('app:info', () => ({
@@ -144,7 +182,7 @@ async function main() {
 
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
-  app.on('before-quit', () => { projects.closeAll(); void hub.closeAll() })
+  app.on('before-quit', () => { projects.closeAll(); void hub.closeAll(); void editorMcp.stop() })
 }
 
 function createWindow() {
