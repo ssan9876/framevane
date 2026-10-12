@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type Anthropic from '@anthropic-ai/sdk'
 import {
-  applyOps, buildCaptionClips, clipEnd, findClip, formatUs, mergeRanges, projectDurationUs, sourceTimeAt, timelineSilences, timelineWords,
+  applyOps, BLEND_MODES, buildCaptionClips, clipEnd, findClip, formatUs, mergeRanges, projectDurationUs, sourceTimeAt, timelineSilences, timelineWords,
   type MediaClip, type OpInput, type Project, type SourceWord,
 } from '@framevane/doc'
 import { runFfmpeg } from '../ffmpeg'
@@ -247,9 +247,13 @@ export const TOOLS: AgentTool[] = [
   tool({
     name: 'set_clip',
     provider: 'editor',
-    description: 'Change a media clip: zoom (scale), position (x/y px from center), opacity, volume (dB), speed, or enable/disable it.',
+    description: 'Change a media clip: zoom (scale), position (x/y px from center), rotation, opacity, volume (dB), speed, blend mode, crop (fractions per side), mirror, or enable/disable it. Animated properties: use animate_clip instead.',
     schema: z.object({
       clipId: z.string(),
+      rotation: z.number().min(-360).max(360).optional(),
+      blend: z.enum(BLEND_MODES).optional(),
+      mirror: z.boolean().optional(),
+      crop: z.object({ left: z.number().min(0).max(0.9), top: z.number().min(0).max(0.9), right: z.number().min(0).max(0.9), bottom: z.number().min(0).max(0.9) }).optional(),
       scale: z.number().min(0.05).max(10).optional(),
       x: z.number().optional(),
       y: z.number().optional(),
@@ -261,10 +265,64 @@ export const TOOLS: AgentTool[] = [
     permission: 'auto',
     mutates: true,
     async run(i, ctx) {
-      const { clipId, volumeDb, speed, enabled, ...t } = i
-      const transform = Object.fromEntries(Object.entries(t).filter(([, v]) => v !== undefined))
-      ctx.propose([{ type: 'set_clip_props', clipId, ...(Object.keys(transform).length ? { transform } : {}), ...(volumeDb !== undefined ? { volumeDb } : {}), ...(speed !== undefined ? { speed } : {}), ...(enabled !== undefined ? { enabled } : {}) }])
+      const { clipId, volumeDb, speed, enabled, blend, mirror, crop, ...t } = i
+      const transform: Record<string, unknown> = Object.fromEntries(Object.entries(t).filter(([, v]) => v !== undefined))
+      if (mirror !== undefined) transform.flipH = mirror
+      if (crop) transform.crop = crop
+      ctx.propose([{ type: 'set_clip_props', clipId, ...(Object.keys(transform).length ? { transform } : {}), ...(volumeDb !== undefined ? { volumeDb } : {}), ...(speed !== undefined ? { speed } : {}), ...(enabled !== undefined ? { enabled } : {}), ...(blend ? { blend } : {}) }])
       return { summary: Object.keys(i).filter((k) => k !== 'clipId').join(', '), content: 'ok' }
+    },
+  }),
+
+  tool({
+    name: 'animate_clip',
+    provider: 'editor',
+    description: 'Animate one property of a media clip with keyframes at TIMELINE seconds (e.g. a punch-in: scale 1 → 1.2 over 0.3 s). Replaces existing keyframes of that property unless keep is true. Props: x, y (px from centre), scale (1 = fit), rotation (deg), opacity (0–1), volumeDb.',
+    schema: z.object({
+      clipId: z.string(),
+      prop: z.enum(['x', 'y', 'scale', 'rotation', 'opacity', 'volumeDb']),
+      keyframes: z.array(z.object({ atSeconds: z.number().min(0), value: z.number(), easing: z.enum(['linear', 'ease-in', 'ease-out', 'ease-in-out', 'hold']).optional() })).min(1).max(100),
+      keep: z.boolean().default(false),
+    }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const f = findClip(ctx.doc(), i.clipId)
+      if (!f) throw new Error(`Clip ${i.clipId} not found`)
+      const ops: OpInput[] = i.keep ? [] : [{ type: 'clear_keyframes', clipId: i.clipId, prop: i.prop }]
+      for (const k of i.keyframes) {
+        const local = Math.round(k.atSeconds * 1e6) - f.clip.startUs
+        if (local < 0 || local > f.clip.durationUs) throw new Error(`${k.atSeconds}s is outside clip ${i.clipId} (${sec(f.clip.startUs)}–${sec(clipEnd(f.clip))}s)`)
+        ops.push({ type: 'set_keyframe', clipId: i.clipId, prop: i.prop, tUs: local, value: k.value, ...(k.easing ? { easing: k.easing } : {}) })
+      }
+      ctx.propose(ops)
+      return { summary: `${i.prop} · ${i.keyframes.length} keys`, content: 'ok' }
+    },
+  }),
+
+  tool({
+    name: 'set_background',
+    provider: 'editor',
+    description: 'What shows where the video does not cover the canvas: a colour, or a blurred fill of the main video (good for vertical edits of landscape footage).',
+    schema: z.object({ kind: z.enum(['color', 'blur']), color: z.string().regex(/^#[0-9a-f]{6}$/i).optional(), amount: z.number().min(0).max(1).optional() }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      ctx.propose([{ type: 'set_canvas', canvas: { background: i.kind === 'blur' ? { kind: 'blur', amount: i.amount ?? 0.5 } : { kind: 'color', color: i.color ?? '#000000' } } }])
+      return { summary: i.kind, content: 'ok' }
+    },
+  }),
+
+  tool({
+    name: 'add_marker',
+    provider: 'editor',
+    description: 'Drop a coloured marker on the timeline ruler at a TIMELINE time, with an optional label (e.g. "hook", "check audio").',
+    schema: z.object({ atSeconds: z.number().min(0), label: z.string().max(80).default(''), color: z.enum(['red', 'orange', 'yellow', 'green', 'blue', 'purple']).default('orange') }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      ctx.propose([{ type: 'add_marker', marker: { id: `marker-${Math.round(i.atSeconds * 1e6).toString(36)}-${Math.random().toString(36).slice(2, 6)}`, atUs: Math.round(i.atSeconds * 1e6), color: i.color, label: i.label } }])
+      return { summary: `${i.atSeconds}s ${i.label}`, content: 'ok' }
     },
   }),
 

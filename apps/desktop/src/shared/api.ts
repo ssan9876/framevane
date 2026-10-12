@@ -21,6 +21,8 @@ export interface MediaInfo {
   /** framevane-media:// URLs the renderer can fetch. */
   urls: { media: string; thumb: string | null; peaks: string | null; filmstrip: string | null }
   status: 'ready' | 'preparing' | 'missing' | 'unsupported'
+  /** A 1280px proxy exists (preview may use it; export never does). */
+  hasProxy?: boolean
   /** Present while a background job prepares the asset (mezzanine transcode, thumbnails, waveform). */
   jobId?: string
 }
@@ -103,6 +105,8 @@ export interface ReelApi {
   media: {
     import(projectId: string, paths: string[]): Promise<MediaInfo[]>
     list(projectId: string): Promise<MediaInfo[]>
+    reverse(projectId: string, assetId: string, inUs: number, outUs: number): Promise<MediaInfo>
+    relink(projectId: string, assetId: string, newPath: string): Promise<MediaInfo>
     onChange(cb: (m: MediaInfo) => void): () => void
   }
   jobs: {

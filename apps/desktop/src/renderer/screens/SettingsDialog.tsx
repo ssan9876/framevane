@@ -18,7 +18,7 @@ export function SettingsDialog() {
             <TabPanel value="general"><General /></TabPanel>
             <TabPanel value="agents"><Agents /></TabPanel>
             <TabPanel value="shortcuts"><Shortcuts /></TabPanel>
-            <TabPanel value="performance"><p className="text-sm text-muted">Hardware decoding and encoding are on (WebCodecs uses your GPU). Proxy and cache controls arrive in M6.</p></TabPanel>
+            <TabPanel value="performance"><Performance /></TabPanel>
           </div>
         </UnderlineTabs>
       </div>
@@ -108,6 +108,17 @@ function ConnectClaude() {
         <Button size="sm" variant="ghost" onClick={async () => { setInfo(await window.framevane.mcp.resetToken()); toast({ tone: 'info', title: 'New token', description: 'Connected sessions must be added again with the new command.' }) }}>Reset token</Button>
       </div>
     </section>
+  )
+}
+
+function Performance() {
+  const useProxies = useApp((s) => s.useProxies)
+  return (
+    <div className="flex flex-col gap-3">
+      <Switch label="Use proxies for big media" description="Media larger than 1080p gets a light 1280px copy for smooth preview. Exports always use the originals." checked={useProxies}
+        onCheckedChange={(v) => { useApp.setState({ useProxies: v }); try { localStorage.setItem('framevane.useProxies', String(v)) } catch { /* private storage off: setting lasts this session */ } }} />
+      <p className="text-sm text-muted">Hardware decoding and encoding are on (WebCodecs uses your GPU). Cache controls arrive in M6.</p>
+    </div>
   )
 }
 

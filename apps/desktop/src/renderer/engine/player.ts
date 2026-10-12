@@ -28,8 +28,9 @@ export class Player {
   private isReady: (assetId: string) => boolean = () => false // nothing decodes until the editor says what is ready
 
   /** Media that is missing or still being prepared is not decoded (BUG-005). Call again when statuses change. */
-  setAvailability(isReady: (assetId: string) => boolean) {
+  setAvailability(isReady: (assetId: string) => boolean, useProxy: (assetId: string) => boolean = () => false) {
     this.isReady = isReady
+    this.pool.useProxy = useProxy
     this.audioReady = null
     if (!this.playing) this.seek(this.lastUs)
   }

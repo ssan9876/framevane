@@ -85,6 +85,26 @@ Framevane is now an MCP server, so a Claude Code session (your own login, no API
   - Transcription jobs linked MCP calls to a non-existent agent run (FK error). Only real in-app runs link now.
 - Not built: review mode for external agents (their edits apply directly; undo is the safety net).
 
+## M1 timeline must-haves (2026-10-11)
+
+| area | status | notes |
+| --- | --- | --- |
+| Keyframes (S14, S15, S20) | done | Position, scale, rotation, opacity, volume. Diamonds in the inspector (add, remove, previous/next) and on clips. Easing presets. Keyframes stay continuous across split, trim and speed change (`sliceKeyframes`). "Clear keyframes" keeps the value at the playhead. Volume keys drive gain automation in preview and export. |
+| On-canvas handles (S13) | done | Click the picture to select. Drag to move, corners to resize, knob to rotate, snapping to centre lines. Shared geometry (`mediaGeometry`) with the compositor. Live preview from a locally simulated doc; one undo step on release. Keyed props get keyframes. |
+| Crop, blend, background (S14, S03) | done | Crop per side (no re-zoom), 16 blend modes, colour or blurred background. |
+| Clipboard | done | Ctrl+C/X/V/D. Paste inserts on the magnet track, otherwise first free track or a new one (placement checked by simulating ops). |
+| Detach audio + linkage | done | Linked clips select, move and delete together. Linkage toggle. |
+| Freeze, reverse, mirror, enable/disable, group | done | Reverse renders in 2 s chunks so memory is bounded. |
+| Markers | done | M, Shift+M, Alt+Shift+M, right-click delete, accessible buttons on the ruler. |
+| Proxies, relink | done | 1280px proxies above 1080p (preview only). Locate… for missing media. |
+| Agent tools | done | New: animate_clip, set_background, add_marker. set_clip gained blend, crop and mirror. Available to the in-app agent and to Claude Code over MCP. |
+| Keyframe graph S21 | partial | Easing presets only. Curve editing is a should-have. |
+| Compound clips, keep-pitch speed | not built | Could / partial items, moved to later. |
+
+Harder than expected:
+- **BUG-010:** zod `.partial()` keeps defaults, so every one-field transform or caption-style edit reset the others. Present since M0, caught by the on-canvas drag, fixed with `patchOf()`.
+- **Keyframes across edits:** keeping them continuous needed boundary keyframes inserted at the cut values. A naive filter loses the animation.
+
 ## Next (architecture build order)
 
 - **M1 timeline must-haves:**

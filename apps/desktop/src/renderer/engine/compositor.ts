@@ -1,4 +1,4 @@
-import { clipEnd, DEFAULT_CAPTION_STYLE, sourceTimeAt, type CaptionClip, type Clip, type MediaClip, type Project, type TextClip, type TextStyle } from '@framevane/doc'
+import { clipEnd, DEFAULT_CAPTION_STYLE, resolveAt, sourceTimeAt, type CaptionClip, type Clip, type MediaClip, type Project, type TextClip, type TextStyle } from '@framevane/doc'
 import type { VideoSample } from 'mediabunny'
 import type { MediaPool } from './sources'
 
@@ -52,13 +52,34 @@ export function drawFrame(ctx: Ctx2D, doc: Project, tUs: number, visuals: Map<st
   ctx.save()
   ctx.setTransform(scale, 0, 0, scale, 0, 0)
   ctx.globalAlpha = 1
-  ctx.fillStyle = doc.canvas.background.color
+  const layers = layersAt(doc, tUs)
+  const bg = doc.canvas.background
+  ctx.fillStyle = bg.kind === 'color' ? bg.color : '#000000'
   ctx.fillRect(0, 0, W, H)
-  for (const { clip, trackStyle } of layersAt(doc, tUs)) {
+  if (bg.kind === 'blur') {
+    // blurred, darkened "cover" fill from the bottom-most picture (classic vertical-video background)
+    const base = layers.find((l) => (l.clip.kind === 'video' || l.clip.kind === 'image') && visuals.has(l.clip.id))
+    const v = base && visuals.get(base.clip.id)
+    if (v) {
+      try {
+        const sw = v.kind === 'video' ? v.sample.displayWidth : v.bitmap.width
+        const sh = v.kind === 'video' ? v.sample.displayHeight : v.bitmap.height
+        const cover = Math.max(W / sw, H / sh) * 1.08
+        ctx.save()
+        ctx.filter = `blur(${Math.round(8 + bg.amount * 72)}px) brightness(0.7)`
+        const w = sw * cover
+        const h = sh * cover
+        if (v.kind === 'video') v.sample.draw(ctx, (W - w) / 2, (H - h) / 2, w, h)
+        else ctx.drawImage(v.bitmap, (W - w) / 2, (H - h) / 2, w, h)
+        ctx.restore()
+      } catch (e) { if (!/closed/i.test(String(e))) throw e }
+    }
+  }
+  for (const { clip, trackStyle } of layers) {
     if (clip.kind === 'video' || clip.kind === 'image') {
       const v = visuals.get(clip.id)
       if (v) {
-        try { drawMedia(ctx, clip, v, W, H, scale) } catch (e) {
+        try { drawMedia(ctx, clip, v, W, H, scale, tUs - clip.startUs) } catch (e) {
           // an edit can close a clip's decoder while this frame is in flight; the next render draws the new state (BUG-003)
           if (!/closed/i.test(String(e))) throw e
         }
@@ -72,22 +93,42 @@ export function drawFrame(ctx: Ctx2D, doc: Project, tUs: number, visuals: Map<st
   ctx.restore()
 }
 
-function drawMedia(ctx: Ctx2D, clip: MediaClip, v: Visual, W: number, H: number, scale: number) {
+/**
+ * Where a media clip lands on the canvas at clip-local time t: centre, size of the visible (cropped) picture,
+ * rotation. Shared by the compositor and the on-canvas transform handles so they always agree.
+ */
+export function mediaGeometry(clip: MediaClip, localUs: number, sw: number, sh: number, W: number, H: number) {
+  const t = resolveAt(clip, localUs)
+  const c = t.crop
+  // "contain" fit of the full source; cropping hides edges without re-zooming
+  const fit = Math.min(W / sw, H / sh) * t.scale
+  const fullW = sw * fit
+  const fullH = sh * fit
+  const w = fullW * (1 - c.left - c.right)
+  const h = fullH * (1 - c.top - c.bottom)
+  // the visible part stays where it was in the uncropped picture
+  const offX = ((c.left - c.right) / 2) * fullW * (t.flipH ? -1 : 1)
+  const offY = ((c.top - c.bottom) / 2) * fullH * (t.flipV ? -1 : 1)
+  const rad = (t.rotation * Math.PI) / 180
+  const cx = W / 2 + t.x + offX * Math.cos(rad) - offY * Math.sin(rad)
+  const cy = H / 2 + t.y + offX * Math.sin(rad) + offY * Math.cos(rad)
+  return { cx, cy, w, h, rotation: t.rotation, opacity: t.opacity, flipH: t.flipH, flipV: t.flipV, crop: c, src: { x: c.left * sw, y: c.top * sh, w: sw * (1 - c.left - c.right), h: sh * (1 - c.top - c.bottom) } }
+}
+
+function drawMedia(ctx: Ctx2D, clip: MediaClip, v: Visual, W: number, H: number, scale: number, localUs: number) {
   const sw = v.kind === 'video' ? v.sample.displayWidth : v.bitmap.width
   const sh = v.kind === 'video' ? v.sample.displayHeight : v.bitmap.height
-  // "contain" fit, like the original's default canvas fit
-  const fit = Math.min(W / sw, H / sh)
-  const t = clip.transform
-  const w = sw * fit * t.scale
-  const h = sh * fit * t.scale
+  const g = mediaGeometry(clip, localUs, sw, sh, W, H)
+  if (g.w <= 0 || g.h <= 0 || g.opacity <= 0) return
   ctx.save()
-  ctx.globalAlpha = t.opacity
+  ctx.globalAlpha = g.opacity
+  ctx.globalCompositeOperation = clip.blend === 'normal' ? 'source-over' : clip.blend
   ctx.setTransform(scale, 0, 0, scale, 0, 0)
-  ctx.translate(W / 2 + t.x, H / 2 + t.y)
-  if (t.rotation) ctx.rotate((t.rotation * Math.PI) / 180)
-  if (t.flipH || t.flipV) ctx.scale(t.flipH ? -1 : 1, t.flipV ? -1 : 1)
-  if (v.kind === 'video') v.sample.draw(ctx, -w / 2, -h / 2, w, h)
-  else ctx.drawImage(v.bitmap, -w / 2, -h / 2, w, h)
+  ctx.translate(g.cx, g.cy)
+  if (g.rotation) ctx.rotate((g.rotation * Math.PI) / 180)
+  if (g.flipH || g.flipV) ctx.scale(g.flipH ? -1 : 1, g.flipV ? -1 : 1)
+  if (v.kind === 'video') v.sample.draw(ctx, g.src.x, g.src.y, g.src.w, g.src.h, -g.w / 2, -g.h / 2, g.w, g.h)
+  else ctx.drawImage(v.bitmap, g.src.x, g.src.y, g.src.w, g.src.h, -g.w / 2, -g.h / 2, g.w, g.h)
   ctx.restore()
 }
 

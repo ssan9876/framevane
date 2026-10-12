@@ -54,11 +54,14 @@ function EditorLoaded({ doc }: { doc: Project }) {
   useEffect(() => { player.setDoc(doc) }, [doc, player])
   const media = useApp((s) => s.media)
   const mediaLoaded = useApp((s) => s.mediaLoaded)
+  const useProxiesPref = useApp((s) => s.useProxies)
   useEffect(() => {
     // decode only media known to be ready: not missing, not still being transcoded (BUG-005)
     const ready = new Set(media.filter((m) => m.status === 'ready').map((m) => m.asset.id))
-    player.setAvailability((id) => mediaLoaded && ready.has(id))
-  }, [media, mediaLoaded, player])
+    const proxied = new Set(media.filter((m) => m.hasProxy).map((m) => m.asset.id))
+    const useProxies = useProxiesPref
+    player.setAvailability((id) => mediaLoaded && ready.has(id), (id) => useProxies && proxied.has(id))
+  }, [media, mediaLoaded, useProxiesPref, player])
   useEffect(() => () => { void player.dispose() }, [player])
 
   const seek = useCallback((us: number) => {

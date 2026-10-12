@@ -102,12 +102,37 @@ function MediaTab() {
                 onSelect={() => setSelected(m.asset.id)}
                 onAdd={m.status === 'ready' ? () => void addAssetToTimeline(m.asset.id) : undefined}
               />
+              {m.status === 'missing' && <RelinkButton m={m} />}
             </li>
           ))}
           {shown.length === 0 && <li className="col-span-full py-6 text-center text-sm text-muted">No {filter} in this project yet.</li>}
         </ul>
       )}
     </div>
+  )
+}
+
+/** Point a missing file at its new location (same kind, about the same length). */
+function RelinkButton({ m }: { m: MediaInfo }) {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  return (
+    <Button size="sm" variant="ghost" loading={busy} className="mt-0.5 w-full" aria-label={`Locate ${m.asset.name}`} onClick={async () => {
+      const doc = useApp.getState().doc
+      const [path] = await window.framevane.app.pickFiles({ kind: 'media' })
+      if (!doc || !path) return
+      setBusy(true)
+      try {
+        const info = await window.framevane.media.relink(doc.id, m.asset.id, path)
+        useApp.setState((s) => ({ media: s.media.map((x) => (x.asset.id === info.asset.id ? info : x)) }))
+        await useApp.getState().apply([{ type: 'add_asset', asset: info.asset }])
+        toast({ tone: 'success', title: `Found ${m.asset.name}`, description: 'Every clip that uses it is back.' })
+      } catch (e) {
+        toast({ tone: 'warning', title: "That doesn't look like the same file", description: e instanceof Error ? e.message : String(e) })
+      } finally {
+        setBusy(false)
+      }
+    }}>Locate…</Button>
   )
 }
 

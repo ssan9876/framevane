@@ -36,6 +36,8 @@ const api = {
   media: {
     import: inv('media:import') as ReelApi['media']['import'],
     list: inv('media:list') as ReelApi['media']['list'],
+    reverse: inv('media:reverse') as ReelApi['media']['reverse'],
+    relink: inv('media:relink') as ReelApi['media']['relink'],
     onChange: on('media:change'),
   },
   jobs: { onEvent: on('jobs:event'), cancel: inv('jobs:cancel') as ReelApi['jobs']['cancel'] },

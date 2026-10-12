@@ -144,6 +144,8 @@ async function main() {
   /* ── media, jobs, analysis ── */
   ipcMain.handle('media:import', (_e, projectId: string, files: string[]) => media.import(projectId, files))
   ipcMain.handle('media:list', (_e, projectId: string) => media.list(projectId))
+  ipcMain.handle('media:reverse', (_e, projectId: string, assetId: string, inUs: number, outUs: number) => media.reverse(projectId, assetId, inUs, outUs))
+  ipcMain.handle('media:relink', (_e, projectId: string, assetId: string, newPath: string) => media.relink(projectId, assetId, newPath))
   ipcMain.handle('jobs:cancel', (_e, id: string) => jobs.cancel(id))
   ipcMain.handle('analysis:transcript', (_e, projectId: string, assetId: string, opts) => analysis.transcript(projectId, assetId, opts ?? {}))
   ipcMain.handle('analysis:silences', (_e, projectId: string, assetId: string, opts) => analysis.silences(projectId, assetId, opts ?? {}))

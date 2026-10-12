@@ -32,7 +32,7 @@ export function handleMediaProtocol(media: Media) {
     const row = media.get(id)
     if (!row) return new Response('Not found', { status: 404 })
     let file: string | null = null
-    if (kind === 'asset') file = media.playablePath(id)
+    if (kind === 'asset') file = (url.searchParams.get('proxy') === '1' && media.proxyPath(id)) || media.playablePath(id)
     else if (kind === 'thumb') file = row.thumbs_path
     else if (kind === 'strip') file = row.thumbs_path?.replace(/\.jpg$/, '.strip.jpg') ?? null
     else if (kind === 'peaks') file = row.waveform_path

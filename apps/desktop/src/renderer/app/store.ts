@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { OpInput, Project } from '@framevane/doc'
+import type { Clip, OpInput, Project, TrackKind } from '@framevane/doc'
 import type { AgentEvent, AgentRunStatus, ExternalActivity, JobEvent, MediaInfo, ProjectSummary, ProposedOp } from '../../shared/api'
 
 /**
@@ -46,6 +46,11 @@ interface State {
   pxPerSec: number
   magnet: boolean
   snapping: boolean
+  /** Video and its detached audio select, move and cut together. */
+  linkage: boolean
+  /** Preview decodes 1280px proxies of big media (saved per computer). */
+  useProxies: boolean
+  clipboard: { items: { trackId: string; trackKind: TrackKind; clip: Clip }[]; originUs: number } | null
   dialog: null | 'export' | 'settings' | 'project-settings' | 'review' | 'shortcuts'
   dialogArg: string | null
   agentRuns: AgentRunView[]
@@ -83,6 +88,9 @@ export const useApp = create<State>((set, get) => ({
   pxPerSec: 60,
   magnet: true,
   snapping: true,
+  linkage: true,
+  useProxies: (() => { try { return localStorage.getItem('framevane.useProxies') !== 'false' } catch { return true } })(),
+  clipboard: null,
   dialog: null,
   dialogArg: null,
   agentRuns: [],

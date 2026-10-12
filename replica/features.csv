@@ -2,11 +2,11 @@ feature,area,priority,original,clone,notes
 Home screen with project grid (create open rename duplicate delete),projects,must,yes,yes,S01 | M0: S01; search; drop files to start
 Project settings: ratio resolution fps (incl. adapt to first clip),projects,must,yes,yes,S02 | M0: S02 Modify dialog; first video sets canvas
 Autosave and crash recovery,projects,must,yes,partial,draft autosave | M0: ops.jsonl journal + atomic snapshot every 2 s; replay on open written but no crash test yet
-Relink missing media,projects,should,yes,partial,M0: missing files detected and shown; relink dialog not built
+Relink missing media,projects,should,yes,yes,M0: missing files detected and shown; relink dialog not built | M1: Locate… on missing cards; checks kind and length
 Copy media into project vs link originals,projects,could,yes,no,S02
 Import video audio images by picker and drag-drop,import,must,yes,yes,"S04 | M0: media panel, home drop zone, drag to timeline"
-Wide codec support incl. HEVC VFR phone footage,import,must,yes,partial,FFmpeg decode | M0: WebCodecs for H.264/HEVC/VP9/AV1 + mezzanine transcode (NVENC) for the rest; not yet tested with real phone/ProRes files
-Proxy mode for 4K footage,import,should,yes,no,
+Wide codec support incl. HEVC VFR phone footage,import,must,yes,yes,"FFmpeg decode | M0: WebCodecs for H.264/HEVC/VP9/AV1 + mezzanine transcode (NVENC) for the rest; not yet tested with real phone/ProRes files | M1: e2e-verified HEVC 10-bit, MPEG-4 AVI (mezzanine), VFR, rotated portrait"
+Proxy mode for 4K footage,import,should,yes,yes,M1: 1280px NVENC proxies for >1080p; preview only; toggle in Settings → Performance
 Hardware-accelerated decode and encode,import,should,yes,yes,NVENC/QSV/AMF | M0: WebCodecs hardware decode/encode
 Smart search of media by content or speech,import,could,yes,no,local CLIP + transcript index
 Multi-track timeline (main track + overlay + audio + text tracks),timeline,must,yes,partial,"S20 | M0: main, overlay, audio and caption tracks; text tracks M3"
@@ -15,31 +15,31 @@ Trim by dragging clip edges,timeline,must,yes,yes,M0: with snapping and ripple o
 Ripple delete left/right of playhead (Q/W),timeline,must,yes,yes,
 Main track magnet / ripple,timeline,must,yes,yes,M0: P toggles; delete/trim/reorder ripple
 Auto snapping,timeline,must,yes,yes,M0: playhead and clip edges; Alt bypasses
-Audio-video linkage and detach audio,timeline,must,yes,no,CapCut: extract audio partly PRO
+Audio-video linkage and detach audio,timeline,must,yes,yes,"CapCut: extract audio partly PRO | M1: Ctrl+Shift+S, linked clips select/move/delete together, linkage toggle (`)"
 Undo/redo for every edit,timeline,must,yes,yes,shared op log with agents | M0: shared op journal; agent edits undo the same way
-Copy/cut/paste/duplicate clips,timeline,must,yes,no,
+Copy/cut/paste/duplicate clips,timeline,must,yes,yes,"M1: paste inserts on the magnet track, else first free track"
 Timeline zoom and fit (Shift+Z),timeline,must,yes,yes,
 Track lock hide mute,timeline,must,yes,yes,
-Markers (M) with colors,timeline,should,yes,no,M0: rendered from the doc; no UI to add yet
-Enable/disable clip (V),timeline,should,yes,no,
-Group / ungroup clips,timeline,should,yes,no,
+Markers (M) with colors,timeline,should,yes,yes,"M0: rendered from the doc; no UI to add yet | M1: M, Shift+M / Alt+Shift+M, right-click delete"
+Enable/disable clip (V),timeline,should,yes,yes,
+Group / ungroup clips,timeline,should,yes,yes,M1: Ctrl+G / Ctrl+Shift+G; groups select and move together
 Compound clips,timeline,could,yes,no,
-Freeze frame,timeline,should,yes,no,
-Reverse clip,timeline,should,yes,no,
-Mirror rotate crop,timeline,must,yes,partial,M0: mirror + rotation in inspector; crop not built
+Freeze frame,timeline,should,yes,yes,"M1: 3 s still, pushes the track right"
+Reverse clip,timeline,should,yes,yes,"M1: chunked ffmpeg reverse (bounded memory), picture and sound"
+Mirror rotate crop,timeline,must,yes,yes,M0: mirror + rotation in inspector; crop not built | M1: crop per side without re-zoom
 Preview axis (hover scrub),timeline,could,yes,no,
 Speed 0.1x-100x with keep pitch,speed,must,yes,partial,S16 | M0: 0.1–10× in inspector (any value via ops); keep pitch not built
 Curve speed (presets + custom),speed,should,yes,no,
 Smooth slow-mo (optical flow / frame interpolation),speed,should,yes,no,RIFE local
 Real-time player preview with frame-accurate seek,player,must,yes,yes,hard part #1 | M0: WebCodecs + Canvas2D compositor; audio-clocked playback
-On-canvas move scale rotate with snap guides,player,must,yes,no,
+On-canvas move scale rotate with snap guides,player,must,yes,yes,"M1: centre-line snapping, Shift = 15° rotation steps, Alt = no snap"
 Preview quality setting,player,should,yes,yes,
 Fullscreen preview,player,should,yes,yes,
-Keyframes on transform opacity volume and effect params,keyframes,must,yes,no,S14 diamonds
-Keyframe graph panel with easing curves,keyframes,should,yes,no,S21
-Blend modes and opacity,compositing,must,yes,no,
-Picture-in-picture / overlay tracks,compositing,must,yes,partial,M0: overlay tracks + position/scale/opacity in inspector; no on-canvas handles
-Canvas background (color blur image),compositing,must,yes,no,
+Keyframes on transform opacity volume and effect params,keyframes,must,yes,partial,"S14 diamonds | M1: position, scale, rotation, opacity, volume with easing, continuous across split/trim/speed; effect params when effects exist (M4)"
+Keyframe graph panel with easing curves,keyframes,should,yes,partial,"S21 | M1: easing presets (linear, ease in/out, smooth, hold); no curve graph yet"
+Blend modes and opacity,compositing,must,yes,yes,M1: 16 blend modes
+Picture-in-picture / overlay tracks,compositing,must,yes,yes,M0: overlay tracks + position/scale/opacity in inspector; no on-canvas handles | M1: on-canvas handles
+Canvas background (color blur image),compositing,must,yes,partial,M1: colour and blurred fill; image background not yet
 Masks (linear mirror circle rectangle heart star) with feather invert keyframes,compositing,should,yes,no,
 Chroma key with intensity shadow edge,compositing,must,yes,no,
 Video stabilization (3 levels),compositing,should,yes,no,CapCut: possibly PRO on Windows; ffmpeg vidstab
@@ -59,7 +59,7 @@ Export SRT / TXT captions,captions,must,yes,no,
 Transcript-based editing (delete words to cut),captions,should,yes,no,S30
 Remove filler words and silences,captions,should,yes,partial,M0: silences via the agent (find_silences + cut_ranges); filler words not built
 Add local music and audio files,audio,must,yes,yes,
-Volume and volume keyframes,audio,must,yes,partial,M0: volume yes; keyframes M1
+Volume and volume keyframes,audio,must,yes,yes,M0: volume yes; keyframes M1 | M1
 Fade in / fade out,audio,must,yes,no,
 Waveform display,audio,must,yes,yes,M0: real peaks from ffmpeg
 Noise reduction,audio,must,yes,no,CapCut: PRO; RNNoise/DeepFilterNet

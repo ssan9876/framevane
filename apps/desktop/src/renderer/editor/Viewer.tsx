@@ -5,6 +5,7 @@ import { projectDurationUs } from '@framevane/doc'
 import { useApp } from '../app/store'
 import { useEditor } from './Editor'
 import { stepFrames } from './actions'
+import { CanvasHandles } from './CanvasHandles'
 
 /** S13 · Player: the project canvas fitted into the panel, transport controls and timecode. */
 export function Viewer() {
@@ -46,7 +47,10 @@ export function Viewer() {
         {empty ? (
           <p className="text-sm text-muted">Add media to the timeline to see it here.</p>
         ) : (
-          <canvas ref={setCanvas} width={pw} height={ph} style={{ width: size.w, height: size.h }} className="bg-scrim shadow-card" aria-label={`Preview at ${tc(playheadUs, doc)}`} role="img" onClick={togglePlay} />
+          <div className="relative" style={{ width: size.w, height: size.h }}>
+            <canvas ref={setCanvas} width={pw} height={ph} style={{ width: size.w, height: size.h }} className="block bg-scrim shadow-card" aria-label={`Preview at ${tc(playheadUs, doc)}`} role="img" onDoubleClick={togglePlay} />
+            <CanvasHandles doc={doc} cssW={size.w} cssH={size.h} />
+          </div>
         )}
       </div>
       <div className="flex h-10 shrink-0 items-center gap-2 border-t border-border px-3">

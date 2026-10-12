@@ -20,6 +20,8 @@ export const files = {
   rotated: join(EDGE, 'phone-portrait-rotated.mp4'),
   vfr: join(EDGE, 'variable-frame-rate.mp4'),
   fake: join(EDGE, 'not-really-a-video.mp4'),
+  uhd: join(EDGE, 'uhd-4k.mp4'),
+  relink: join(EDGE, 'relink-me.mp4'),
 }
 
 function ff(args: string[]) {
@@ -42,6 +44,7 @@ export default function globalSetup() {
     ff(['-display_rotation', '90', '-i', tmp, '-c', 'copy', files.rotated])
   }
   if (!existsSync(files.vfr)) ff(['-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=30:duration=6', '-vf', "setpts='if(lt(N,60),N/30,2+(N-60)/12)/TB'", '-fps_mode', 'vfr', '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', files.vfr])
+  if (!existsSync(files.uhd)) ff(['-f', 'lavfi', '-i', 'testsrc2=size=3840x2160:rate=30:duration=3', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', files.uhd])
   if (!existsSync(files.fake)) writeFileSync(files.fake, 'This is a text file wearing an .mp4 name.\n')
   // a copy we can delete to test missing media
   const victim = join(EDGE, 'will-be-deleted.mp4')

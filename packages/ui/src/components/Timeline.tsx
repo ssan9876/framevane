@@ -84,7 +84,7 @@ export function TimelineClip({ kind, label, width, height, selected, disabled, m
         {speedLabel && <span className="ml-auto rounded-xs bg-scrim/50 px-1 text-[10px]">{speedLabel}</span>}
       </div>
       {keyframes?.map((k, i) => (
-        <Diamond key={i} state={k.on ? 'on' : 'has'} size={9} className="absolute bottom-1 -translate-x-1/2" style={{ left: `${k.at * 100}%` }} />
+        <Diamond key={i} state={k.on ? 'on' : 'has'} size={12} className="absolute bottom-0.5 -translate-x-1/2 drop-shadow-[0_0_2px_rgba(0,0,0,0.95)]" style={{ left: `${Math.min(99, Math.max(1, k.at * 100))}%` }} />
       ))}
       {disabled && <div className="absolute inset-0 bg-[repeating-linear-gradient(135deg,rgba(0,0,0,.45)_0_4px,transparent_4px_8px)]" />}
       {missing && (

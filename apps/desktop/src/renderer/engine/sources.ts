@@ -7,7 +7,7 @@ import type { AssetRef } from '@framevane/doc'
  * a jump restarts the reader from the nearest keyframe. Images: ImageBitmap. Audio: one AudioBuffer per asset.
  */
 
-export const mediaUrl = (assetId: string) => `framevane-media://asset/${encodeURIComponent(assetId)}`
+export const mediaUrl = (assetId: string, proxy = false) => `framevane-media://asset/${encodeURIComponent(assetId)}${proxy ? '?proxy=1' : ''}`
 
 class Lock {
   private p: Promise<unknown> = Promise.resolve()
@@ -82,6 +82,8 @@ interface AssetEntry {
 
 export class MediaPool {
   private assets = new Map<string, Promise<AssetEntry>>()
+  /** Preview pools decode 1280px proxies when they exist; export pools never do. */
+  useProxy: (assetId: string) => boolean = () => false
   private images = new Map<string, Promise<ImageBitmap>>()
   private audio = new Map<string, Promise<AudioBuffer | null>>()
 
@@ -138,18 +140,20 @@ export class MediaPool {
   }
 
   private entry(asset: AssetRef): Promise<AssetEntry> {
-    let p = this.assets.get(asset.id)
+    const proxy = this.useProxy(asset.id)
+    const key = `${asset.id}|${proxy ? 'proxy' : 'full'}`
+    let p = this.assets.get(key)
     if (!p) {
       p = (async () => {
-        const input = new Input({ source: new UrlSource(mediaUrl(asset.id)), formats: ALL_FORMATS })
+        const input = new Input({ source: new UrlSource(mediaUrl(asset.id, proxy)), formats: ALL_FORMATS })
         const video = await input.getPrimaryVideoTrack()
         let sink: VideoSampleSink | null = null
         if (video && (await video.canDecode())) sink = new VideoSampleSink(video)
         else if (video) console.warn(`[media] cannot decode video of ${asset.name} (${video.codec})`)
         return { input, video, sink, readers: new Map() }
       })()
-      this.assets.set(asset.id, p)
-      p.catch(() => this.assets.delete(asset.id))
+      this.assets.set(key, p)
+      p.catch(() => this.assets.delete(key))
     }
     return p
   }

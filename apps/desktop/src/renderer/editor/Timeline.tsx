@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent as RPointerEvent } from 'react'
-import { ArrowLeftRight, Magnet, MousePointer2, Scissors, Trash2, ChevronsLeft, ChevronsRight, Maximize2, ZoomIn, ZoomOut } from 'lucide-react'
+import { ArrowLeftRight, Magnet, MousePointer2, Scissors, Trash2, ChevronsLeft, ChevronsRight, Maximize2, ZoomIn, ZoomOut, Link2, Snowflake, Undo2 as Rewind, FlipHorizontal, Bookmark, Copy, ClipboardPaste, CopyPlus, AudioLines, EyeOff, Group, Ungroup } from 'lucide-react'
 import { ContextMenu, IconButton, IconToggle, Ruler, SnapGuide, TimelineClip, TrackHeader, Playhead as PlayheadMark, type ClipKind } from '@framevane/ui'
 import { clipEnd, findClip, projectDurationUs, type Clip, type MediaClip, type OpInput, type Project, type Track } from '@framevane/doc'
 import { useApp } from '../app/store'
 import { useEditor } from './Editor'
 import { addAssetToTimeline, deleteSelection, newId, rippleDeleteSide, splitAtPlayhead } from './actions'
+import {
+  addMarker, copySelection, cutSelection, detachAudio, duplicateSelection, expandSelection, freezeFrame, groupSelection, pasteClipboard,
+  removeMarker, reverseSelection, toggleEnabled, toggleMirror, ungroupSelection,
+} from './actions-m1'
 
 /** S20 · Timeline. */
 
@@ -97,8 +101,9 @@ export function Timeline() {
     const f = findClip(doc, clipId)
     if (!f) return
     const sel = useApp.getState().selection
-    if (e.shiftKey || e.ctrlKey) useApp.getState().select(sel.includes(clipId) ? sel.filter((x) => x !== clipId) : [...sel, clipId])
-    else if (!sel.includes(clipId)) useApp.getState().select([clipId])
+    const unit = expandSelection(doc, [clipId])
+    if (e.shiftKey || e.ctrlKey) useApp.getState().select(sel.includes(clipId) ? sel.filter((x) => !unit.includes(x)) : [...new Set([...sel, ...unit])])
+    else if (!sel.includes(clipId)) useApp.getState().select(unit)
     if (f.track.locked) return
     const edge = target.closest<HTMLElement>('[data-edge]')?.dataset.edge as 'l' | 'r' | undefined
     if (edge) {
@@ -181,6 +186,16 @@ export function Timeline() {
         ops.push({ type: 'pack_track', trackId: to.id, order: others })
       } else {
         ops.push({ type: 'move_clip', clipId: d.clipId, startUs: Math.round(d.previewStart), ...(to.id !== f.track.id ? { toTrackId: to.id } : {}) })
+        // grouped / linked clips travel with it (same time shift, same tracks)
+        const delta = Math.round(d.previewStart) - f.clip.startUs
+        if (delta) {
+          for (const id of expandSelection(doc, [d.clipId])) {
+            if (id === d.clipId) continue
+            const p = findClip(doc, id)
+            if (!p || p.track.locked || (p.track.main && magnet)) continue
+            ops.push({ type: 'move_clip', clipId: id, startUs: Math.max(0, p.clip.startUs + delta) })
+          }
+        }
       }
       if (f.track.main && magnet && to.id !== f.track.id) ops.push({ type: 'pack_track', trackId: f.track.id })
       void useApp.getState().apply(ops).then((ok) => { if (!ok) useApp.getState().setError("Clips can't overlap on a track. Drop it on an empty spot or another track.") })
@@ -267,7 +282,7 @@ export function Timeline() {
           <div className="sticky top-0 z-[var(--fv-z-timeline-overlay)] flex" style={{ height: RULER_H }}>
             <div className="sticky left-0 z-[calc(var(--fv-z-timeline-overlay)+2)] shrink-0 border-r border-b border-border bg-surface" style={{ width: HEADER_W }} />
             <div className="cursor-pointer border-b border-border" onPointerDown={(e) => onLanePointerDown(e, null)}>
-              <Ruler width={contentW} pxPerSec={pxPerSec} markers={doc.markers.map((m) => ({ at: m.atUs / 1e6, color: m.color, label: m.label }))} />
+              <Ruler width={contentW} pxPerSec={pxPerSec} />
             </div>
           </div>
           {/* tracks */}
@@ -298,6 +313,14 @@ export function Timeline() {
               </div>
             </div>
           ))}
+          {doc.markers.map((m) => (
+            <ContextMenu key={m.id} items={[{ label: 'Delete marker', icon: <Trash2 />, danger: true, onSelect: () => removeMarker(m.id) }]}>
+              <button type="button" aria-label={`Marker at ${(m.atUs / 1e6).toFixed(2)} s`} data-marker-id={m.id}
+                onPointerDown={(e) => e.stopPropagation()} onClick={() => seek(m.atUs)}
+                className="absolute top-[12px] z-[calc(var(--fv-z-timeline-overlay)+1)] size-3 -translate-x-1/2 rotate-45 rounded-[2px] outline-offset-2"
+                style={{ left: HEADER_W + m.atUs * pxPerUs, background: `var(--fv-color-marker-${m.color})` }} />
+            </ContextMenu>
+          ))}
           <div className="pointer-events-none absolute top-0" style={{ left: HEADER_W, height: RULER_H + rowsH }}>
             {snapX !== null && <SnapGuide x={snapX} height={RULER_H + rowsH} />}
             <TimelinePlayhead pxPerUs={pxPerUs} height={RULER_H + rowsH} />
@@ -318,7 +341,12 @@ function ClipView({ doc, clip, track, start, dur, pxPerUs, selected, peaks, medi
   const h = trackH(track)
   const media = clip.kind === 'video' || clip.kind === 'audio' || clip.kind === 'image' ? (clip as MediaClip) : null
   const asset = media ? doc.assets[media.assetId] : undefined
-  const label = clip.kind === 'caption' || clip.kind === 'text' ? clip.text : asset?.name ?? 'Missing media'
+  const label = clip.kind === 'caption' || clip.kind === 'text' ? clip.text
+    : `${media?.freezeAtUs !== undefined ? 'Freeze · ' : ''}${asset?.name ?? 'Missing media'}${media?.reversed ? ' · reversed' : ''}${media && !media.audioEnabled && media.kind === 'video' && media.freezeAtUs === undefined ? ' · audio detached' : ''}`
+  const keyTimes = media ? [...new Set(Object.values(media.keyframes).flatMap((k) => (k ?? []).map((x) => x.tUs)))] : []
+  // subscribe only to "which of my keys is under the playhead", not to every playhead move
+  const keyOn = useApp((s) => (keyTimes.length ? keyTimes.find((t) => Math.abs(s.playheadUs - start - t) <= 16_666) ?? -1 : -1))
+  const keyframes = keyTimes.map((t) => ({ at: t / Math.max(1, dur), on: t === keyOn }))
   // filmstrip: the sprite spans the whole asset; position it so the clip shows its own source range
   let stripStyle: CSSProperties | undefined
   const info = (mediaReady as { asset: { id: string }; status: string; urls: { filmstrip: string | null; thumb: string | null } }[]).find((m) => m.asset.id === asset?.id)
@@ -329,14 +357,28 @@ function ClipView({ doc, clip, track, start, dur, pxPerUs, selected, peaks, medi
     stripStyle = { backgroundImage: `url("framevane-media://thumb/${asset.id}")`, backgroundSize: 'auto 100%', backgroundRepeat: 'repeat-x' }
   }
   let waveform: number[] | undefined
-  const p = media && asset?.hasAudio ? peaks.get(asset.id) : undefined
+  // a video whose sound was detached shows no waveform (the linked audio clip carries it)
+  const p = media && asset?.hasAudio && media.audioEnabled && media.freezeAtUs === undefined ? peaks.get(asset.id) : undefined
   if (p && media) {
     const a = Math.floor((media.inUs / 1e6) * 100)
     const b = Math.min(p.length, Math.ceil(((media.inUs + dur * media.speed) / 1e6) * 100))
     waveform = Array.from(p.subarray(a, Math.max(a + 1, b)), (v) => v / 255)
   }
+  const visual = clip.kind === 'video' || clip.kind === 'image'
   const items = [
-    { label: 'Split at playhead', shortcut: 'Ctrl+B', icon: <Scissors />, onSelect: splitAtPlayhead },
+    { label: 'Copy', shortcut: 'Ctrl+C', icon: <Copy />, onSelect: () => void copySelection() },
+    { label: 'Cut', shortcut: 'Ctrl+X', icon: <Scissors />, onSelect: cutSelection },
+    { label: 'Paste at playhead', shortcut: 'Ctrl+V', icon: <ClipboardPaste />, onSelect: () => void pasteClipboard(), disabled: !useApp.getState().clipboard },
+    { label: 'Duplicate', shortcut: 'Ctrl+D', icon: <CopyPlus />, onSelect: () => void duplicateSelection() },
+    { label: 'Split at playhead', shortcut: 'Ctrl+B', icon: <Scissors />, onSelect: splitAtPlayhead, separatorBefore: true },
+    ...(clip.kind === 'video' && media?.audioEnabled && media.freezeAtUs === undefined ? [{ label: 'Detach audio', shortcut: 'Ctrl+Shift+S', icon: <AudioLines />, onSelect: () => void detachAudio() }] : []),
+    ...(clip.kind === 'video' ? [{ label: 'Freeze frame', icon: <Snowflake />, onSelect: () => void freezeFrame() }] : []),
+    ...((clip.kind === 'video' || clip.kind === 'audio') && media?.freezeAtUs === undefined ? [{ label: media?.reversed ? 'Play forwards again' : 'Reverse', icon: <Rewind />, onSelect: () => void reverseSelection() }] : []),
+    ...(visual ? [{ label: 'Mirror', icon: <FlipHorizontal />, onSelect: toggleMirror }] : []),
+    { label: clip.enabled ? 'Disable clip' : 'Enable clip', shortcut: 'V', icon: <EyeOff />, onSelect: toggleEnabled },
+    clip.groupId
+      ? { label: 'Ungroup', shortcut: 'Ctrl+Shift+G', icon: <Ungroup />, onSelect: ungroupSelection }
+      : { label: 'Group', shortcut: 'Ctrl+G', icon: <Group />, onSelect: groupSelection, disabled: useApp.getState().selection.length < 2 },
     { label: 'Delete', shortcut: 'Del', icon: <Trash2 />, danger: true, separatorBefore: true, onSelect: deleteSelection },
   ]
   return (
@@ -352,7 +394,8 @@ function ClipView({ doc, clip, track, start, dur, pxPerUs, selected, peaks, medi
           missing={!!media && (!asset || info?.status === 'missing')}
           stripStyle={stripStyle}
           waveform={waveform}
-          speedLabel={media && media.speed !== 1 ? `${+media.speed.toFixed(2)}×` : undefined}
+          speedLabel={media && media.speed !== 1 ? `${+media.speed.toFixed(2)}×` : media?.linkId ? '🔗' : undefined}
+          keyframes={keyframes.length ? keyframes : undefined}
         />
         <span data-edge="l" className="absolute inset-y-0 left-0 w-2 cursor-ew-resize" aria-hidden />
         <span data-edge="r" className="absolute inset-y-0 right-0 w-2 cursor-ew-resize" aria-hidden />
@@ -366,6 +409,7 @@ function Toolbar({ onFit }: { onFit: () => void }) {
   const snapping = useApp((s) => s.snapping)
   const pxPerSec = useApp((s) => s.pxPerSec)
   const hasSel = useApp((s) => s.selection.length > 0)
+  const linkage = useApp((s) => s.linkage)
   return (
     <div role="toolbar" aria-label="Timeline tools" className="flex h-[var(--fv-toolbar-h)] shrink-0 items-center gap-0.5 border-b border-border bg-surface px-2">
       <IconButton label="Select" shortcut="A" icon={<MousePointer2 />} className="bg-surface-3 text-fg" />
@@ -374,7 +418,14 @@ function Toolbar({ onFit }: { onFit: () => void }) {
       <IconButton label="Delete left of playhead" shortcut="Q" icon={<ChevronsLeft />} onClick={() => rippleDeleteSide('left')} />
       <IconButton label="Delete right of playhead" shortcut="W" icon={<ChevronsRight />} onClick={() => rippleDeleteSide('right')} />
       <IconButton label="Delete selected" shortcut="Del" icon={<Trash2 />} onClick={deleteSelection} disabled={!hasSel} />
+      <span className="mx-1 h-4 w-px bg-border" />
+      <IconButton label="Freeze frame" icon={<Snowflake />} onClick={() => void freezeFrame()} />
+      <IconButton label="Reverse" icon={<Rewind />} onClick={() => void reverseSelection()} disabled={!hasSel} />
+      <IconButton label="Mirror" icon={<FlipHorizontal />} onClick={toggleMirror} disabled={!hasSel} />
+      <IconButton label="Detach audio" shortcut="Ctrl+Shift+S" icon={<AudioLines />} onClick={() => void detachAudio()} />
+      <IconButton label="Add marker" shortcut="M" icon={<Bookmark />} onClick={addMarker} />
       <div className="flex-1" />
+      <IconToggle label="Linkage" shortcut="`" icon={<Link2 />} pressed={linkage} onPressedChange={(v) => useApp.setState({ linkage: v })} />
       <IconToggle label="Main track magnet" shortcut="P" icon={<Magnet />} pressed={magnet} onPressedChange={(v) => useApp.setState({ magnet: v })} />
       <IconToggle label="Snapping" shortcut="N" icon={<ArrowLeftRight />} pressed={snapping} onPressedChange={(v) => useApp.setState({ snapping: v })} />
       <span className="mx-1 h-4 w-px bg-border" />

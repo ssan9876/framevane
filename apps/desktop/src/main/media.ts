@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
-import { open, writeFile } from 'node:fs/promises'
+import { mkdir, open, rm, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import type { AssetRef } from '@framevane/doc'
 import type { MediaInfo } from '../shared/api'
@@ -24,8 +24,10 @@ interface AssetRow {
   id: string; hash: string; path: string; kind: 'video' | 'audio' | 'image' | 'gif' | 'lottie' | 'svg'
   duration_us: number | null; width: number | null; height: number | null; fps_num: number | null; fps_den: number | null
   video_codec: string | null; audio_codec: string | null; has_audio: number; webcodecs_ok: number
-  mezzanine_path: string | null; thumbs_path: string | null; waveform_path: string | null; status: string
+  mezzanine_path: string | null; proxy_path: string | null; thumbs_path: string | null; waveform_path: string | null; status: string
 }
+
+const PROXY_ABOVE = 1920 // long edge in px; bigger sources get a 1280px proxy for smooth preview
 
 export class Media {
   constructor(private db: Db, private paths: AppPaths, private jobs: JobQueue, private notify: (projectId: string, m: MediaInfo) => void) {}
@@ -58,6 +60,78 @@ export class Media {
     return r.webcodecs_ok ? r.path : r.mezzanine_path
   }
 
+  /** Low-resolution stand-in for preview (never used for export). */
+  proxyPath(assetId: string): string | null {
+    const r = this.get(assetId)
+    return r?.proxy_path && existsSync(r.proxy_path) ? r.proxy_path : null
+  }
+
+  /**
+   * Render [inUs, outUs) of an asset backwards (picture and sound) as a new asset in this project.
+   * Done in 2 s chunks (each reversed, then joined in reverse order) so memory stays bounded on long clips.
+   */
+  reverse(projectId: string, assetId: string, inUs: number, outUs: number): Promise<MediaInfo> {
+    const row = this.get(assetId)
+    if (!row) return Promise.reject(new Error('Unknown media'))
+    const src = this.playablePath(assetId) ?? row.path
+    const out = join(this.paths.mezzanine, `${assetId}.reversed.${inUs}-${outUs}.mp4`)
+    const job = this.jobs.add({
+      kind: 'agent_tool',
+      title: `Reversing ${basename(row.path)}`,
+      projectId,
+      assetId,
+      dedupeKey: `reverse:${assetId}:${inUs}:${outUs}`,
+      run: async ({ signal, progress }) => {
+        if (!existsSync(out)) {
+          const dir = join(this.paths.mezzanine, `rev-${uuid7()}`)
+          await mkdir(dir, { recursive: true })
+          try {
+            const seg = 2_000_000
+            const parts: string[] = []
+            const n = Math.max(1, Math.ceil((outUs - inUs) / seg))
+            const venc = hasEncoder('h264_nvenc') ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '18'] : ['-c:v', 'libx264', '-preset', 'fast', '-crf', '17']
+            for (let i = 0; i < n; i++) {
+              const a = inUs + i * seg
+              const len = Math.min(seg, outUs - a)
+              const part = join(dir, `p${String(i).padStart(5, '0')}.mp4`)
+              await runFfmpeg(['-ss', String(a / 1e6), '-t', String(len / 1e6), '-i', src, '-vf', 'reverse', ...(row.has_audio ? ['-af', 'areverse', '-c:a', 'aac', '-b:a', '256k'] : ['-an']),
+                ...venc, '-pix_fmt', 'yuv420p', '-g', '30', part], { signal })
+              parts.push(part)
+              progress((i + 1) / (n + 1))
+            }
+            const list = join(dir, 'list.txt')
+            await writeFile(list, parts.reverse().map((x) => `file '${x.replace(/'/g, "'\\''")}'`).join('\n'))
+            await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-movflags', '+faststart', out], { signal })
+          } finally {
+            await rm(dir, { recursive: true, force: true })
+          }
+        }
+        const [info] = await this.import(projectId, [out])
+        return info!
+      },
+    })
+    return job.done
+  }
+
+  /** Point a missing asset at a file in its new location (same kind, about the same length). */
+  async relink(projectId: string, assetId: string, newPath: string): Promise<MediaInfo> {
+    const row = this.get(assetId)
+    if (!row) throw new Error('Unknown media')
+    const meta = describe(newPath, await probe(newPath))
+    if (meta.kind !== row.kind) throw new Error(`That file is ${meta.kind === 'audio' ? 'audio' : `a ${meta.kind}`}, but the missing one was ${row.kind === 'audio' ? 'audio' : `a ${row.kind}`}.`)
+    if (row.duration_us && meta.durationUs && Math.abs(row.duration_us - meta.durationUs) > 500_000) {
+      throw new Error(`That file is ${(meta.durationUs / 1e6).toFixed(1)} s long; the missing one was ${(row.duration_us / 1e6).toFixed(1)} s.`)
+    }
+    const st = statSync(newPath)
+    this.db.prepare(`UPDATE media_assets SET path = ?, hash = ?, size_bytes = ?, status = 'ok', updated_at = ? WHERE id = ?`)
+      .run(newPath, await quickHash(newPath, st.size), st.size, now(), assetId)
+    const fresh = this.get(assetId)!
+    this.prepare(projectId, fresh)
+    const info = this.info(fresh)
+    this.notify(projectId, info)
+    return info
+  }
+
   private async register(path: string): Promise<AssetRow> {
     const st = statSync(path)
     const hash = await quickHash(path, st.size)
@@ -88,7 +162,8 @@ export class Media {
     const needMezz = !row.webcodecs_ok && !row.mezzanine_path && row.kind !== 'image'
     const needThumbs = !row.thumbs_path && row.kind !== 'audio'
     const needPeaks = !row.waveform_path && (row.has_audio === 1 || row.kind === 'audio')
-    if (!needMezz && !needThumbs && !needPeaks) return
+    const needProxy = row.kind === 'video' && !row.proxy_path && Math.max(row.width ?? 0, row.height ?? 0) > PROXY_ABOVE
+    if (!needMezz && !needThumbs && !needPeaks && !needProxy) return
     const job = this.jobs.add({
       kind: needMezz ? 'mezzanine' : 'thumbs',
       title: `Preparing ${basename(row.path)}`,
@@ -97,12 +172,13 @@ export class Media {
       dedupeKey: `prep:${row.id}`,
       priority: 5,
       run: async ({ signal, progress }) => {
-        const steps = [needThumbs && 'thumbs', needPeaks && 'peaks', needMezz && 'mezz'].filter(Boolean) as string[]
+        const steps = [needThumbs && 'thumbs', needPeaks && 'peaks', needMezz && 'mezz', needProxy && 'proxy'].filter(Boolean) as string[]
         let done = 0
         const step = (p: number) => progress((done + p) / steps.length)
         if (needThumbs) { await this.makeThumbs(row, signal); done++; step(0) }
         if (needPeaks) { await this.makePeaks(row, signal); done++; step(0) }
         if (needMezz) { await this.makeMezzanine(row, signal, step); done++ }
+        if (needProxy) { await this.makeProxy(row, signal, step).catch((e) => console.warn('[media] proxy failed', e)); done++ }
         const fresh = this.get(row.id)!
         this.notify(projectId, this.info(fresh))
         return { assetId: row.id }
@@ -168,6 +244,16 @@ export class Media {
     this.db.prepare(`UPDATE media_assets SET mezzanine_path = ?, updated_at = ? WHERE id = ?`).run(out, now(), row.id)
   }
 
+  private async makeProxy(row: AssetRow, signal: AbortSignal, progress: (p: number) => void) {
+    const out = join(this.paths.mezzanine, `${row.id}.proxy.mp4`)
+    const src = this.playablePath(row.id) ?? row.path
+    const portrait = (row.height ?? 0) > (row.width ?? 0)
+    await runFfmpeg(['-i', src, '-map', '0:v:0', '-an', '-vf', portrait ? 'scale=-2:1280' : 'scale=1280:-2',
+      ...(hasEncoder('h264_nvenc') ? ['-c:v', 'h264_nvenc', '-preset', 'p3', '-cq', '24'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24']),
+      '-pix_fmt', 'yuv420p', '-g', '15', '-movflags', '+faststart', out], { signal, durationUs: row.duration_us ?? undefined, onProgress: progress })
+    this.db.prepare(`UPDATE media_assets SET proxy_path = ?, updated_at = ? WHERE id = ?`).run(out, now(), row.id)
+  }
+
   private checkExists(r: AssetRow): AssetRow {
     const ok = existsSync(r.path)
     if (!ok && r.status !== 'missing') this.db.prepare(`UPDATE media_assets SET status='missing' WHERE id=?`).run(r.id)
@@ -190,6 +276,7 @@ export class Media {
     const ready = r.status === 'ok' && (r.webcodecs_ok === 1 || !!r.mezzanine_path || r.kind === 'image')
     return {
       asset,
+      hasProxy: !!(r.proxy_path && existsSync(r.proxy_path)),
       urls: {
         media: `framevane-media://asset/${r.id}`,
         thumb: r.thumbs_path ? `framevane-media://thumb/${r.id}?v=${encodeURIComponent(String(r.thumbs_path.length))}` : null,

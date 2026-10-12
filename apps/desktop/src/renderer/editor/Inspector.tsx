@@ -1,9 +1,14 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Trash2, Captions, Construction } from 'lucide-react'
-import { Button, ColorPicker, EmptyState, PanelHeader, Segmented, SliderField, Switch, TabPanel, UnderlineTabs } from '@framevane/ui'
-import { DEFAULT_CAPTION_STYLE, findClip, formatUs, projectDurationUs, type CaptionClip, type MediaClip, type OpInput, type Project, type Track } from '@framevane/doc'
+import { Button, ColorPicker, EmptyState, PanelHeader, Segmented, Select, SliderField, Switch, TabPanel, UnderlineTabs } from '@framevane/ui'
+import {
+  BLEND_MODES, DEFAULT_CAPTION_STYLE, EASINGS, findClip, formatUs, projectDurationUs, valueAt,
+  type AnimProp, type BlendMode, type CaptionClip, type Easing, type MediaClip, type OpInput, type Project, type Track,
+} from '@framevane/doc'
 import { useApp } from '../app/store'
 import { deleteSelection } from './actions'
+import { detachAudio, localPlayhead, setAnimProp } from './actions-m1'
+import { useEditor } from './Editor'
 
 /** S14–S19 · Inspector: properties of the selection, or project details (with S02 Modify) when nothing is selected. */
 export function Inspector() {
@@ -42,8 +47,27 @@ function ProjectDetails({ doc }: { doc: Project }) {
         {rows.map(([k, v]) => <Fragment key={k}><dt className="text-muted">{k}</dt><dd className="truncate" title={v}>{v}</dd></Fragment>)}
       </dl>
       <div className="px-3"><Button size="sm" onClick={() => useApp.getState().openDialog('project-settings')}>Modify canvas…</Button></div>
+      <BackgroundTools doc={doc} />
       <p className="px-3 pt-4 text-sm text-muted">Select a clip on the timeline to change it.</p>
     </>
+  )
+}
+
+/** Canvas background: a colour, or a blurred fill of the main video (for vertical edits of landscape footage). */
+function BackgroundTools({ doc }: { doc: Project }) {
+  const bg = doc.canvas.background
+  const set = (b: Project['canvas']['background']) => void useApp.getState().apply([{ type: 'set_canvas', canvas: { background: b } }])
+  const [amount, setAmount] = useCommitted(Math.round((bg.kind === 'blur' ? bg.amount : 0.5) * 100), (v) => set({ kind: 'blur', amount: v / 100 }))
+  const [color, setColor] = useCommitted(bg.kind === 'color' ? bg.color : '#000000', (c) => set({ kind: 'color', color: c }), 400)
+  return (
+    <div className="flex flex-col gap-2 px-3 pt-4">
+      <h3 className="text-sm text-muted">Background</h3>
+      <Segmented label="Background" value={bg.kind} onValueChange={(k) => set(k === 'blur' ? { kind: 'blur', amount: amount / 100 } : { kind: 'color', color })}
+        options={[{ value: 'color', label: 'Colour' }, { value: 'blur', label: 'Blur' }]} />
+      {bg.kind === 'color'
+        ? <ColorPicker label="Background colour" value={color} onChange={setColor} />
+        : <SliderField label="Blur" value={amount} onChange={setAmount} min={0} max={100} unit="%" defaultValue={50} />}
+    </div>
   )
 }
 
@@ -67,62 +91,134 @@ function MediaInspector({ clip, doc, locked }: { clip: MediaClip; doc: Project; 
   const [tab, setTab] = useState(isAudio ? 'audio' : 'video')
   const [sub, setSub] = useState('basic')
   const asset = doc.assets[clip.assetId]
+  const playheadUs = useApp((s) => s.playheadUs)
   const apply = (op: Omit<Extract<OpInput, { type: 'set_clip_props' }>, 'type' | 'clipId'>) => void useApp.getState().apply([{ type: 'set_clip_props', clipId: clip.id, ...op }])
-  const [scale, setScale] = useCommitted(Math.round(clip.transform.scale * 100), (v) => apply({ transform: { scale: v / 100 } }))
-  const [x, setX] = useCommitted(Math.round(clip.transform.x), (v) => apply({ transform: { x: v } }))
-  const [y, setY] = useCommitted(Math.round(clip.transform.y), (v) => apply({ transform: { y: v } }))
-  const [rot, setRot] = useCommitted(Math.round(clip.transform.rotation), (v) => apply({ transform: { rotation: v } }))
-  const [op, setOp] = useCommitted(Math.round(clip.transform.opacity * 100), (v) => apply({ transform: { opacity: v / 100 } }))
-  const [vol, setVol] = useCommitted(clip.volumeDb, (v) => apply({ volumeDb: v }))
   const [speed, setSpeed] = useCommitted(clip.speed, (v) => apply({ speed: v }))
   const maxSpeedForSource = asset?.durationUs ? Math.max(0.1, ((asset.durationUs - clip.inUs) / clip.durationUs) * clip.speed) : 100
+  const local = localPlayhead(clip, playheadUs)
+  const keysHere = (Object.entries(clip.keyframes) as [AnimProp, { tUs: number; value: number; easing: Easing }[] | undefined][])
+    .flatMap(([prop, kfs]) => (kfs ?? []).filter((k) => Math.abs(k.tUs - local) <= 16_666).map((k) => ({ prop, ...k })))
+  const animated = Object.values(clip.keyframes).some((k) => k?.length)
 
   const tabs = [
     ...(!isAudio ? [{ value: 'video', label: 'Video' }] : []),
-    { value: 'audio', label: 'Audio', disabled: !asset?.hasAudio },
-    { value: 'speed', label: 'Speed', disabled: clip.kind === 'image' },
+    { value: 'audio', label: 'Audio', disabled: !asset?.hasAudio || clip.freezeAtUs !== undefined },
+    { value: 'speed', label: 'Speed', disabled: clip.kind === 'image' || clip.freezeAtUs !== undefined },
     ...(!isAudio ? [{ value: 'animation', label: 'Animation' }, { value: 'adjust', label: 'Adjust' }] : []),
   ]
+  const title = `${asset?.name ?? 'Clip'}${clip.freezeAtUs !== undefined ? ' · freeze frame' : ''}${clip.reversed ? ' · reversed' : ''}`
   return (
     <div className={locked ? 'pointer-events-none opacity-60' : ''}>
-      <PanelHeader title={<span className="truncate" title={asset?.name}>{asset?.name ?? 'Clip'}</span>} />
+      <PanelHeader title={<span className="truncate" title={title}>{title}</span>} />
       <UnderlineTabs tabs={tabs} value={tab} onValueChange={setTab}>
       <div className="flex flex-col gap-2 p-3">
         {locked && <p className="text-sm text-warning">This track is locked.</p>}
         <TabPanel value="video" className="flex flex-col gap-2">
-          <>
-            <Segmented label="Video tools" value={sub} onValueChange={setSub} options={[{ value: 'basic', label: 'Basic' }, { value: 'bg', label: 'Remove BG' }, { value: 'mask', label: 'Mask' }, { value: 'retouch', label: 'Retouch' }]} />
-            {sub === 'basic' ? (
-              <div className="mt-2 flex flex-col gap-1.5">
-                <SliderField label="Scale" value={scale} onChange={setScale} min={5} max={400} unit="%" defaultValue={100} />
-                <SliderField label="Position X" value={x} onChange={setX} min={-doc.canvas.width} max={doc.canvas.width} unit="px" defaultValue={0} bipolar />
-                <SliderField label="Position Y" value={y} onChange={setY} min={-doc.canvas.height} max={doc.canvas.height} unit="px" defaultValue={0} bipolar />
-                <SliderField label="Rotation" value={rot} onChange={setRot} min={-180} max={180} unit="°" defaultValue={0} bipolar />
-                <SliderField label="Opacity" value={op} onChange={setOp} min={0} max={100} unit="%" defaultValue={100} />
+          <Segmented label="Video tools" value={sub} onValueChange={setSub} options={[{ value: 'basic', label: 'Basic' }, { value: 'crop', label: 'Crop' }, { value: 'bg', label: 'Remove BG' }, { value: 'mask', label: 'Mask' }]} />
+          {sub === 'basic' && (
+            <div className="mt-2 flex flex-col gap-1.5">
+              <AnimSlider clip={clip} prop="scale" label="Scale" min={5} max={400} unit="%" toUi={(v) => Math.round(v * 100)} fromUi={(v) => v / 100} defaultValue={100} />
+              <AnimSlider clip={clip} prop="x" label="Position X" min={-doc.canvas.width} max={doc.canvas.width} unit="px" defaultValue={0} bipolar />
+              <AnimSlider clip={clip} prop="y" label="Position Y" min={-doc.canvas.height} max={doc.canvas.height} unit="px" defaultValue={0} bipolar />
+              <AnimSlider clip={clip} prop="rotation" label="Rotation" min={-180} max={180} unit="°" defaultValue={0} bipolar />
+              <AnimSlider clip={clip} prop="opacity" label="Opacity" min={0} max={100} unit="%" toUi={(v) => Math.round(v * 100)} fromUi={(v) => v / 100} defaultValue={100} />
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <Select label="Blend" value={clip.blend} width={150} onValueChange={(v) => apply({ blend: v as BlendMode })}
+                  options={BLEND_MODES.map((b) => ({ value: b, label: b === 'normal' ? 'Normal' : b.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase()) }))} />
                 <Switch label="Mirror" checked={clip.transform.flipH} onCheckedChange={(v) => apply({ transform: { flipH: v } })} />
-                <p className="pt-2 text-xs text-muted">Keyframes for these values arrive in M1.</p>
               </div>
-            ) : (
-              <EmptyState icon={<Construction />} title={sub === 'bg' ? 'Background removal comes in M5' : sub === 'mask' ? 'Masks come as a should-have' : 'Retouch comes as a could-have'} body="It will run locally on your GPU, free." />
-            )}
-          </>
+              <KeyframeTools clip={clip} keysHere={keysHere} animated={animated} local={local} />
+            </div>
+          )}
+          {sub === 'crop' && <CropTools clip={clip} />}
+          {(sub === 'bg' || sub === 'mask') && (
+            <EmptyState icon={<Construction />} title={sub === 'bg' ? 'Background removal comes in M5' : 'Masks come as a should-have'} body="It will run locally on your GPU, free." />
+          )}
         </TabPanel>
         <TabPanel value="audio">
           <div className="flex flex-col gap-1.5">
-            <SliderField label="Volume" value={vol} onChange={setVol} min={-60} max={20} step={0.5} precision={1} unit="dB" defaultValue={0} bipolar />
-            <p className="pt-2 text-xs text-muted">Fades, noise reduction and voice enhancement come in M3.</p>
+            <AnimSlider clip={clip} prop="volumeDb" label="Volume" min={-60} max={20} step={0.5} precision={1} unit="dB" defaultValue={0} bipolar />
+            {!clip.audioEnabled && <p className="text-sm text-muted">This clip's sound was detached to a linked audio clip.</p>}
+            {clip.kind === 'video' && clip.audioEnabled && <Button size="sm" onClick={() => void detachAudio()}>Detach audio</Button>}
+            {isAudio && <KeyframeTools clip={clip} keysHere={keysHere} animated={animated} local={local} />}
+            <p className="pt-2 text-xs text-muted">Fades, noise reduction and voice enhancement come in M3. Fade by keying the volume.</p>
           </div>
         </TabPanel>
         <TabPanel value="speed">
           <div className="flex flex-col gap-1.5">
             <SliderField label="Speed" value={speed} onChange={setSpeed} min={0.1} max={Math.min(10, Math.floor(maxSpeedForSource * 10) / 10 || 10)} step={0.1} precision={1} unit="×" defaultValue={1} />
-            <p className="text-xs text-muted">Duration {formatUs(clip.durationUs)}. Curves and smooth slow motion come later.</p>
+            <p className="text-xs text-muted">Duration {formatUs(clip.durationUs)}. Keyframes stretch with the speed. Curves and smooth slow motion come later.</p>
           </div>
         </TabPanel>
-        <TabPanel value="animation"><EmptyState icon={<Construction />} title="Animations come as a should-have" /></TabPanel>
+        <TabPanel value="animation"><EmptyState icon={<Construction />} title="Animations come as a should-have" body="For now, key Position, Scale or Opacity on the Video tab." /></TabPanel>
         <TabPanel value="adjust"><EmptyState icon={<Construction />} title="Color adjustments come in M4" /></TabPanel>
       </div>
       </UnderlineTabs>
+    </div>
+  )
+}
+
+/** A slider bound to an animatable property: shows the value at the playhead, keys it if the property is animated. */
+function AnimSlider({ clip, prop, label, toUi = (v) => Math.round(v), fromUi = (v) => v, ...rest }: {
+  clip: MediaClip; prop: AnimProp; label: string; min: number; max: number; step?: number; precision?: number; unit?: string; defaultValue?: number; bipolar?: boolean
+  toUi?: (v: number) => number; fromUi?: (v: number) => number
+}) {
+  const playheadUs = useApp((s) => s.playheadUs)
+  const { seek } = useEditor()
+  const local = localPlayhead(clip, playheadUs)
+  const shown = toUi(valueAt(clip, prop, local))
+  const [v, setV] = useCommitted(shown, (x) => void useApp.getState().apply([setAnimProp(clip, prop, fromUi(x))]))
+  const kfs = clip.keyframes[prop] ?? []
+  const here = kfs.find((k) => Math.abs(k.tUs - local) <= 16_666)
+  const state = !kfs.length ? 'none' : here ? 'on' : 'has'
+  const prev = [...kfs].reverse().find((k) => k.tUs < local - 16_666)
+  const next = kfs.find((k) => k.tUs > local + 16_666)
+  return (
+    <SliderField label={label} value={v} onChange={setV} {...rest}
+      keyframe={{
+        state,
+        onToggle: () => void useApp.getState().apply([here
+          ? { type: 'remove_keyframe', clipId: clip.id, prop, tUs: here.tUs }
+          : { type: 'set_keyframe', clipId: clip.id, prop, tUs: local, value: fromUi(v) }]),
+        onPrev: prev ? () => seek(clip.startUs + prev.tUs) : undefined,
+        onNext: next ? () => seek(clip.startUs + next.tUs) : undefined,
+      }} />
+  )
+}
+
+function KeyframeTools({ clip, keysHere, animated, local }: { clip: MediaClip; keysHere: { prop: AnimProp; tUs: number; value: number; easing: Easing }[]; animated: boolean; local: number }) {
+  if (!animated) return <p className="pt-2 text-xs text-muted">Tap a ◇ to key a value at the playhead, move the playhead, then change the value.</p>
+  const easing = keysHere[0]?.easing
+  return (
+    <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+      {keysHere.length ? (
+        <Select label="Easing" value={easing ?? 'ease-in-out'} width={130} onValueChange={(e) => void useApp.getState().apply(keysHere.map((k) => ({ type: 'set_keyframe', clipId: clip.id, prop: k.prop, tUs: k.tUs, value: k.value, easing: e as Easing })))}
+          options={EASINGS.map((e) => ({ value: e, label: EASING_LABELS[e] }))} />
+      ) : <span className="text-xs text-muted">Move to a ◆ to change its easing.</span>}
+      <Button size="sm" variant="ghost" onClick={() => void useApp.getState().apply([{ type: 'clear_keyframes', clipId: clip.id, atUs: local }])}>Clear keyframes</Button>
+    </div>
+  )
+}
+const EASING_LABELS: Record<Easing, string> = { linear: 'Linear', 'ease-in': 'Ease in', 'ease-out': 'Ease out', 'ease-in-out': 'Smooth', hold: 'Hold' }
+
+function CropTools({ clip }: { clip: MediaClip }) {
+  const c = clip.transform.crop
+  const set = (side: keyof typeof c, pct: number) => {
+    const next = { ...c, [side]: Math.min(0.9, pct / 100) }
+    if (next.left + next.right > 0.95 || next.top + next.bottom > 0.95) return
+    void useApp.getState().apply([{ type: 'set_clip_props', clipId: clip.id, transform: { crop: next } }])
+  }
+  const [l, setL] = useCommitted(Math.round(c.left * 100), (v) => set('left', v))
+  const [t, setT] = useCommitted(Math.round(c.top * 100), (v) => set('top', v))
+  const [r, setR] = useCommitted(Math.round(c.right * 100), (v) => set('right', v))
+  const [b, setB] = useCommitted(Math.round(c.bottom * 100), (v) => set('bottom', v))
+  return (
+    <div className="mt-2 flex flex-col gap-1.5">
+      <SliderField label="Left" value={l} onChange={setL} min={0} max={90} unit="%" defaultValue={0} />
+      <SliderField label="Top" value={t} onChange={setT} min={0} max={90} unit="%" defaultValue={0} />
+      <SliderField label="Right" value={r} onChange={setR} min={0} max={90} unit="%" defaultValue={0} />
+      <SliderField label="Bottom" value={b} onChange={setB} min={0} max={90} unit="%" defaultValue={0} />
+      <p className="text-xs text-muted">Cropping hides edges without zooming. Use Scale to fill the frame again.</p>
     </div>
   )
 }

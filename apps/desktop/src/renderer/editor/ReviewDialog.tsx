@@ -81,7 +81,9 @@ function MiniPreview({ doc }: { doc: Project }) {
   const mediaLoaded = useApp((s) => s.mediaLoaded)
   useEffect(() => {
     const ready = new Set(media.filter((m) => m.status === 'ready').map((m) => m.asset.id))
-    player.setAvailability((id) => mediaLoaded && ready.has(id))
+    const proxied = new Set(media.filter((m) => m.hasProxy).map((m) => m.asset.id))
+    const useProxies = useApp.getState().useProxies
+    player.setAvailability((id) => mediaLoaded && ready.has(id), (id) => useProxies && proxied.has(id))
   }, [media, mediaLoaded, player])
   useEffect(() => { player.attach(canvas.current); return () => { void player.dispose() } }, [player])
   const dur = projectDurationUs(doc)

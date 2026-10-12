@@ -13,9 +13,10 @@ Only reproduced bugs are listed. Each one has a test that failed before the fix 
 | BUG-006 | S3 | Tabs in Settings and the inspector point aria-controls at panels that don't exist | fixed in 16aa598 |
 | BUG-007 | S3 | Inspector slider thumbs have no accessible name | fixed in 16aa598 |
 | BUG-008 | S4 | Home requests project covers before their thumbnails exist (404) | fixed in 16aa598 |
+| BUG-010 | S2 | Editing one transform or caption-style field silently reset the others to defaults | fixed in {{FIX3}} |
 | BUG-009 | S3 | Review dialog preview is black (only captions draw) | fixed in ea4a22f |
 
-Open: none. No S1 bugs found. BUG-009 was a regression from the BUG-005 fix, caught by eye on the rebranded screenshots and then by a new pixel assertion.
+Open: none. No S1 bugs found. BUG-010 (S2) shipped in M0 and was only caught in M1, because no M0 test changed two transform fields in a row. BUG-009 was a regression from the BUG-005 fix, caught by eye on the rebranded screenshots and then by a new pixel assertion.
 
 ---
 
@@ -165,6 +166,23 @@ Evidence: replica/clone-screens/S29-review.png (rebrand run); F12-H1 pixel asser
 Suspected cause: the BUG-005 fix made players decode only media marked ready. The review dialog's own player was never told what is ready, so it decoded nothing.
 Fix: the review player gets the same availability as the main player.
 Status: fixed in ea4a22f
+
+### BUG-010: Editing one transform or caption-style field silently reset the others
+
+- Severity: S2 (lost edits with no warning: changing Position Y reset Scale and Rotation; changing the caption colour reset its size and position)
+- Flow / case: F02 inspector edits, F04 caption style, and every agent `set_clip` / `style_captions` call
+- Screen: S14, S19
+- Build: since b16fdc2 (M0)
+
+Steps
+1. Select a clip, set Scale to 150 %, then set Position Y to 100.
+
+Expected: Scale stays 150 %.
+Actual: Scale goes back to 100 % (and rotation to 0).
+Evidence: found while building M1. The on-canvas drag sends x then y, and x came back as 0. A unit test (m1.test.ts › BUG-010) failed before the fix.
+Suspected cause: zod's `.partial()` keeps field defaults, so a patch `{y: 100}` parsed to `{x: 0, y: 100, scale: 1, …}`.
+Fix: `patchOf()` builds patch schemas without defaults. It's used for transform and caption-style patches, and covered by two regression tests.
+Status: fixed in {{FIX3}}
 
 ---
 

@@ -103,6 +103,21 @@ Not built in M0 (n/b). The screens exist as stubs; cases are written when each i
 | F13-N1 | negative | no token / wrong token / browser Origin | 401 / 401 / 403; MCP client refuses to connect | e2e | pass |
 | F13-H3 | happy (real Claude Code) | click Add to Claude Code, new session, ask for an edit | Claude Code lists framevane tools and edits live | manual | not run yet |
 
+## M1 timeline and canvas editing
+| case | type | steps | expected | auto | result |
+| --- | --- | --- | --- | --- | --- |
+| M1-H1 | happy | key Scale at 0 s, set 200 % at 2 s, check 1 s, split at 1 s, clear | auto-key at 2 s; ~150 % at 1 s; right part starts at the same value; clear works | e2e | pass |
+| M1-H2 | happy | click the picture, drag it, undo | Position X changes; undo back to 0 | e2e | pass |
+| M1-H3 | happy | crop left 30 %, blend Screen, background Blur | left edge black then filled by blur | e2e | pass |
+| M1-H4 | happy | Ctrl+C, End, Ctrl+V, Ctrl+D, undo ×2 | 2 clips (0:58.3), 3 clips, back to 1 | e2e | pass |
+| M1-H5 | happy | detach audio, select video, delete | linked audio clip on a new track; both selected; both deleted | e2e | pass |
+| M1-H6 | happy | freeze at 2 s | 3 clips, "Freeze" label, duration +3 s | e2e | pass |
+| M1-H7 | happy | reverse a 3 s piece | "reversed" label, same duration | e2e | pass |
+| M1-H8 | happy | V, group two clips, markers M / Shift+M / delete | disabled label; group selects both; jump to 2 s; one marker left | e2e | pass |
+| M1-H9 | happy | import 3840×2160 | proxy made; preview not blank | e2e | pass |
+| M1-N1 | negative | delete a clip's source, reopen, Locate… | Locate button; "Found"; preview back | e2e | pass |
+| BUG-010 | regression | set x, then y; set caption size, then colour | earlier fields kept | unit | pass |
+
 ## Cross-cutting
 | case | type | steps | expected | auto | result |
 | --- | --- | --- | --- | --- | --- |
