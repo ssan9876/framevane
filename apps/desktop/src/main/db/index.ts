@@ -2,9 +2,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import init from './migrations/001_init.sql'
+import agentStarter from './migrations/002_agent_starter.sql'
 
 /** Migrations, in order. Each runs once inside a transaction; PRAGMA user_version records progress. */
-const MIGRATIONS: string[] = [init]
+const MIGRATIONS: string[] = [init, agentStarter]
 
 export type Db = DatabaseSync
 

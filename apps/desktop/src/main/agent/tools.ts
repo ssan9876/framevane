@@ -5,6 +5,7 @@ import {
   type MediaClip, type OpInput, type Project, type SourceWord,
 } from '@framevane/doc'
 import { runFfmpeg } from '../ffmpeg'
+import { uuid7 } from '../db'
 import type { Analysis } from '../analysis'
 import type { Media } from '../media'
 
@@ -40,7 +41,7 @@ export interface AgentTool<S extends z.ZodTypeAny = z.ZodTypeAny> {
   run(input: z.infer<S>, ctx: ToolCtx): Promise<ToolResult>
 }
 
-const tool = <S extends z.ZodTypeAny>(t: AgentTool<S>) => t
+export const tool = <S extends z.ZodTypeAny>(t: AgentTool<S>) => t
 const sec = (us: number) => Math.round(us / 1000) / 1000
 const us = (s: number) => Math.round(s * 1e6)
 
@@ -357,7 +358,110 @@ export const TOOLS: AgentTool[] = [
       return { summary: `${i.timesSeconds.length} frames`, content: blocks }
     },
   }),
+
+  tool({
+    name: 'set_canvas_size',
+    provider: 'editor',
+    description: 'Change the canvas aspect ratio (clips stay centred, nothing is cropped). 9:16 for Shorts/Reels/TikTok, 1:1 square, 4:5 portrait feed, 16:9 landscape. Pair with set_background blur when landscape footage goes vertical.',
+    schema: z.object({ ratio: z.enum(['16:9', '9:16', '1:1', '4:5', '4:3', '21:9']), shortSide: z.union([z.literal(720), z.literal(1080), z.literal(1440), z.literal(2160)]).default(1080) }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const [w, h] = i.ratio.split(':').map(Number) as [number, number]
+      const even = (n: number) => Math.round(n / 2) * 2
+      const width = even(w >= h ? (i.shortSide * w) / h : i.shortSide)
+      const height = even(w >= h ? i.shortSide : (i.shortSide * h) / w)
+      ctx.propose([{ type: 'set_canvas', canvas: { width, height } }])
+      return { summary: `${i.ratio} · ${width}×${height}`, content: JSON.stringify({ width, height }) }
+    },
+  }),
+
+  tool({
+    name: 'import_media',
+    provider: 'editor',
+    description: 'Add media files from this computer to the project (absolute paths, e.g. a file another tool just generated). Returns asset ids; then use add_to_timeline.',
+    schema: z.object({ paths: z.array(z.string().min(1)).min(1).max(50).describe('Absolute file paths') }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      return importInto(ctx, i.paths)
+    },
+  }),
+
+  tool({
+    name: 'import_from_url',
+    provider: 'editor',
+    description: 'Download a video, audio or image from an http(s) link (e.g. a result URL from a generation service) and add it to the project. Max 2 GB. Then use add_to_timeline.',
+    schema: z.object({ url: z.string().url() }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const file = await ctx.media.download(i.url, ctx.signal)
+      return importInto(ctx, [file])
+    },
+  }),
+
+  tool({
+    name: 'add_to_timeline',
+    provider: 'editor',
+    description: 'Put an imported asset on the timeline. Without atSeconds, video/images append to the end of the main track and audio starts at 0. With atSeconds, it goes on the main track if that spot is free, else on an overlay track.',
+    schema: z.object({
+      assetId: z.string(),
+      atSeconds: z.number().min(0).optional(),
+      track: z.enum(['main', 'overlay', 'audio']).optional(),
+      durationSeconds: z.number().positive().max(3600).optional().describe('Images only: how long to show it (default 5 s)'),
+    }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const doc = ctx.doc()
+      const asset = doc.assets[i.assetId]
+      if (!asset) throw new Error(`Asset ${i.assetId} is not in this project. Call import_media first.`)
+      const dur = asset.kind === 'image' ? us(i.durationSeconds ?? 5) : asset.durationUs ?? 5_000_000
+      ctx.propose(placeOps(doc, asset.id, asset.kind, dur, i.atSeconds === undefined ? undefined : us(i.atSeconds), i.track))
+      return { summary: asset.name, content: JSON.stringify({ placed: true, newDurationSeconds: sec(projectDurationUs(ctx.doc())) }) }
+    },
+  }),
 ]
+
+async function importInto(ctx: ToolCtx, paths: string[]): Promise<ToolResult> {
+  const infos = await ctx.media.import(ctx.projectId, paths)
+  const doc = ctx.doc()
+  const fresh = infos.filter((m) => !doc.assets[m.asset.id] && m.status !== 'unsupported')
+  if (fresh.length) ctx.propose(fresh.map((m) => ({ type: 'add_asset', asset: m.asset })))
+  const rows = infos.map((m) => ({ assetId: m.asset.id, name: m.asset.name, kind: m.asset.kind, durationSeconds: m.asset.durationUs === undefined ? null : sec(m.asset.durationUs), status: m.status }))
+  return { summary: `${infos.length} file${infos.length === 1 ? '' : 's'}`, content: JSON.stringify(rows) }
+}
+
+/** Ops that place an asset: append to the main track, or at a time on the first free track (new track if none). */
+export function placeOps(doc: Project, assetId: string, kind: 'video' | 'audio' | 'image', dur: number, at: number | undefined, track?: 'main' | 'overlay' | 'audio'): OpInput[] {
+  const id = () => `clip-${uuid7().slice(-12)}`
+  const free = (clips: { startUs: number; durationUs: number }[], s: number) => !clips.some((c) => c.startUs < s + dur && s < clipEnd(c))
+  if (kind === 'audio' || track === 'audio') {
+    const s = at ?? 0
+    const t = doc.tracks.find((x) => x.kind === 'audio' && !x.locked && free(x.clips, s))
+    if (t) return [{ type: 'add_clip', trackId: t.id, clip: { id: id(), kind: 'audio', assetId, startUs: s, durationUs: dur } }]
+    const tid = `track-audio-${uuid7().slice(-8)}`
+    return [
+      { type: 'add_track', track: { id: tid, kind: 'audio', name: `Audio ${doc.tracks.filter((x) => x.kind === 'audio').length + 1}`, main: false, locked: false, hidden: false, muted: false, clips: [] } },
+      { type: 'add_clip', trackId: tid, clip: { id: id(), kind: 'audio', assetId, startUs: s, durationUs: dur } },
+    ]
+  }
+  const ck = kind === 'image' ? ('image' as const) : ('video' as const)
+  const main = doc.tracks.find((x) => x.main)!
+  if (track !== 'overlay' && at === undefined) {
+    return [{ type: 'add_clip', trackId: main.id, clip: { id: id(), kind: ck, assetId, startUs: main.clips.reduce((e, c) => Math.max(e, clipEnd(c)), 0), durationUs: dur } }]
+  }
+  const s = at ?? 0
+  if (track !== 'overlay' && free(main.clips, s)) return [{ type: 'add_clip', trackId: main.id, clip: { id: id(), kind: ck, assetId, startUs: s, durationUs: dur } }]
+  const ov = doc.tracks.find((x) => x.kind === 'video' && !x.main && !x.locked && free(x.clips, s))
+  if (ov) return [{ type: 'add_clip', trackId: ov.id, clip: { id: id(), kind: ck, assetId, startUs: s, durationUs: dur } }]
+  const tid = `track-video-${uuid7().slice(-8)}`
+  return [
+    { type: 'add_track', index: doc.tracks.findIndex((x) => x.main) + 1, track: { id: tid, kind: 'video', name: `Overlay ${doc.tracks.filter((x) => x.kind === 'video').length}`, main: false, locked: false, hidden: false, muted: false, clips: [] } },
+    { type: 'add_clip', trackId: tid, clip: { id: id(), kind: ck, assetId, startUs: s, durationUs: dur } },
+  ]
+}
 
 export function toolByName(name: string) {
   return TOOLS.find((t) => t.name === name)

@@ -62,7 +62,8 @@ export type AgentEvent =
   | { runId: string; type: 'status'; status: AgentRunStatus; error?: string }
   | { runId: string; type: 'text'; text: string; done: boolean }
   | { runId: string; type: 'note'; text: string }
-  | { runId: string; type: 'tool'; toolCallId: string; provider: string; tool: string; summary: string; status: 'running' | 'done' | 'error' | 'awaiting' | 'denied'; detail?: string; durationMs?: number }
+  | { runId: string; type: 'tool'; toolCallId: string; provider: string; tool: string; summary: string; status: 'running' | 'done' | 'error' | 'awaiting' | 'denied'; detail?: string; durationMs?: number; costsMoney?: boolean; reason?: string }
+  | { runId: string; type: 'started'; agentName: string; model: string }
   | { runId: string; type: 'proposal'; ops: ProposedOp[]; summary: string; costMicroUsd: number }
   | { runId: string; type: 'usage'; inputTokens: number; outputTokens: number; cacheReadTokens: number; costMicroUsd: number }
 
@@ -78,6 +79,52 @@ export interface AgentSettings { hasApiKey: boolean; credentialSource: 'app_key'
 export interface ExternalActivity { id: string; client: string; tool: string; summary: string; status: 'running' | 'done' | 'error'; mutates: boolean; durationMs?: number }
 export interface McpConnectInfo { enabled: boolean; listening: boolean; url: string; token: string; error: string | null; claudeCommand: string }
 export interface McpExportRequest { requestId: string; projectId: string; outputPath: string; height: number; fps: number; codec: 'avc' | 'hevc' }
+
+/* ── M2: tool providers (MCP servers), agent library, batch ── */
+export type ToolPermission = 'auto' | 'ask' | 'never'
+export interface ProviderTool { name: string; description: string; permission: ToolPermission; costsMoney: boolean; readOnly: boolean }
+export interface ToolProviderView {
+  id: string
+  name: string
+  kind: 'local_ai' | 'mcp_stdio' | 'mcp_http'
+  command: string | null
+  args: string[]
+  url: string | null
+  /** Names of stored secrets (values never leave the main process). */
+  envKeys: string[]
+  headerKeys: string[]
+  enabled: boolean
+  status: 'unknown' | 'connected' | 'error' | 'disabled'
+  error: string | null
+  tools: ProviderTool[]
+  builtin: boolean
+}
+export interface ProviderInput {
+  name: string
+  kind: 'mcp_stdio' | 'mcp_http'
+  command?: string
+  args?: string[]
+  url?: string
+  /** Only sent when set or changed; omitted values keep what's stored. */
+  env?: Record<string, string>
+  headers?: Record<string, string>
+}
+export interface AgentDefView {
+  id: string
+  name: string
+  description: string
+  instructions: string
+  model: string
+  effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  allowedTools: string[]
+  reviewMode: 'propose' | 'auto_apply'
+  builtin: boolean
+  /** Suggested first message for one-click use. */
+  starter?: string
+}
+export type AgentDefInput = Omit<AgentDefView, 'id' | 'builtin'>
+export interface BatchItem { projectId: string; name: string; status: 'queued' | 'running' | 'applied' | 'awaiting_review' | 'no_changes' | 'failed'; runId?: string; summary?: string; error?: string }
+export interface BatchEvent { batchId: string; items: BatchItem[]; done: boolean }
 
 export interface ReelApi {
   app: {
@@ -126,14 +173,33 @@ export interface ReelApi {
     settings(): Promise<AgentSettings>
     setApiKey(key: string | null): Promise<AgentSettings>
     setModel(model: string, effort: AgentSettings['effort']): Promise<AgentSettings>
-    run(projectId: string, prompt: string, context: AgentContext): Promise<{ runId: string }>
+    run(projectId: string, prompt: string, context: AgentContext, agentDefId?: string): Promise<{ runId: string; agentName: string }>
+    /** Runs of this project that are still waiting for review (e.g. from a batch). */
+    pending(projectId: string): Promise<{ runId: string; prompt: string; agentName: string; summary: string; ops: ProposedOp[]; costMicroUsd: number }[]>
+    defs(): Promise<AgentDefView[]>
+    /** Every tool an agent can be given: the editor's own and those from enabled MCP servers. */
+    toolList(): Promise<{ name: string; provider: string; description: string }[]>
+    saveDef(id: string | null, def: AgentDefInput): Promise<AgentDefView>
+    deleteDef(id: string): Promise<void>
+    batch(projectIds: string[], agentDefId: string, prompt: string, autoApply: boolean): Promise<{ batchId: string }>
+    onBatch(cb: (e: BatchEvent) => void): () => void
     cancel(runId: string): Promise<void>
     permission(runId: string, toolCallId: string, allow: boolean, remember?: boolean): Promise<void>
     review(runId: string, includeOpIds: string[], action: 'apply' | 'reject'): Promise<{ ok: boolean; applied: number; conflicted: number; message?: string }>
     previewDoc(runId: string, includeOpIds: string[]): Promise<Project | null>
     onEvent(cb: (e: AgentEvent) => void): () => void
   }
-  /** Framevane as an MCP server for Claude Code and other agents. */
+  /** MCP servers the user added for the built-in agent (Settings → Agents & AI). */
+  tools: {
+    providers(): Promise<ToolProviderView[]>
+    add(input: ProviderInput): Promise<ToolProviderView>
+    update(id: string, input: ProviderInput): Promise<ToolProviderView>
+    remove(id: string): Promise<void>
+    refresh(id: string): Promise<ToolProviderView>
+    setEnabled(id: string, enabled: boolean): Promise<ToolProviderView>
+    setToolPermission(providerId: string, tool: string, permission: ToolPermission): Promise<ToolProviderView>
+    setToolCostsMoney(providerId: string, tool: string, costsMoney: boolean): Promise<ToolProviderView>
+  }
   mcp: {
     info(): Promise<McpConnectInfo>
     setEnabled(on: boolean): Promise<McpConnectInfo>

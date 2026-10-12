@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import { z } from 'zod'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { clipEnd, projectDurationUs, type OpInput, type Project } from '@framevane/doc'
+import { type OpInput } from '@framevane/doc'
 import type { ExternalActivity, McpConnectInfo } from '../shared/api'
 import { now, uuid7, type Db } from './db'
 import type { Analysis } from './analysis'
@@ -248,34 +248,6 @@ export class EditorMcp {
       return { summary: name, content: JSON.stringify({ projectId, opened: true }) }
     })
 
-    wrap('import_media', 'Import files into the open project (they appear in the media panel). Then use add_to_timeline.', z.object({ paths: z.array(z.string()).min(1).max(50).describe('Absolute file paths') }), true, async ({ paths }) => {
-      const projectId = target()
-      const infos = await d.media.import(projectId, paths)
-      const doc = d.projects.get(projectId)
-      const fresh = infos.filter((m) => !doc.assets[m.asset.id] && m.status !== 'unsupported')
-      if (fresh.length) {
-        const r = d.projects.apply(projectId, doc.version, fresh.map((m) => ({ type: 'add_asset', asset: m.asset })), 'agent')
-        if (!r.ok) throw new Error(r.message)
-      }
-      const rows = infos.map((m) => ({ assetId: m.asset.id, name: m.asset.name, kind: m.asset.kind, durationSeconds: m.asset.durationUs === undefined ? null : m.asset.durationUs / 1e6, status: m.status }))
-      return { summary: `${infos.length} files`, content: JSON.stringify(rows) }
-    })
-
-    wrap('add_to_timeline', 'Put an imported asset on the timeline.', z.object({
-      assetId: z.string(),
-      atSeconds: z.number().min(0).optional().describe('Where to place it. Omitted: append to the end of the main track (video/image) or at 0 (audio).'),
-      track: z.enum(['main', 'overlay', 'audio']).optional(),
-    }), true, async ({ assetId, atSeconds, track }) => {
-      const projectId = target()
-      const doc = d.projects.get(projectId)
-      const asset = doc.assets[assetId]
-      if (!asset) throw new Error(`Asset ${assetId} is not in this project. Call import_media first.`)
-      const ops = placeOps(doc, asset.id, asset.kind, asset.durationUs ?? 5_000_000, atSeconds === undefined ? undefined : Math.round(atSeconds * 1e6), track)
-      const r = d.projects.apply(projectId, doc.version, ops, 'agent')
-      if (!r.ok) throw new Error(r.message)
-      return { summary: asset.name, content: JSON.stringify({ placed: true, newDurationSeconds: projectDurationUs(d.projects.get(projectId)) / 1e6 }) }
-    })
-
     wrap('undo', 'Undo the last edit in the open project (yours or the user\'s).', z.object({}), true, async () => { const id = target(); d.projects.undo(id); return { summary: 'undone', content: 'Undid the last edit.' } })
     wrap('redo', 'Redo the last undone edit.', z.object({}), true, async () => { const id = target(); d.projects.redo(id); return { summary: 'redone', content: 'Redid the last undone edit.' } })
 
@@ -294,35 +266,6 @@ export class EditorMcp {
 
     return server
   }
-}
-
-function placeOps(doc: Project, assetId: string, kind: 'video' | 'audio' | 'image', dur: number, at: number | undefined, track?: 'main' | 'overlay' | 'audio'): OpInput[] {
-  const id = () => `clip-${uuid7().slice(-12)}`
-  const free = (clips: { startUs: number; durationUs: number }[], s: number) => !clips.some((c) => c.startUs < s + dur && s < clipEnd(c))
-  if (kind === 'audio' || track === 'audio') {
-    const s = at ?? 0
-    const t = doc.tracks.find((x) => x.kind === 'audio' && !x.locked && free(x.clips, s))
-    if (t) return [{ type: 'add_clip', trackId: t.id, clip: { id: id(), kind: 'audio', assetId, startUs: s, durationUs: dur } }]
-    const tid = `track-audio-${uuid7().slice(-8)}`
-    return [
-      { type: 'add_track', track: { id: tid, kind: 'audio', name: `Audio ${doc.tracks.filter((x) => x.kind === 'audio').length + 1}`, main: false, locked: false, hidden: false, muted: false, clips: [] } },
-      { type: 'add_clip', trackId: tid, clip: { id: id(), kind: 'audio', assetId, startUs: s, durationUs: dur } },
-    ]
-  }
-  const ck = kind === 'image' ? ('image' as const) : ('video' as const)
-  const main = doc.tracks.find((x) => x.main)!
-  if (track !== 'overlay' && at === undefined) {
-    return [{ type: 'add_clip', trackId: main.id, clip: { id: id(), kind: ck, assetId, startUs: main.clips.reduce((e, c) => Math.max(e, clipEnd(c)), 0), durationUs: dur } }]
-  }
-  const s = at ?? 0
-  if (track !== 'overlay' && free(main.clips, s)) return [{ type: 'add_clip', trackId: main.id, clip: { id: id(), kind: ck, assetId, startUs: s, durationUs: dur } }]
-  const ov = doc.tracks.find((x) => x.kind === 'video' && !x.main && !x.locked && free(x.clips, s))
-  if (ov) return [{ type: 'add_clip', trackId: ov.id, clip: { id: id(), kind: ck, assetId, startUs: s, durationUs: dur } }]
-  const tid = `track-video-${uuid7().slice(-8)}`
-  return [
-    { type: 'add_track', index: doc.tracks.findIndex((x) => x.main) + 1, track: { id: tid, kind: 'video', name: `Overlay ${doc.tracks.filter((x) => x.kind === 'video').length}`, main: false, locked: false, hidden: false, muted: false, clips: [] } },
-    { type: 'add_clip', trackId: tid, clip: { id: id(), kind: ck, assetId, startUs: s, durationUs: dur } },
-  ]
 }
 
 type McpContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }

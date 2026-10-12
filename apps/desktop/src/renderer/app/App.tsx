@@ -6,6 +6,7 @@ import { Home } from '../screens/Home'
 import { Editor } from '../editor/Editor'
 import { ComingSoon } from '../screens/ComingSoon'
 import { SettingsDialog } from '../screens/SettingsDialog'
+import { AgentLibraryDialog } from '../screens/AgentLibraryDialog'
 
 function ErrorToasts() {
   const error = useApp((s) => s.error)
@@ -53,6 +54,7 @@ export function App() {
           )}
         </div>
         {(dialog === 'settings' || dialog === 'shortcuts') && <SettingsDialog />}
+        {dialog === 'agents' && <AgentLibraryDialog />}
       </ToastProvider>
     </TooltipProvider>
   )

@@ -1,12 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { safeStorage } from 'electron'
 import { applyOps, describeOp, findClip, Op, OpError, projectDurationUs, type OpInput, type Project } from '@framevane/doc'
-import type { AgentContext, AgentEvent, AgentRunStatus, AgentSettings, ProposedOp } from '../../shared/api'
+import type { AgentContext, AgentDefView, AgentEvent, AgentRunStatus, AgentSettings, BatchEvent, BatchItem, ProposedOp } from '../../shared/api'
 import { now, uuid7, type Db } from '../db'
 import type { Analysis } from '../analysis'
 import type { Media } from '../media'
 import type { Projects } from '../projects'
+import type { AgentExternalTool, ToolRegistry } from '../tool-registry'
 import { toolByName, toolDefinitions, type ToolCtx } from './tools'
+import { toolAllowed, type AgentDefs } from './defs'
 import { fakeClient } from './fake-model'
 
 /**
@@ -27,6 +29,13 @@ How the editor works:
 
 When you finish, reply with one or two short sentences saying what you changed (numbers help: cuts, seconds removed, caption lines). Don't list every edit; the review screen does that.`
 
+const EXTERNAL_NOTE = `
+Tools named "<server>__<tool>" come from other apps the user connected (MCP servers), such as generation services. The user may be asked to approve each call, and may say no: if a call is denied, carry on without it or explain what you would need. When such a tool returns a file path or a link to media, bring it into the project with import_media (paths) or import_from_url (links), then add_to_timeline.`
+
+/** Tool output beyond this is cut before it goes back to the model. */
+const MAX_TOOL_TEXT = 60_000
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+
 const MODEL_PRICES: Record<string, { in: number; out: number; cacheRead: number; cacheWrite: number }> = {
   // USD per million tokens
   'claude-opus-5-5': { in: 4, out: 20, cacheRead: 0.2, cacheWrite: 5 },
@@ -41,6 +50,13 @@ const MAX_TURNS = 40
 interface Run {
   id: string
   projectId: string
+  prompt: string
+  agentName: string
+  def: AgentDefView | null
+  /** Unattended (batch): "ask" tools are refused instead of prompting. */
+  unattended: boolean
+  autoApply: boolean
+  done: Promise<void>
   base: Project
   fork: Project
   ops: ProposedOp[]
@@ -48,17 +64,24 @@ interface Run {
   status: AgentRunStatus
   costMicroUsd: number
   usage: { input: number; output: number; cacheRead: number; cacheWrite: number }
+  summary: string
 }
+
+interface PermissionWait { runId: string; resolve(d: { allow: boolean; remember: boolean }): void }
 
 export class AgentRunner {
   private runs = new Map<string, Run>()
+  private waits = new Map<string, PermissionWait>()
 
   constructor(
     private db: Db,
     private projects: Projects,
     private analysis: Analysis,
     private media: Media,
+    private registry: ToolRegistry,
+    private defs: AgentDefs,
     private emit: (e: AgentEvent) => void,
+    private emitBatch: (e: BatchEvent) => void = () => {},
   ) {}
 
   /* ── settings & credentials ── */
@@ -107,24 +130,79 @@ export class AgentRunner {
 
   /* ── runs ── */
 
-  start(projectId: string, prompt: string, context: AgentContext): string {
+  start(projectId: string, prompt: string, context: AgentContext, agentDefId?: string, opts: { source?: 'panel' | 'batch'; parentRunId?: string; autoApply?: boolean } = {}): { runId: string; agentName: string } {
     const base = this.projects.get(projectId)
     const id = uuid7()
-    const { model, effort } = this.settings()
-    const run: Run = { id, projectId, base, fork: base, ops: [], abort: new AbortController(), status: 'running', costMicroUsd: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
+    const def = agentDefId ? this.defs.get(agentDefId) : null
+    const settings = this.settings()
+    // "default" model = the one picked in Settings; the general-purpose Editor also follows the Settings effort
+    const model = def && def.model !== 'default' ? def.model : settings.model
+    const effort = def && !(def.builtin && def.name === 'Editor') ? def.effort : settings.effort
+    const run: Run = {
+      id, projectId, prompt, agentName: def?.name ?? 'Editor', def, unattended: opts.source === 'batch', autoApply: opts.autoApply ?? def?.reviewMode === 'auto_apply',
+      done: Promise.resolve(), base, fork: base, ops: [], abort: new AbortController(), status: 'running', costMicroUsd: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, summary: '',
+    }
     this.runs.set(id, run)
     this.db.prepare(
-      `INSERT INTO agent_runs (id, project_id, source, model, prompt, context, base_doc_version, status, created_at) VALUES (?, ?, 'panel', ?, ?, ?, ?, 'running', ?)`,
-    ).run(id, projectId, model, prompt, JSON.stringify(context), base.version, now())
-    void this.loop(run, prompt, context, model, effort).catch((e) => this.fail(run, e))
-    return id
+      `INSERT INTO agent_runs (id, project_id, agent_def_id, parent_run_id, source, model, prompt, context, base_doc_version, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?)`,
+    ).run(id, projectId, def?.id ?? null, opts.parentRunId ?? null, opts.source ?? 'panel', model, prompt, JSON.stringify(context), base.version, now())
+    this.emit({ runId: id, type: 'started', agentName: run.agentName, model })
+    run.done = this.loop(run, prompt, context, model, effort).catch((e) => this.fail(run, e))
+    return { runId: id, agentName: run.agentName }
+  }
+
+  /** Proposals still waiting for review in this project (e.g. left by a batch run). */
+  pending(projectId: string) {
+    return [...this.runs.values()]
+      .filter((r) => r.projectId === projectId && r.status === 'awaiting_review')
+      .map((r) => ({ runId: r.id, prompt: r.prompt, agentName: r.agentName, summary: r.summary, ops: r.ops, costMicroUsd: r.costMicroUsd }))
   }
 
   cancel(runId: string) {
     const run = this.runs.get(runId)
-    if (!run || run.status !== 'running') return
+    if (!run || (run.status !== 'running' && run.status !== 'awaiting_permission')) return
     run.abort.abort()
+    for (const [k, w] of this.waits) if (w.runId === runId) { this.waits.delete(k); w.resolve({ allow: false, remember: false }) }
     this.setStatus(run, 'cancelled')
+  }
+
+  /** The user's answer to a permission prompt. remember: allow → always allow; deny → never offer the tool again. */
+  permission(runId: string, toolCallId: string, allow: boolean, remember = false) {
+    const w = this.waits.get(toolCallId)
+    if (!w || w.runId !== runId) return
+    this.waits.delete(toolCallId)
+    w.resolve({ allow, remember })
+  }
+
+  /** Run one agent over several projects, one after another. */
+  batch(projectIds: string[], agentDefId: string, prompt: string, autoApply: boolean): { batchId: string } {
+    const batchId = uuid7()
+    const items: BatchItem[] = projectIds.map((projectId) => ({ projectId, name: this.projects.get(projectId).name, status: 'queued' }))
+    const push = (done = false) => this.emitBatch({ batchId, items: items.map((i) => ({ ...i })), done })
+    void (async () => {
+      push()
+      for (const item of items) {
+        item.status = 'running'
+        push()
+        try {
+          const { runId } = this.start(item.projectId, prompt, { selection: [], playheadUs: 0 }, agentDefId, { source: 'batch', autoApply })
+          item.runId = runId
+          const run = this.runs.get(runId)!
+          await run.done
+          item.summary = run.summary
+          item.status = run.status === 'failed' || run.status === 'cancelled' ? 'failed'
+            : run.status === 'awaiting_review' ? 'awaiting_review'
+            : run.ops.length ? 'applied' : 'no_changes'
+          if (run.status === 'failed') item.error = (this.db.prepare(`SELECT error FROM agent_runs WHERE id=?`).get(runId) as { error: string | null } | undefined)?.error ?? undefined
+        } catch (e) {
+          item.status = 'failed'
+          item.error = e instanceof Error ? e.message : String(e)
+        }
+        push()
+      }
+      push(true)
+    })()
+    return { batchId }
   }
 
   /** Doc with only the included proposed ops applied (for the before/after preview in S29). */
@@ -178,7 +256,18 @@ export class AgentRunner {
 
   private async loop(run: Run, prompt: string, context: AgentContext, model: string, effort: AgentSettings['effort']) {
     const client = this.client()
-    const tools = toolDefinitions()
+    const allowed = run.def?.allowedTools ?? ['*']
+    const external = this.registry.agentTools().filter((t) => toolAllowed(allowed, t.fullName))
+    const tools: Anthropic.Beta.BetaToolUnion[] = [
+      ...toolDefinitions().filter((t) => toolAllowed(allowed, t.name)),
+      ...external.map((t) => ({
+        name: t.fullName,
+        description: `[${t.provider}] ${t.description}`.slice(0, 4000) + (t.costsMoney ? ' (Uses paid credits; the user approves each call.)' : ''),
+        input_schema: { ...t.inputSchema, type: 'object' } as Anthropic.Beta.BetaTool['input_schema'],
+      })),
+    ]
+    const system = SYSTEM + (external.length ? EXTERNAL_NOTE : '') +
+      (run.def?.instructions.trim() ? `\n\nYou are running as the user's "${run.def.name}" agent. Its instructions:\n${run.def.instructions.trim()}` : '')
     const sel = context.selection.map((id) => findClip(run.base, id)).filter(Boolean).map((f) => `${f!.clip.id} (${f!.clip.kind} on "${f!.track.name}")`)
     const messages: Anthropic.Beta.BetaMessageParam[] = [{
       role: 'user',
@@ -203,7 +292,7 @@ export class AgentRunner {
         thinking: { type: 'adaptive', display: 'updates' },
         output_config: { effort },
         cache_control: { type: 'ephemeral' },
-        system: [{ type: 'text', text: SYSTEM }],
+        system: [{ type: 'text', text: system }],
         tools,
         messages,
       }, { signal: run.abort.signal })
@@ -238,17 +327,27 @@ export class AgentRunner {
       const results: Anthropic.Beta.BetaToolResultBlockParam[] = []
       for (const call of calls) {
         if (run.abort.signal.aborted) return
-        results.push(await this.runTool(run, call, () => ++seq))
+        const ext = external.find((t) => t.fullName === call.name)
+        if (!ext && !tools.some((t) => 'name' in t && t.name === call.name)) {
+          results.push({ type: 'tool_result', tool_use_id: call.id, is_error: true, content: `${call.name} is not one of this agent's tools.` })
+          continue
+        }
+        results.push(ext ? await this.runExternal(run, call, ext) : await this.runTool(run, call, () => ++seq))
       }
       const userTurn: Anthropic.Beta.BetaMessageParam = { role: 'user', content: results }
       messages.push(userTurn)
       this.saveMessage(run, userTurn)
     }
 
+    if (run.abort.signal.aborted) return
     if (run.ops.length) {
+      run.summary = summarizeOps(run.base, run.fork, run.ops)
+      if (run.autoApply) {
+        const r = this.review(run.id, run.ops.map((o) => o.id), 'apply')
+        if (r.ok) return
+      }
       this.setStatus(run, 'awaiting_review')
-      const summary = summarizeOps(run.base, run.fork, run.ops)
-      this.emit({ runId: run.id, type: 'proposal', ops: run.ops, summary, costMicroUsd: run.costMicroUsd })
+      this.emit({ runId: run.id, type: 'proposal', ops: run.ops, summary: run.summary, costMicroUsd: run.costMicroUsd })
     } else {
       this.setStatus(run, 'applied')
     }
@@ -305,6 +404,61 @@ export class AgentRunner {
       event('error', 'failed', msg)
       finish('error', msg.slice(0, 200))
       return { type: 'tool_result', tool_use_id: call.id, is_error: true, content: msg }
+    }
+  }
+
+  /** A tool from a user-added MCP server: permission gate, call, convert the result for the model. */
+  private async runExternal(run: Run, call: Anthropic.Beta.BetaToolUseBlock, t: AgentExternalTool): Promise<Anthropic.Beta.BetaToolResultBlockParam> {
+    const started = Date.now()
+    const input = (call.input ?? {}) as Record<string, unknown>
+    const event = (status: Extract<AgentEvent, { type: 'tool' }>['status'], summary: string, extra: { detail?: string; reason?: string } = {}) =>
+      this.emit({ runId: run.id, type: 'tool', toolCallId: call.id, provider: t.provider, tool: t.name, summary, status, costsMoney: t.costsMoney, durationMs: status === 'running' || status === 'awaiting' ? undefined : Date.now() - started, ...extra })
+    const providerId = (this.db.prepare(`SELECT id FROM tool_providers WHERE name=?`).get(t.provider) as { id: string } | undefined)?.id ?? null
+    const gated = t.permission !== 'auto' || t.costsMoney // costs-money tools always ask, whatever their saved permission says
+    this.db.prepare(`INSERT INTO tool_calls (id, run_id, provider_id, tool_name, input, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(call.id, run.id, providerId, call.name, JSON.stringify(input), gated ? 'pending_permission' : 'running', now())
+    const finish = (status: 'done' | 'error' | 'denied', summary: string) =>
+      this.db.prepare(`UPDATE tool_calls SET status=?, output_summary=?, duration_ms=? WHERE id=?`).run(status, summary.slice(0, 200), Date.now() - started, call.id)
+
+    if (gated) {
+      const reason = t.costsMoney ? 'This tool uses paid credits on that service.' : `The agent wants to use ${t.name} from ${t.provider}.`
+      let decision: { allow: boolean; remember: boolean }
+      if (run.unattended) {
+        decision = { allow: false, remember: false }
+      } else {
+        event('awaiting', describeInput(input), { reason, detail: JSON.stringify(input, null, 2).slice(0, 2000) })
+        this.setStatus(run, 'awaiting_permission')
+        decision = await new Promise((resolve) => this.waits.set(call.id, { runId: run.id, resolve }))
+        if (run.abort.signal.aborted) return { type: 'tool_result', tool_use_id: call.id, is_error: true, content: 'Cancelled.' }
+        this.setStatus(run, 'running')
+      }
+      if (decision.remember) this.registry.rememberPermission(t.provider, t.name, decision.allow ? 'auto' : 'never')
+      if (!decision.allow) {
+        event('denied', run.unattended ? 'needs approval (not available in a batch)' : 'not allowed')
+        finish('denied', 'denied')
+        return {
+          type: 'tool_result', tool_use_id: call.id, is_error: true,
+          content: run.unattended ? "This tool needs the user's approval, which is not available in a batch run. Continue without it." : 'The user did not allow this call. Continue without it, or explain what you need.',
+        }
+      }
+      this.db.prepare(`UPDATE tool_calls SET status='running' WHERE id=?`).run(call.id)
+    }
+
+    event('running', describeInput(input))
+    try {
+      const res = await this.registry.call(t.provider, t.name, input, run.abort.signal)
+      const content = mcpToClaude(res.content, res.structured)
+      const first = content.find((b) => b.type === 'text')
+      const firstText = first && first.type === 'text' ? first.text : undefined
+      const summary = res.isError ? 'failed' : firstText ? firstText.replace(/\s+/g, ' ').slice(0, 80) : `${content.length} result${content.length === 1 ? '' : 's'}`
+      event(res.isError ? 'error' : 'done', summary, { detail: firstText?.slice(0, 2000) })
+      finish(res.isError ? 'error' : 'done', summary)
+      return { type: 'tool_result', tool_use_id: call.id, is_error: res.isError || undefined, content }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      event('error', 'failed', { detail: msg })
+      finish('error', msg)
+      return { type: 'tool_result', tool_use_id: call.id, is_error: true, content: `${t.provider} error: ${msg}` }
     }
   }
 
@@ -366,4 +520,30 @@ function summarizeOps(base: Project, fork: Project, ops: ProposedOp[]) {
   const other = ops.length - cuts - (caps ? ops.filter((o) => o.op.type === 'add_captions').length : 0)
   const removed = (projectDurationUs(base) - projectDurationUs(fork)) / 1e6
   return [cuts && `${cuts} cut${cuts === 1 ? '' : 's'} (−${removed.toFixed(1)} s)`, caps && `${caps} caption lines`, other > 0 && `${other} other edit${other === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
+}
+
+type McpBlock = { type: string; text?: string; data?: string; mimeType?: string; resource?: { uri?: string; text?: string; mimeType?: string }; uri?: string; name?: string }
+type ResultBlocks = Exclude<Anthropic.Beta.BetaToolResultBlockParam['content'], string | undefined>
+
+/** MCP content → Claude tool_result content: text and images pass through; links and resources become text; long text is cut. */
+export function mcpToClaude(blocks: McpBlock[], structured?: unknown): ResultBlocks {
+  const out: ResultBlocks = []
+  let budget = MAX_TOOL_TEXT
+  const text = (t: string) => {
+    if (budget <= 0) return
+    const cut = t.length > budget ? `${t.slice(0, budget)}\n[… ${t.length - budget} more characters cut]` : t
+    budget -= t.length
+    out.push({ type: 'text', text: cut })
+  }
+  for (const b of blocks) {
+    if (b.type === 'text' && b.text !== undefined) text(b.text)
+    else if (b.type === 'image' && b.data && b.mimeType && IMAGE_TYPES.has(b.mimeType)) out.push({ type: 'image', source: { type: 'base64', media_type: b.mimeType as 'image/png', data: b.data } })
+    else if (b.type === 'resource_link' && b.uri) text(`Link: ${b.uri}${b.name ? ` (${b.name})` : ''}`)
+    else if (b.type === 'resource' && b.resource) text(b.resource.text ?? `Resource: ${b.resource.uri ?? ''}`)
+    else if (b.type === 'audio') text(`[audio result (${b.mimeType ?? 'audio'}) not shown]`)
+    else text(JSON.stringify(b))
+  }
+  if (!out.length && structured !== undefined) text(JSON.stringify(structured))
+  if (!out.length) out.push({ type: 'text', text: '(no output)' })
+  return out
 }

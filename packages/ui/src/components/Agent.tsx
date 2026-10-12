@@ -70,14 +70,18 @@ export function ToolStep({ provider, tool, summary, status, detail, durationMs }
 
 /* ─────────── Permission prompt ─────────── */
 /** Shown inline in the transcript when a tool with permission "ask" is called. Focus moves here (it is an alertdialog). */
-export function PermissionPrompt({ provider, tool, reason, costsMoney, onAllowOnce, onAlwaysAllow, onDeny }: {
+export function PermissionPrompt({ provider, tool, reason, costsMoney, detail, onAllowOnce, onAlwaysAllow, onDeny, onNever }: {
   provider: string
   tool: string
   reason: string
   costsMoney?: boolean
+  /** The call's input, shown collapsed. */
+  detail?: string
   onAllowOnce: () => void
   onAlwaysAllow: () => void
   onDeny: () => void
+  /** Deny and stop offering this tool to agents. */
+  onNever?: () => void
 }) {
   return (
     <div role="alertdialog" aria-label={`Allow ${tool}?`} className="ml-8 flex flex-col gap-2 rounded-md border border-warning/50 bg-surface-2 p-3">
@@ -87,10 +91,17 @@ export function PermissionPrompt({ provider, tool, reason, costsMoney, onAllowOn
         {costsMoney && <Badge tone="warning" icon={<Coins />}>Uses paid credits</Badge>}
       </div>
       <p className="text-sm text-muted">{reason}</p>
-      <div className="flex gap-1.5">
+      {detail && (
+        <details className="text-xs text-muted">
+          <summary className="cursor-pointer select-none">Details</summary>
+          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-sm bg-surface-3 p-2 font-mono">{detail}</pre>
+        </details>
+      )}
+      <div className="flex flex-wrap gap-1.5">
         <Button size="sm" variant="primary" onClick={onAllowOnce} autoFocus>Allow once</Button>
         {!costsMoney && <Button size="sm" onClick={onAlwaysAllow}>Always allow</Button>}
         <Button size="sm" variant="ghost" onClick={onDeny}>Deny</Button>
+        {onNever && <Button size="sm" variant="ghost" onClick={onNever}>Never</Button>}
       </div>
     </div>
   )

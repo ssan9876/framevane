@@ -49,7 +49,7 @@ Legend for `auto`: e2e = Playwright spec · unit = vitest · manual · n/b = fea
 | F02-N1 | negative: overlap on overlay track | drag an overlay clip onto another | rejected with a clear message, no change | manual | not run (manual) |
 | — | ops engine | 20 unit tests: split/ripple/undo/atomicity/locks/source bounds/captions | | unit | pass |
 
-## F03 Text · F05 music fades · F06 transitions · F07 keyframes · F08 remove BG · F09 color · F11 photo · F13 plug in MCP · F14 batch · F15 transcript edit
+## F03 Text · F05 music fades · F06 transitions · F07 keyframes · F08 remove BG · F09 color · F11 photo · F15 transcript edit (F13 MCP servers and F14 batch: see M2 below)
 Not built in M0 (n/b). The screens exist as stubs; cases are written when each is built. Partial checks today:
 | case | type | steps | expected | auto | result |
 | --- | --- | --- | --- | --- | --- |
@@ -118,9 +118,28 @@ Not built in M0 (n/b). The screens exist as stubs; cases are written when each i
 | M1-N1 | negative | delete a clip's source, reopen, Locate… | Locate button; "Found"; preview back | e2e | pass |
 | BUG-010 | regression | set x, then y; set caption size, then colour | earlier fields kept | unit | pass |
 
+## M2 agent platform
+| case | type | steps | expected | auto | result |
+| --- | --- | --- | --- | --- | --- |
+| M2-H1 | happy | Settings → add a stdio server with an env secret | Connected; 2 tools; ping Auto (read-only), make_clip Ask; env key name listed, value never returned | e2e | pass |
+| M2-N1 | negative | add a server named "local" | "reserved" error, nothing saved | e2e | pass |
+| M2-H2 | happy | set ping Never, tick make_clip costs money; disable, enable, remove | saved; Off then Connected again; card gone | e2e | pass |
+| M2-H3 | happy | "use the test tool" → Allow once → review → apply | prompt shows testtools.make_clip; clip generated, imported, appended (2 clips) | e2e | pass |
+| M2-E1 | edge | Deny | agent continues without it; timeline unchanged | e2e | pass |
+| M2-E2 | edge | Always allow, then run again | permission saved as Auto; second run has no prompt | e2e | pass |
+| M2-E3 | edge | Never, then run again | permission Never; tool no longer offered | e2e | pass |
+| M2-E4 | edge | costs money + Auto | still asks; "Uses paid credits"; no Always allow; Stop cancels | e2e | pass |
+| M2-H4 | happy | library: create (Only these + add_marker), duplicate a built-in, restart, edit, delete | persisted across restart; copy named "(my copy)"; delete removes | e2e | pass |
+| M2-N2 | negative | create an agent with an existing name (other case) | "already exists" | e2e | pass |
+| M2-H5 | happy | batch Highlight finder on 2 projects, auto-apply | both "Edited"; marker in each project | e2e | pass |
+| M2-H6 | happy | batch without auto-apply, open the project | "ran on this project in a batch" + Review edits; apply adds the marker | e2e | pass |
+| M2-E5 | edge | pick Silence cutter, ask for a marker | add_marker not offered; agent says it can't | e2e | pass |
+| M2-E6 | edge | edit the timeline under a proposal → Apply → Ask again | conflict alert; old proposal discarded; new proposal applies | e2e | pass |
+| M2-M1 | manual | add a real remote server (e.g. Higgsfield with an API key header) and generate a clip with the live Claude API | clip imported and placed | manual | not run: no Anthropic key on this machine; OAuth-only servers unsupported |
+
 ## Cross-cutting
 | case | type | steps | expected | auto | result |
 | --- | --- | --- | --- | --- | --- |
-| X-A11Y | a11y | axe WCAG 2.2 AA on S01 (empty, filled), S03, S11, S19, S22, S23/S28, S24, S29 | no violations | e2e | pass |
+| X-A11Y | a11y | axe WCAG 2.2 AA on S01 (empty, filled), S03, S11, S19, S22, S23/S28 (incl. MCP servers), S24, S27 permission prompt, S29, S31, F14 batch | no violations | e2e | pass |
 | X-KB | keyboard | Space play/pause, ←/→ frame step, Home/End, Esc clears selection | playhead/timecode respond | e2e | pass |
 | X-SR | screen reader labels | every icon button has a name (axe `button-name`) | | e2e | pass |

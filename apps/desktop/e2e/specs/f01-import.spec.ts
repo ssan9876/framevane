@@ -49,7 +49,8 @@ test.describe('F01 create a project and import media', () => {
 
     test('F01-E10 keyboard only: new project and import', async ({ framevane }) => {
       const { page } = framevane
-      // first focusable is the Settings button, then New project
+      // header: Agent library, Settings; then New project
+      await page.keyboard.press('Tab')
       await page.keyboard.press('Tab')
       await page.keyboard.press('Tab')
       await expect(page.getByRole('button', { name: /New project/ })).toBeFocused()

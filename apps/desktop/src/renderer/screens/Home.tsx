@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Clapperboard, Copy, Film, ImageIcon, MoreHorizontal, Pencil, Plus, Search, Settings, Sparkles, Trash2, AlertTriangle } from 'lucide-react'
-import { Badge, Button, Dialog, DropdownMenu, DropZone, EmptyState, IconButton, TextField, useToast } from '@framevane/ui'
+import { Bot, Clapperboard, Copy, Film, ImageIcon, Library, MoreHorizontal, Pencil, Plus, Search, Settings, Sparkles, Trash2, AlertTriangle } from 'lucide-react'
+import { Badge, Button, Checkbox, Dialog, DropdownMenu, DropZone, EmptyState, IconButton, TextField, useToast } from '@framevane/ui'
 import { formatUs } from '@framevane/doc'
 import type { ProjectSummary } from '../../shared/api'
 import { useApp } from '../app/store'
+import { BatchDialog } from './BatchDialog'
 
 /** S01 · Home: projects, quick starts, drop files to start a project. */
 export function Home() {
@@ -14,6 +15,10 @@ export function Home() {
   const [renaming, setRenaming] = useState<ProjectSummary | null>(null)
   const [deleting, setDeleting] = useState<ProjectSummary | null>(null)
   const [loaded, setLoaded] = useState(false)
+  // select mode: pick projects for a batch agent run (F14)
+  const [picking, setPicking] = useState(false)
+  const [picked, setPicked] = useState<string[]>([])
+  const [batch, setBatch] = useState<ProjectSummary[] | null>(null)
   const toast = useToast()
 
   useEffect(() => { void loadProjects().finally(() => setLoaded(true)) }, [loadProjects])
@@ -39,9 +44,12 @@ export function Home() {
         <div className="flex items-center gap-2">
           <Clapperboard className="size-4 text-accent" aria-hidden />
           <span className="text-base">Framevane</span>
-          <Badge>M0 preview</Badge>
+          <Badge>Preview</Badge>
         </div>
-        <IconButton label="Settings" shortcut="Ctrl+," icon={<Settings />} onClick={() => openDialog('settings')} />
+        <div className="flex items-center gap-1">
+          <IconButton label="Agent library" icon={<Library />} onClick={() => openDialog('agents')} />
+          <IconButton label="Settings" shortcut="Ctrl+," icon={<Settings />} onClick={() => openDialog('settings')} />
+        </div>
       </header>
 
       <div className="scroll-y flex-1">
@@ -74,8 +82,23 @@ export function Home() {
           <section aria-labelledby="projects-h" className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-4">
               <h2 id="projects-h" className="text-xl">Projects <span className="text-base text-muted">{projects.length || ''}</span></h2>
-              <div className="w-64"><TextField label="Search projects" hideLabel placeholder="Search projects" leading={<Search />} value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+              <div className="flex items-center gap-2">
+                {projects.length > 0 && (picking
+                  ? <Button size="sm" variant="ghost" onClick={() => { setPicking(false); setPicked([]) }}>Cancel selection</Button>
+                  : <Button size="sm" icon={<Bot className="size-3.5" />} onClick={() => setPicking(true)}>Select for an agent</Button>)}
+                <div className="w-64"><TextField label="Search projects" hideLabel placeholder="Search projects" leading={<Search />} value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+              </div>
             </div>
+            {picking && (
+              <div role="toolbar" aria-label="Selected projects" className="flex items-center gap-3 rounded-md border border-agent/40 bg-agent-soft/40 px-3 py-2 text-sm">
+                <span>{picked.length ? `${picked.length} selected` : 'Click projects to select them'}</span>
+                <Button size="sm" variant="ghost" onClick={() => setPicked(picked.length === shown.length ? [] : shown.filter((p) => p.status === 'ok').map((p) => p.id))}>{picked.length === shown.length ? 'Select none' : 'Select all'}</Button>
+                <span className="flex-1" />
+                <Button size="sm" variant="agent" disabled={!picked.length} onClick={() => setBatch(projects.filter((p) => picked.includes(p.id)))}>
+                  Run an agent on {picked.length || 'the'} project{picked.length === 1 ? '' : 's'}
+                </Button>
+              </div>
+            )}
             {loaded && projects.length === 0 && (
               <EmptyState icon={<Film />} title="Nothing here yet" body="Your projects will live here. Start one above, or drop in some footage." />
             )}
@@ -83,6 +106,7 @@ export function Home() {
             <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
               {shown.map((p) => (
                 <ProjectCard key={p.id} p={p} onOpen={() => go({ name: 'editor', projectId: p.id })}
+                  picking={picking} picked={picked.includes(p.id)} onPick={(v) => setPicked((x) => (v ? [...x, p.id] : x.filter((id) => id !== p.id)))}
                   onRename={() => setRenaming(p)}
                   onDuplicate={async () => { await window.framevane.projects.duplicate(p.id); await loadProjects() }}
                   onDelete={() => setDeleting(p)} />
@@ -92,6 +116,7 @@ export function Home() {
         </div>
       </div>
 
+      {batch && <BatchDialog projects={batch} onClose={() => { setBatch(null); setPicking(false); setPicked([]) }} />}
       {renaming && <RenameDialog p={renaming} onClose={() => setRenaming(null)} />}
       {deleting && (
         <Dialog open onOpenChange={(o) => !o && setDeleting(null)} title={`Delete “${deleting.name}”?`} description="The project folder moves to the Recycle Bin. Your original media files are not touched."
@@ -113,13 +138,19 @@ function QuickCard({ icon, title, body, onClick }: { icon: ReactNode; title: str
   )
 }
 
-function ProjectCard({ p, onOpen, onRename, onDuplicate, onDelete }: { p: ProjectSummary; onOpen: () => void; onRename: () => void; onDuplicate: () => void; onDelete: () => void }) {
+function ProjectCard({ p, onOpen, onRename, onDuplicate, onDelete, picking, picked, onPick }: {
+  p: ProjectSummary; onOpen: () => void; onRename: () => void; onDuplicate: () => void; onDelete: () => void
+  picking: boolean; picked: boolean; onPick: (v: boolean) => void
+}) {
   const broken = p.status !== 'ok'
   return (
     <li className="group flex flex-col gap-1.5">
       <div className="relative">
-        <button type="button" onClick={onOpen} disabled={broken} aria-label={`Open ${p.name}`}
-          className="relative block aspect-video w-full overflow-hidden rounded-md bg-surface-3 bg-cover bg-center ring-1 ring-border hover:ring-border-strong disabled:cursor-not-allowed"
+        {picking && !broken && (
+          <div className="absolute left-1.5 top-1.5 z-[1] rounded-xs bg-scrim/70 p-1"><Checkbox label={`Select ${p.name}`} hideLabel checked={picked} onCheckedChange={onPick} /></div>
+        )}
+        <button type="button" onClick={picking ? () => onPick(!picked) : onOpen} disabled={broken} aria-label={picking ? `${picked ? 'Deselect' : 'Select'} ${p.name}` : `Open ${p.name}`}
+          className={`relative block aspect-video w-full overflow-hidden rounded-md bg-surface-3 bg-cover bg-center ring-1 hover:ring-border-strong disabled:cursor-not-allowed ${picked ? 'ring-2 ring-agent' : 'ring-border'}`}
           style={p.coverUrl ? { backgroundImage: `url("${p.coverUrl}")` } : undefined}>
           {!p.coverUrl && <Film className="absolute inset-0 m-auto size-6 text-muted" aria-hidden />}
           {p.durationUs > 0 && <span className="absolute bottom-1.5 right-1.5 rounded-xs bg-scrim/70 px-1 font-mono text-[10px]">{formatUs(p.durationUs)}</span>}

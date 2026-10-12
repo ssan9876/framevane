@@ -55,6 +55,13 @@ const api = {
     setApiKey: inv('agent:setApiKey') as ReelApi['agent']['setApiKey'],
     setModel: inv('agent:setModel') as ReelApi['agent']['setModel'],
     run: inv('agent:run') as ReelApi['agent']['run'],
+    pending: inv('agent:pending') as ReelApi['agent']['pending'],
+    defs: inv('agent:defs') as ReelApi['agent']['defs'],
+    toolList: inv('agent:toolList') as ReelApi['agent']['toolList'],
+    saveDef: inv('agent:saveDef') as ReelApi['agent']['saveDef'],
+    deleteDef: inv('agent:deleteDef') as ReelApi['agent']['deleteDef'],
+    batch: inv('agent:batch') as ReelApi['agent']['batch'],
+    onBatch: on('agent:batch'),
     cancel: inv('agent:cancel') as ReelApi['agent']['cancel'],
     permission: inv('agent:permission') as ReelApi['agent']['permission'],
     review: inv('agent:review') as ReelApi['agent']['review'],
@@ -62,6 +69,17 @@ const api = {
     onEvent: on('agent:event'),
   },
 } as ReelApi
+
+api.tools = {
+  providers: inv('tools:providers') as ReelApi['tools']['providers'],
+  add: inv('tools:add') as ReelApi['tools']['add'],
+  update: inv('tools:update') as ReelApi['tools']['update'],
+  remove: inv('tools:remove') as ReelApi['tools']['remove'],
+  refresh: inv('tools:refresh') as ReelApi['tools']['refresh'],
+  setEnabled: inv('tools:setEnabled') as ReelApi['tools']['setEnabled'],
+  setToolPermission: inv('tools:setToolPermission') as ReelApi['tools']['setToolPermission'],
+  setToolCostsMoney: inv('tools:setToolCostsMoney') as ReelApi['tools']['setToolCostsMoney'],
+}
 
 api.mcp = {
   info: inv('mcp:info') as ReelApi['mcp']['info'],

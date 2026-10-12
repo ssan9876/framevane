@@ -28,9 +28,55 @@ interface AssetRow {
 }
 
 const PROXY_ABOVE = 1920 // long edge in px; bigger sources get a 1280px proxy for smooth preview
+const MAX_DOWNLOAD = 2 * 1024 ** 3
+const MIME_EXT: Record<string, string> = {
+  'video/mp4': '.mp4', 'video/quicktime': '.mov', 'video/webm': '.webm', 'video/x-matroska': '.mkv',
+  'audio/mpeg': '.mp3', 'audio/mp4': '.m4a', 'audio/wav': '.wav', 'audio/x-wav': '.wav', 'audio/ogg': '.ogg', 'audio/flac': '.flac', 'audio/aac': '.aac',
+  'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif',
+}
+const MEDIA_EXTS = new Set([...Object.values(MIME_EXT), '.jpeg', '.m4v', '.avi'])
 
 export class Media {
   constructor(private db: Db, private paths: AppPaths, private jobs: JobQueue, private notify: (projectId: string, m: MediaInfo) => void) {}
+
+  /**
+   * Download a media file from an http(s) URL into the cache (for agents that get a link back from a generation
+   * service). Only video, audio and image responses are kept, up to 2 GB.
+   */
+  async download(url: string, signal?: AbortSignal): Promise<string> {
+    const u = new URL(url)
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('Only http(s) links can be downloaded')
+    const res = await fetch(u, { signal, redirect: 'follow' })
+    if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
+    const type = (res.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()
+    const extFromUrl = extname(u.pathname).toLowerCase()
+    const ext = MIME_EXT[type] ?? (MEDIA_EXTS.has(extFromUrl) ? extFromUrl : null)
+    if (!ext || !(type === '' || type === 'application/octet-stream' || /^(video|audio|image)\//.test(type))) throw new Error(`That link is not a video, audio or image file (${type || 'unknown type'})`)
+    const len = Number(res.headers.get('content-length') ?? 0)
+    if (len > MAX_DOWNLOAD) throw new Error('That file is larger than 2 GB')
+    const dir = join(this.paths.cacheDir, 'downloads')
+    await mkdir(dir, { recursive: true })
+    const name = (basename(u.pathname, extname(u.pathname)).replace(/[^\w.-]+/g, '_').slice(0, 60) || 'download') + `-${createHash('sha1').update(url).digest('hex').slice(0, 8)}${ext}`
+    const file = join(dir, name)
+    const fh = await open(file, 'w')
+    let total = 0
+    try {
+      const reader = res.body.getReader()
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        total += value.byteLength
+        if (total > MAX_DOWNLOAD) throw new Error('That file is larger than 2 GB')
+        await fh.write(value)
+      }
+    } catch (e) {
+      await fh.close()
+      await rm(file, { force: true })
+      throw e
+    }
+    await fh.close()
+    return file
+  }
 
   /** Register files with a project. Returns immediately with probe data; prep jobs continue in the background. */
   async import(projectId: string, files: string[]): Promise<MediaInfo[]> {

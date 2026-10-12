@@ -13,6 +13,8 @@ export function ReviewDialog() {
   const [included, setIncluded] = useState(() => new Set(ops.map((o) => o.id)))
   const [busy, setBusy] = useState(false)
   const [preview, setPreview] = useState<Project | null>(null)
+  /** Set when the timeline changed after the agent started: offer to run the same request again. */
+  const [conflict, setConflict] = useState<string | null>(null)
   const toast = useToast()
   const close = () => useApp.getState().openDialog(null)
 
@@ -35,8 +37,28 @@ export function ReviewDialog() {
     if (r.ok) {
       toast({ tone: 'success', title: `Applied ${r.applied} edit${r.applied === 1 ? '' : 's'}`, description: r.conflicted ? `${r.conflicted} no longer fit the timeline and were skipped.` : 'Undo with Ctrl+Z.', action: { label: 'Undo', onClick: () => void window.framevane.doc.undo(doc.id) } })
       close()
+    } else if (r.conflicted) {
+      setConflict(r.message ?? 'The timeline changed after the agent started.')
     } else {
       toast({ tone: 'warning', title: "The edits weren't applied", description: r.message })
+    }
+  }
+
+  /** Throw away the stale proposal and send the same request to the same agent, on the timeline as it is now. */
+  async function askAgain() {
+    if (!run?.prompt) return
+    setBusy(true)
+    const { agentDefs, selection, playheadUs } = useApp.getState()
+    const def = agentDefs.find((d) => d.name === run.agentName)
+    try {
+      await window.framevane.agent.review(run.runId, [], 'reject')
+      const { runId: next, agentName } = await window.framevane.agent.run(doc.id, run.prompt, { selection, playheadUs }, def?.id)
+      useApp.getState().startAgentRun(next, run.prompt, agentName)
+      close()
+    } catch (e) {
+      toast({ tone: 'error', title: 'Could not start the agent', description: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -47,6 +69,12 @@ export function ReviewDialog() {
         <Button variant="ghost" onClick={async () => { await window.framevane.agent.review(run.runId, [], 'reject'); close() }}>Discard all</Button>
         <Button variant="primary" loading={busy} disabled={included.size === 0} onClick={() => void apply()}>Apply {included.size} edit{included.size === 1 ? '' : 's'}</Button>
       </>}>
+      {conflict && (
+        <div role="alert" className="mb-3 flex items-center gap-3 rounded-md border border-warning/50 bg-surface-2 p-3 text-sm">
+          <span className="flex-1">{conflict}</span>
+          {run.prompt && <Button size="sm" variant="agent" loading={busy} onClick={() => void askAgain()}>Ask again</Button>}
+        </div>
+      )}
       <div className="grid grid-cols-[1fr_340px] gap-4">
         <div className="flex min-h-0 flex-col gap-2">
           <div className="flex items-center justify-between">

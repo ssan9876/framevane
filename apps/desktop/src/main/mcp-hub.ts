@@ -4,13 +4,26 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 
 /**
  * MCP client hub. Every external capability the agents use is an MCP server: the bundled local-AI sidecar
  * (Python, stdio) today, and any server the user adds in Settings → Agents (stdio or HTTP) in M2.
  */
 
-export interface ToolInfo { provider: string; name: string; description: string; inputSchema: Record<string, unknown> }
+export interface ToolInfo { provider: string; name: string; description: string; inputSchema: Record<string, unknown>; readOnly: boolean }
+
+/** A user-added MCP server: a local command (stdio) or a URL (streamable HTTP) with optional headers. */
+export interface ExternalServer {
+  name: string
+  kind: 'mcp_stdio' | 'mcp_http'
+  command?: string | null
+  args?: string[]
+  env?: Record<string, string>
+  url?: string | null
+  headers?: Record<string, string>
+}
 export type SidecarStatus = 'unknown' | 'starting' | 'ready' | 'error'
 
 interface Conn { client: Client; tools: ToolInfo[] }
@@ -36,6 +49,36 @@ export class McpHub {
         stderr: 'pipe',
       })
     }, true)
+  }
+
+  /** Connect (or reconnect) a user-added server and list its tools. */
+  async connectExternal(s: ExternalServer): Promise<ToolInfo[]> {
+    await this.disconnect(s.name)
+    const conn = await this.connect(s.name, () => {
+      if (s.kind === 'mcp_stdio') {
+        if (!s.command) throw new Error('A command is required')
+        return new StdioClientTransport({ command: s.command, args: s.args ?? [], env: { ...cleanEnv(), ...(s.env ?? {}) }, stderr: 'pipe' })
+      }
+      if (!s.url || !/^https?:\/\//.test(s.url)) throw new Error('A http(s) URL is required')
+      return new StreamableHTTPClientTransport(new URL(s.url), { requestInit: { headers: s.headers ?? {} } })
+    })
+    return conn.tools
+  }
+
+  async disconnect(provider: string) {
+    const c = this.conns.get(provider)
+    this.conns.delete(provider)
+    if (c) await c.then((x) => x.client.close()).catch(() => {})
+  }
+
+  isConnected(provider: string) { return this.conns.has(provider) }
+
+  /** Raw MCP call: returns the content blocks (text/image/…) for the agent to read. */
+  async callRaw(provider: string, name: string, args: Record<string, unknown>, opts: { signal?: AbortSignal; timeoutMs?: number } = {}) {
+    const conn = provider === 'local' ? await this.sidecar() : await this.conns.get(provider)
+    if (!conn) throw new Error(`Tool provider "${provider}" is not connected`)
+    const res = await conn.client.callTool({ name, arguments: args }, undefined, { signal: opts.signal, timeout: opts.timeoutMs ?? 10 * 60_000, resetTimeoutOnProgress: true })
+    return { isError: !!res.isError, content: (res.content ?? []) as { type: string; text?: string; data?: string; mimeType?: string; resource?: { uri?: string; text?: string } }[], structured: res.structuredContent }
   }
 
   async callTool<T = unknown>(provider: string, name: string, args: Record<string, unknown>, opts: { signal?: AbortSignal; onProgress?: (p: number, message?: string) => void; timeoutMs?: number } = {}): Promise<T> {
@@ -70,19 +113,19 @@ export class McpHub {
     this.conns.clear()
   }
 
-  private connect(provider: string, makeTransport: () => StdioClientTransport, isSidecar = false): Promise<Conn> {
+  private connect(provider: string, makeTransport: () => Transport, isSidecar = false): Promise<Conn> {
     const existing = this.conns.get(provider)
     if (existing) return existing
     const p = (async () => {
       if (isSidecar) this.sidecarStatus = 'starting'
       const transport = makeTransport()
-      transport.stderr?.on('data', (d: Buffer) => process.stderr.write(`[${provider}] ${d}`))
+      if (transport instanceof StdioClientTransport) transport.stderr?.on('data', (d: Buffer) => process.stderr.write(`[${provider}] ${d}`))
       const client = new Client({ name: 'framevane', version: '0.1.0' })
       transport.onclose = () => { this.conns.delete(provider); if (isSidecar) this.sidecarStatus = 'unknown' }
       await client.connect(transport)
       const { tools } = await client.listTools()
       if (isSidecar) { this.sidecarStatus = 'ready'; this.sidecarError = null }
-      return { client, tools: tools.map((t) => ({ provider, name: t.name, description: t.description ?? '', inputSchema: t.inputSchema as Record<string, unknown> })) }
+      return { client, tools: tools.map((t) => ({ provider, name: t.name, description: t.description ?? '', inputSchema: t.inputSchema as Record<string, unknown>, readOnly: !!t.annotations?.readOnlyHint })) }
     })()
     this.conns.set(provider, p)
     p.catch((e) => {

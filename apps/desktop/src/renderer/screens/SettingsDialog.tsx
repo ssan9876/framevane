@@ -3,15 +3,16 @@ import { Button, Dialog, Kbd, Select, Switch, TextField, UnderlineTabs, TabPanel
 import type { AgentSettings, McpConnectInfo } from '../../shared/api'
 import { useApp } from '../app/store'
 import { SHORTCUTS } from '../editor/shortcuts'
+import { ToolServers } from './ToolServers'
 
-/** S23 Settings · S24 Shortcuts · S28 Agents & tools (M0: Claude key + model; MCP servers arrive in M2). */
+/** S23 Settings · S24 Shortcuts · S28 Agents & tools (Claude Code connection, API key + model, MCP servers). */
 export function SettingsDialog() {
   const arg = useApp((s) => s.dialogArg)
   const dialog = useApp((s) => s.dialog)
   const [tab, setTab] = useState(dialog === 'shortcuts' ? 'shortcuts' : arg ?? 'general')
   const close = () => useApp.getState().openDialog(null)
   return (
-    <Dialog open onOpenChange={(o) => !o && close()} title="Settings" width={640}>
+    <Dialog open onOpenChange={(o) => !o && close()} title="Settings" width={680}>
       <div className="-mx-5 -mt-4">
         <UnderlineTabs value={tab} onValueChange={setTab} label="Settings sections" tabs={[{ value: 'general', label: 'General' }, { value: 'agents', label: 'Agents & AI' }, { value: 'shortcuts', label: 'Shortcuts' }, { value: 'performance', label: 'Performance' }]}>
           <div className="min-h-[360px] px-5 pt-4">
@@ -67,10 +68,7 @@ function Agents() {
             options={['low', 'medium', 'high', 'xhigh', 'max'].map((v) => ({ value: v, label: v }))} />
         </div>
       </section>
-      <section className="flex flex-col gap-1">
-        <h3 className="text-base">Tools from other apps (MCP)</h3>
-        <p className="text-sm text-muted">Coming next: add any MCP server (for example Higgsfield for AI video, or your own scripts) to the built-in agent. Tools that cost money always ask first.</p>
-      </section>
+      <ToolServers />
     </div>
   )
 }

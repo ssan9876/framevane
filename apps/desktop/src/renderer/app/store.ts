@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Clip, OpInput, Project, TrackKind } from '@framevane/doc'
-import type { AgentEvent, AgentRunStatus, ExternalActivity, JobEvent, MediaInfo, ProjectSummary, ProposedOp } from '../../shared/api'
+import type { AgentDefView, AgentEvent, AgentRunStatus, ExternalActivity, JobEvent, MediaInfo, ProjectSummary, ProposedOp } from '../../shared/api'
 
 /**
  * Renderer state. The project document is owned by the main process; this store mirrors it from doc:change events.
@@ -20,9 +20,12 @@ export interface AgentTurn {
   streaming?: boolean
   meta?: string
 }
-export interface AgentToolStep { toolCallId: string; provider: string; tool: string; summary: string; status: 'running' | 'done' | 'error' | 'awaiting' | 'denied'; detail?: string; durationMs?: number }
+export interface AgentToolStep { toolCallId: string; provider: string; tool: string; summary: string; status: 'running' | 'done' | 'error' | 'awaiting' | 'denied'; detail?: string; durationMs?: number; costsMoney?: boolean; reason?: string }
 export interface AgentRunView {
   runId: string
+  /** Which library agent ran this (shown above the transcript). */
+  agentName?: string
+  prompt?: string
   status: AgentRunStatus
   error?: string
   items: ({ type: 'turn'; turn: AgentTurn } | { type: 'note'; text: string } | { type: 'tool'; step: AgentToolStep })[]
@@ -51,9 +54,12 @@ interface State {
   /** Preview decodes 1280px proxies of big media (saved per computer). */
   useProxies: boolean
   clipboard: { items: { trackId: string; trackKind: TrackKind; clip: Clip }[]; originUs: number } | null
-  dialog: null | 'export' | 'settings' | 'project-settings' | 'review' | 'shortcuts'
+  dialog: null | 'export' | 'settings' | 'project-settings' | 'review' | 'shortcuts' | 'agents'
   dialogArg: string | null
   agentRuns: AgentRunView[]
+  /** Saved agents (S31) and the one the panel sends to (null = Editor). */
+  agentDefs: AgentDefView[]
+  agentDefId: string | null
   reviewRunId: string | null
   /** Tool calls from connected MCP clients (Claude Code…), newest last. */
   externalActivity: ExternalActivity[]
@@ -69,7 +75,11 @@ interface State {
   openDialog(d: State['dialog'], arg?: string | null): void
   setError(e: string | null): void
   agentEvent(e: AgentEvent): void
-  startAgentRun(runId: string, prompt: string): void
+  startAgentRun(runId: string, prompt: string, agentName?: string): void
+  loadAgentDefs(): Promise<void>
+  pickAgent(id: string | null): void
+  /** Show proposals that finished while the panel wasn't watching (batch runs). */
+  addPendingRuns(list: Awaited<ReturnType<typeof window.framevane.agent.pending>>): void
   pushActivity(a: ExternalActivity): void
 }
 
@@ -94,6 +104,8 @@ export const useApp = create<State>((set, get) => ({
   dialog: null,
   dialogArg: null,
   agentRuns: [],
+  agentDefs: [],
+  agentDefId: (() => { try { return localStorage.getItem('framevane.agentDefId') } catch { return null } })(),
   reviewRunId: null,
   externalActivity: [],
   error: null,
@@ -139,8 +151,34 @@ export const useApp = create<State>((set, get) => ({
     })
   },
 
-  startAgentRun(runId, prompt) {
-    set((s) => ({ agentRuns: [...s.agentRuns, { runId, status: 'running', items: [{ type: 'turn', turn: { id: `${runId}-u`, role: 'user', text: prompt } }] }] }))
+  startAgentRun(runId, prompt, agentName) {
+    set((s) => ({ agentRuns: [...s.agentRuns, { runId, prompt, agentName, status: 'running', items: [{ type: 'turn', turn: { id: `${runId}-u`, role: 'user', text: prompt } }] }] }))
+  },
+
+  async loadAgentDefs() {
+    const defs = await window.framevane.agent.defs()
+    set((s) => ({ agentDefs: defs, agentDefId: s.agentDefId && defs.some((d) => d.id === s.agentDefId) ? s.agentDefId : null }))
+  },
+
+  pickAgent(id) {
+    set({ agentDefId: id })
+    try { if (id) localStorage.setItem('framevane.agentDefId', id); else localStorage.removeItem('framevane.agentDefId') } catch { /* remembered for this session only */ }
+  },
+
+  addPendingRuns(list) {
+    set((s) => {
+      const fresh = list.filter((p) => !s.agentRuns.some((r) => r.runId === p.runId))
+      if (!fresh.length) return {}
+      const runs: AgentRunView[] = fresh.map((p) => ({
+        runId: p.runId, prompt: p.prompt, agentName: p.agentName, status: 'awaiting_review',
+        items: [
+          { type: 'turn', turn: { id: `${p.runId}-u`, role: 'user', text: p.prompt } },
+          { type: 'note', text: `${p.agentName} ran on this project in a batch.` },
+        ],
+        proposal: { ops: p.ops, summary: p.summary, costMicroUsd: p.costMicroUsd },
+      }))
+      return { agentRuns: [...runs, ...s.agentRuns] }
+    })
   },
 
   agentEvent(e) {
@@ -165,7 +203,7 @@ export const useApp = create<State>((set, get) => ({
             return { ...r, items }
           case 'tool': {
             const i = items.findIndex((it) => it.type === 'tool' && it.step.toolCallId === e.toolCallId)
-            const step: AgentToolStep = { toolCallId: e.toolCallId, provider: e.provider, tool: e.tool, summary: e.summary, status: e.status, detail: e.detail, durationMs: e.durationMs }
+            const step: AgentToolStep = { toolCallId: e.toolCallId, provider: e.provider, tool: e.tool, summary: e.summary, status: e.status, detail: e.detail, durationMs: e.durationMs, costsMoney: e.costsMoney, reason: e.reason }
             if (i >= 0) items[i] = { type: 'tool', step }
             else items.push({ type: 'tool', step })
             return { ...r, items }
@@ -174,6 +212,8 @@ export const useApp = create<State>((set, get) => ({
             return { ...r, proposal: { ops: e.ops, summary: e.summary, costMicroUsd: e.costMicroUsd } }
           case 'usage':
             return { ...r, usage: { inputTokens: e.inputTokens, outputTokens: e.outputTokens, costMicroUsd: e.costMicroUsd } }
+          case 'started':
+            return { ...r, agentName: r.agentName ?? e.agentName }
         }
       }),
     }))

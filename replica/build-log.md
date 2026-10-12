@@ -105,16 +105,33 @@ Harder than expected:
 - **BUG-010:** zod `.partial()` keeps defaults, so every one-field transform or caption-style edit reset the others. Present since M0, caught by the on-canvas drag, fixed with `patchOf()`.
 - **Keyframes across edits:** keeping them continuous needed boundary keyframes inserted at the cut values. A naive filter loses the animation.
 
+## M2 agent platform (2026-10-11)
+
+| area | status | notes |
+| --- | --- | --- |
+| MCP servers for the built-in agent (S28) | done | Settings → Agents & AI → "Tools from other apps". A server is a local command (stdio: command, arguments, env vars) or a URL (streamable HTTP + headers). Secrets are encrypted with DPAPI (`safeStorage`) in the settings table; only key names reach the window. Connect, reconnect, enable/disable, edit, remove. Servers connect at startup. The bundled local AI shows as a read-only "local" provider. |
+| Per-tool permission | done | Read-only tools (MCP `readOnlyHint`) default to Auto, the rest to Ask. Never hides the tool from agents. A "costs money" tick makes a tool ask every time, with no "Always allow". The in-panel prompt offers Allow once / Always allow / Deny / Never, and shows the call's input. |
+| External tools in the agent loop | done | Offered as `server__tool`. MCP results are converted to Claude content: text, images, links and resources, with long text cut at 60k characters. The system prompt says how to bring generated media in. Calls are logged in `tool_calls`. |
+| New editor tools | done | `set_canvas_size` (ratio presets), `import_media`, `import_from_url` (http(s), video/audio/image only, 2 GB cap, saved to the cache), `add_to_timeline`. These moved from the MCP server into the shared tool list, so Claude Code and the panel agent get the same set. |
+| Agent library (S31) | done | Six built-ins: Editor, Silence cutter, Captioner, Short-form maker, Filler-word remover, Highlight finder. They are re-seeded on start and are read-only; "Duplicate to edit" copies one. Custom agents set instructions, a tool allow-list (globs), model (or "from Settings"), effort, review or auto-apply, and a suggested request. Migration 002 adds `agent_defs.starter`. There is a picker in the agent panel header. The runner refuses calls to tools the agent wasn't given. |
+| Batch (F14) | partial | On Home, "Select for an agent" lets you pick projects and run one agent on all of them, one after another, with live progress. Edits either apply automatically or wait in each project's agent panel ("pending" proposals load when the project opens). Ask-tools are refused in a batch, because nobody is there to approve them. Photos come in M7. |
+| Conflict "Ask again" | done | When a proposal can't apply because the timeline changed, the review dialog discards it and sends the same request to the same agent. |
+| OAuth MCP servers, JSON import/export of agents | not built | Servers that need a browser sign-in aren't supported yet. Agents can't be shared as files yet. |
+
+Notes:
+- Pending proposals live in memory, so they are lost if the app restarts before review. The transcript and ops stay in SQLite, so this could be rebuilt later.
+- The fake model (`FRAMEVANE_FAKE_AGENT=1`) gained policies for "test tool" (calls `*__make_clip` → import → place) and "mark…" (adds a marker). The e2e fixture `e2e/test-mcp-server.mjs` is a real stdio MCP server.
+
 ## Next (architecture build order)
 
-- **M1 timeline must-haves:**
-  - keyframes and the S21 graph
-  - on-canvas transform handles
-  - copy/paste, markers, group, freeze, reverse, crop, detach audio
-  - proxy jobs
-  - crash test for the journal
-- **M2 agent platform:**
-  - the editor as an MCP server (Claude Code can drive it)
-  - user-added MCP servers (S28) with per-tool permission prompts
-  - `get_frames` against the live API
-  - run F12 against real Claude
+- **Still open from M1/M2:**
+  - the S21 curve graph
+  - a crash test for the journal
+  - run F12 and `get_frames` against the live Claude API (needs a key)
+  - OAuth MCP servers
+  - agent import/export
+- **M3 text, captions, audio:**
+  - text tool with styles and animations
+  - caption editor and caption styles
+  - audio fades, ducking and noise reduction
+  - transcript-based editing (F15)

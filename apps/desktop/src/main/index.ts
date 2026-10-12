@@ -1,8 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents } from 'electron'
 import { open as fsOpen, rm, type FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { AgentEvent, DocEvent, ExternalActivity, JobEvent, MediaInfo } from '../shared/api'
+import type { AgentDefInput, AgentEvent, BatchEvent, DocEvent, ExternalActivity, JobEvent, MediaInfo, ProviderInput, ToolPermission } from '../shared/api'
 import { AgentRunner } from './agent/runner'
+import { AgentDefs } from './agent/defs'
+import { TOOLS } from './agent/tools'
+import { ToolRegistry } from './tool-registry'
 import { EditorMcp, type UiState } from './editor-mcp'
 import { Analysis } from './analysis'
 import { openDb, uuid7 } from './db'
@@ -38,7 +41,11 @@ async function main() {
   const projects = new Projects(db, paths, (e: DocEvent) => broadcast('doc:change', e))
   const hub = new McpHub({ sidecarDir: defaultSidecarDir(app.getAppPath(), app.isPackaged ? process.resourcesPath : undefined), modelsDir: paths.models })
   const analysis = new Analysis(db, paths, jobs, media, hub)
-  const agent = new AgentRunner(db, projects, analysis, media, (e: AgentEvent) => broadcast('agent:event', e))
+  const registry = new ToolRegistry(db, hub)
+  const defs = new AgentDefs(db)
+  defs.seed()
+  const agent = new AgentRunner(db, projects, analysis, media, registry, defs, (e: AgentEvent) => broadcast('agent:event', e), (e: BatchEvent) => broadcast('agent:batch', e))
+  void registry.connectAll()
   handleMediaProtocol(media)
 
   /* ── Framevane as an MCP server (Claude Code connects here) ── */
@@ -176,11 +183,30 @@ async function main() {
   ipcMain.handle('agent:settings', () => agent.settings())
   ipcMain.handle('agent:setApiKey', (_e, key: string | null) => agent.setApiKey(key))
   ipcMain.handle('agent:setModel', (_e, model: string, effort) => agent.setModel(model, effort))
-  ipcMain.handle('agent:run', (_e, projectId: string, prompt: string, context) => ({ runId: agent.start(projectId, prompt, context) }))
+  ipcMain.handle('agent:run', (_e, projectId: string, prompt: string, context, agentDefId?: string) => agent.start(projectId, prompt, context, agentDefId))
+  ipcMain.handle('agent:pending', (_e, projectId: string) => agent.pending(projectId))
+  ipcMain.handle('agent:defs', () => defs.list())
+  ipcMain.handle('agent:toolList', () => [
+    ...TOOLS.map((t) => ({ name: t.name, provider: 'editor', description: t.description })).sort((a, b) => a.name.localeCompare(b.name)),
+    ...registry.agentTools().map((t) => ({ name: t.fullName, provider: t.provider, description: t.description })),
+  ])
+  ipcMain.handle('agent:saveDef', (_e, id: string | null, def: AgentDefInput) => defs.save(id, def))
+  ipcMain.handle('agent:deleteDef', (_e, id: string) => defs.delete(id))
+  ipcMain.handle('agent:batch', (_e, projectIds: string[], agentDefId: string, prompt: string, autoApply: boolean) => agent.batch(projectIds, agentDefId, prompt, autoApply))
   ipcMain.handle('agent:cancel', (_e, runId: string) => agent.cancel(runId))
-  ipcMain.handle('agent:permission', () => undefined) // M2: MCP tools with permission "ask"
+  ipcMain.handle('agent:permission', (_e, runId: string, toolCallId: string, allow: boolean, remember?: boolean) => agent.permission(runId, toolCallId, allow, remember))
   ipcMain.handle('agent:review', (_e, runId: string, ids: string[], action: 'apply' | 'reject') => agent.review(runId, ids, action))
   ipcMain.handle('agent:previewDoc', (_e, runId: string, ids: string[]) => agent.previewDoc(runId, ids))
+
+  /* ── tool providers: MCP servers the user added for the built-in agent ── */
+  ipcMain.handle('tools:providers', () => registry.list())
+  ipcMain.handle('tools:add', (_e, input: ProviderInput) => registry.add(input))
+  ipcMain.handle('tools:update', (_e, id: string, input: ProviderInput) => registry.update(id, input))
+  ipcMain.handle('tools:remove', (_e, id: string) => registry.remove(id))
+  ipcMain.handle('tools:refresh', (_e, id: string) => registry.refresh(id))
+  ipcMain.handle('tools:setEnabled', (_e, id: string, on: boolean) => registry.setEnabled(id, on))
+  ipcMain.handle('tools:setToolPermission', (_e, id: string, tool: string, p: ToolPermission) => registry.setToolPermission(id, tool, p))
+  ipcMain.handle('tools:setToolCostsMoney', (_e, id: string, tool: string, on: boolean) => registry.setToolCostsMoney(id, tool, on))
 
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })

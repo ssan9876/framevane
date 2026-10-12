@@ -57,7 +57,7 @@ Bilingual / translated captions,captions,should,yes,no,LLM translate
 Import SRT,captions,should,yes,no,
 Export SRT / TXT captions,captions,must,yes,no,
 Transcript-based editing (delete words to cut),captions,should,yes,no,S30
-Remove filler words and silences,captions,should,yes,partial,M0: silences via the agent (find_silences + cut_ranges); filler words not built
+Remove filler words and silences,captions,should,yes,partial,M0: silences via the agent | M2: Filler-word remover agent (transcript + cut_ranges); no one-click button yet
 Add local music and audio files,audio,must,yes,yes,
 Volume and volume keyframes,audio,must,yes,yes,M0: volume yes; keyframes M1 | M1
 Fade in / fade out,audio,must,yes,no,
@@ -94,9 +94,9 @@ Relight,ai,could,yes,no,
 Remove video flicker,ai,could,yes,no,
 Auto cut: scene detection and split scenes,ai,should,yes,no,PySceneDetect
 Auto cut: beat sync,ai,could,yes,no,
-Long video to shorts,ai,should,yes,no,agent recipe
+Long video to shorts,ai,should,yes,partial,"M2: Short-form maker agent (9:16, blurred fill, cut pauses, captions, hook marker); no clip picking yet"
 Script to video,ai,could,yes,no,agent recipe + user gen-AI keys
-AI image / video generation in media panel,ai,could,yes,no,via MCP (e.g. Higgsfield) on user's account
+AI image / video generation in media panel,ai,could,yes,partial,M2: reachable through a user-added MCP server (e.g. Higgsfield) + import_from_url / import_media; no media-panel UI
 AI avatars / presenter,ai,could,yes,no,via MCP provider only
 Export MP4/MOV H.264 HEVC up to 4K 60fps no watermark,export,must,yes,yes,"CapCut: 4K/60fps/no-watermark PRO | M0: MP4 H.264/HEVC, 720p–4K, 24–60 fps, no watermark; verified 1080p30"
 Export resolution beyond 4K and high fps,export,could,no,no,
@@ -123,15 +123,15 @@ Settings: performance cache project folder,settings,must,yes,partial,S23 | M0: S
 Agent panel: chat with an agent about the open project,agents,must,no,yes,"S27; CapCut EditPilot is the nearest analog | M0: S27 streaming transcript, tool steps, progress notes, cost"
 Typed edit-op API shared by UI undo/redo and agents,agents,must,no,yes,"foundation for all agent work | M0: @framevane/doc ops, 20 unit tests"
 Editor exposed as an MCP server (timeline read + edit ops + render frame),agents,must,no,yes,"lets Claude Code / any agent drive the editor | M2 early: streamable HTTP on 127.0.0.1:47821, bearer token, 23 tools, live edits = one undo step each, one-click ""Add to Claude Code""; review-mode for external agents not built"
-MCP client: plug in external MCP servers as agent tools,agents,must,no,partial,S28 | M0: MCP client hub runs the local sidecar; user-added servers M2
+MCP client: plug in external MCP servers as agent tools,agents,must,no,yes,S28 | M0: MCP client hub runs the local sidecar | M2: add stdio (command) or HTTP (URL + headers) servers in Settings; secrets encrypted with DPAPI; tools reach the agent as server__tool; OAuth sign-in servers not supported yet
 Claude API provider with model picker and user key,agents,must,no,yes,M0: Opus 5.5 default; key in DPAPI; not yet run against the live API (no key on this machine)
 Local AI tools registered as agent tools (Whisper rembg ESRGAN RIFE Demucs TTS),agents,must,no,partial,M0: Whisper transcription + silence detection; the rest per milestone
 Edit proposal review with accept/reject per op,agents,must,no,yes,"S29 | M0: S29 with live preview, include/exclude, apply, discard"
-Per-tool permission (auto / ask / never),agents,must,no,no,
-Agent sees frames (send sampled frames to vision model),agents,should,no,partial,M0: get_frames tool written; untested against the live API
-Saved agents / recipes library with built-ins,agents,should,no,no,S31
-Batch run an agent across many clips or photos,agents,should,no,no,F14
-Conflict handling when user edits during an agent run,agents,should,no,partial,M0: time-based edits are blocked if the timeline changed; no rebase UI
+Per-tool permission (auto / ask / never),agents,must,no,yes,"M2: read-only tools default to auto, others ask; prompt with Allow once / Always allow / Deny / Never; ""costs money"" tools always ask; batch runs refuse ask-tools"
+Agent sees frames (send sampled frames to vision model),agents,should,no,partial,M0: get_frames tool; MCP image results also pass to the model (M2); untested against the live API
+Saved agents / recipes library with built-ins,agents,should,no,yes,"S31 | M2: 6 built-ins (Editor, Silence cutter, Captioner, Short-form maker, Filler-word remover, Highlight finder) + custom agents with instructions, tool allow-list, model/effort, review or auto-apply; built-ins duplicate to edit; JSON import/export not built"
+Batch run an agent across many clips or photos,agents,should,no,partial,"F14 | M2: across projects from Home, sequential, auto-apply or leave proposals for review; photos wait for the photo editor (M7)"
+Conflict handling when user edits during an agent run,agents,should,no,yes,"M0: time-based edits blocked if the timeline changed | M2: ""Ask again"" reruns the same request on the current timeline"
 Agent cost / token tracking per run,agents,could,no,yes,M0: tokens and $ per run in the panel
 Plugin SDK (JS) for custom tools and effects,agents,could,no,no,
 CapCut music library,content,could,yes,skip,licensed platform material; use local files or free libraries (Pixabay/Freesound)
