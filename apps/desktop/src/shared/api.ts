@@ -50,6 +50,8 @@ export interface ApplyConflict { ok: false; code: string; message: string }
 export interface TranscriptWord { text: string; start: number; end: number } // seconds, source time
 export interface Transcript { assetId: string; language: string; model: string; words: TranscriptWord[] }
 
+export type VideoContainer = 'mp4' | 'mov' | 'webm'
+export type VideoCodecId = 'avc' | 'hevc' | 'av1' | 'vp9'
 export interface ExportSettings {
   projectId: string
   outputPath: string
@@ -57,8 +59,17 @@ export interface ExportSettings {
   height: number
   fps: number
   bitrate: number // bits per second
-  codec: 'avc' | 'hevc'
+  codec: VideoCodecId
+  /** Default mp4. WebM pairs with VP9/AV1 and Opus audio. */
+  container?: VideoContainer
+  /** Only this part of the timeline (µs); default the whole thing. */
+  range?: { startUs: number; endUs: number }
+  /** Leave the sound out (GIF and silent exports). */
+  noAudio?: boolean
 }
+
+/** A cache in Settings → Performance. */
+export interface CacheUsage { id: 'previews' | 'proxies' | 'transcripts' | 'mattes' | 'tracks' | 'generated'; label: string; bytes: number; clearable: boolean; note: string }
 
 /* ── agent ── */
 export type AgentEvent =
@@ -81,7 +92,24 @@ export interface AgentSettings { hasApiKey: boolean; credentialSource: 'app_key'
 /** Something a connected MCP client (Claude Code etc.) did in this project. */
 export interface ExternalActivity { id: string; client: string; tool: string; summary: string; status: 'running' | 'done' | 'error'; mutates: boolean; durationMs?: number }
 export interface McpConnectInfo { enabled: boolean; listening: boolean; url: string; token: string; error: string | null; claudeCommand: string }
-export interface McpExportRequest { requestId: string; projectId: string; outputPath: string; height: number; fps: number; codec: 'avc' | 'hevc' }
+/** What to export (S22): one shape for the export dialog and the MCP export tool. */
+export type ExportFormat = 'mp4' | 'mov' | 'webm' | 'gif' | 'wav' | 'mp3' | 'm4a' | 'png' | 'jpg'
+export interface ExportRequest {
+  outputPath: string
+  format: ExportFormat
+  /** Short side in pixels (video, GIF uses it as the width cap, image). */
+  height: number
+  fps: number
+  codec?: VideoCodecId
+  quality?: 'low' | 'recommended' | 'high'
+  /** Overrides quality. */
+  bitrateMbps?: number
+  /** Timeline range (µs); default the whole video. */
+  range?: { startUs: number; endUs: number }
+  /** For png/jpg: which frame (µs). */
+  atUs?: number
+}
+export interface McpExportRequest extends ExportRequest { requestId: string; projectId: string }
 
 /* ── M3: fonts, voices, audio clean-up ── */
 export interface CustomFont { file: string; family: string; weight: number; style: 'normal' | 'italic'; url: string }
@@ -138,6 +166,7 @@ export interface ReelApi {
   app: {
     info(): Promise<{ version: string; userData: string; projectsDir: string; ffmpeg: string | null; sidecar: 'unknown' | 'ready' | 'starting' | 'error'; gpu?: string }>
     pickFiles(opts: { kind: 'media' | 'image' | 'subtitle' | 'font' | 'lut' }): Promise<string[]>
+    pickFolder(): Promise<string | null>
     writeTextFile(path: string, text: string): Promise<void>
     readTextFile(path: string): Promise<string>
     pickSavePath(opts: { defaultName: string; ext: string }): Promise<string | null>
@@ -212,6 +241,19 @@ export interface ReelApi {
     open(path: string): Promise<{ handle: string }>
     write(handle: string, position: number, data: Uint8Array): Promise<void>
     close(handle: string, opts: { abort?: boolean }): Promise<{ path: string; bytes: number }>
+    /** A scratch file for two-step exports (GIF, MP3/M4A). */
+    tempPath(ext: string): Promise<string>
+    /** Finish a two-step export with FFmpeg: a GIF from a silent MP4, or MP3/M4A from a WAV. Removes the source. */
+    convert(opts: { kind: 'gif'; src: string; out: string; fps: number; width: number } | { kind: 'audio'; src: string; out: string; format: 'mp3' | 'm4a' }): Promise<{ path: string; bytes: number }>
+  }
+  storage: {
+    usage(): Promise<CacheUsage[]>
+    clear(id: CacheUsage['id']): Promise<CacheUsage[]>
+    projectsDir(): Promise<string>
+    setProjectsDir(dir: string): Promise<string>
+    aiDevice(): Promise<'auto' | 'cpu'>
+    setAiDevice(d: 'auto' | 'cpu'): Promise<'auto' | 'cpu'>
+    aiHealth(): Promise<{ gpu: boolean; providers: string[]; cudaDevices: number }>
   }
   agent: {
     settings(): Promise<AgentSettings>

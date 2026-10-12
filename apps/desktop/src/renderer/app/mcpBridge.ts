@@ -1,6 +1,6 @@
 import { projectDurationUs } from '@framevane/doc'
 import type { ExternalActivity } from '../../shared/api'
-import { exportProject } from '../engine/export'
+import { runExport } from '../engine/export'
 import { useApp } from './store'
 
 /**
@@ -42,14 +42,9 @@ export function connectMcpBridge(onActivity: (a: ExternalActivity) => void) {
     const doc = useApp.getState().doc
     if (!doc || doc.id !== req.projectId) return window.framevane.mcp.replyExport(req.requestId, { ok: false, error: 'That project is not open in Framevane.' })
     if (projectDurationUs(doc) === 0) return window.framevane.mcp.replyExport(req.requestId, { ok: false, error: 'The timeline is empty.' })
-    const even = (n: number) => Math.max(2, Math.round(n / 2) * 2)
-    const portrait = doc.canvas.height > doc.canvas.width
-    const ar = doc.canvas.width / doc.canvas.height
-    const width = even(portrait ? req.height : req.height * ar)
-    const height = even(portrait ? req.height / ar : req.height)
     try {
-      onActivity({ id: req.requestId, client: 'Connected agent', tool: 'export_video', summary: `${width}×${height} · rendering`, status: 'running', mutates: false })
-      const r = await exportProject(doc, { projectId: doc.id, outputPath: req.outputPath, width, height, fps: req.fps, bitrate: Math.round(width * height * req.fps * 0.12), codec: req.codec }, () => {}, new AbortController().signal, (id) => !!useApp.getState().mattes[id])
+      onActivity({ id: req.requestId, client: 'Connected agent', tool: 'export_video', summary: `${req.format} · rendering`, status: 'running', mutates: false })
+      const r = await runExport(doc, req, () => {}, new AbortController().signal, (id) => !!useApp.getState().mattes[id])
       window.framevane.mcp.replyExport(req.requestId, { ok: true, path: r.path, bytes: r.bytes })
     } catch (e) {
       window.framevane.mcp.replyExport(req.requestId, { ok: false, error: e instanceof Error ? e.message : String(e) })

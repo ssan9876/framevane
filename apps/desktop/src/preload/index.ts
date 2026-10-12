@@ -14,6 +14,7 @@ const api = {
   app: {
     info: inv('app:info') as ReelApi['app']['info'],
     pickFiles: inv('app:pickFiles') as ReelApi['app']['pickFiles'],
+    pickFolder: inv('app:pickFolder') as ReelApi['app']['pickFolder'],
     pickSavePath: inv('app:pickSavePath') as ReelApi['app']['pickSavePath'],
     writeTextFile: inv('app:writeTextFile') as ReelApi['app']['writeTextFile'],
     readTextFile: inv('app:readTextFile') as ReelApi['app']['readTextFile'],
@@ -77,6 +78,17 @@ const api = {
     open: inv('export:open') as ReelApi['export']['open'],
     write: inv('export:write') as ReelApi['export']['write'],
     close: inv('export:close') as ReelApi['export']['close'],
+    tempPath: inv('export:tempPath') as ReelApi['export']['tempPath'],
+    convert: inv('export:convert') as ReelApi['export']['convert'],
+  },
+  storage: {
+    usage: inv('storage:usage') as ReelApi['storage']['usage'],
+    clear: inv('storage:clear') as ReelApi['storage']['clear'],
+    projectsDir: inv('storage:projectsDir') as ReelApi['storage']['projectsDir'],
+    setProjectsDir: inv('storage:setProjectsDir') as ReelApi['storage']['setProjectsDir'],
+    aiDevice: inv('storage:aiDevice') as ReelApi['storage']['aiDevice'],
+    setAiDevice: inv('storage:setAiDevice') as ReelApi['storage']['setAiDevice'],
+    aiHealth: inv('storage:aiHealth') as ReelApi['storage']['aiHealth'],
   },
   agent: {
     settings: inv('agent:settings') as ReelApi['agent']['settings'],

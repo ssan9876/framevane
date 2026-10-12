@@ -65,6 +65,17 @@ function EditorLoaded({ doc }: { doc: Project }) {
     player.setAvailability((id) => mediaLoaded && ready.has(id), (id) => useProxies && proxied.has(id), (id) => !!mattes[id])
   }, [media, mediaLoaded, useProxiesPref, player, mattes])
   useEffect(() => () => { void player.dispose() }, [player])
+  // clips with background removal whose matte is missing (cache cleared, project from another PC) make it again
+  const askedMattes = useRef(new Set<string>())
+  useEffect(() => {
+    if (!mediaLoaded) return
+    const ready = new Set(media.filter((m) => m.status === 'ready').map((m) => m.asset.id))
+    for (const t of doc.tracks) for (const c of t.clips) {
+      if ((c.kind !== 'video' && c.kind !== 'image') || !c.cutout || mattes[c.assetId] || !ready.has(c.assetId) || askedMattes.current.has(c.assetId)) continue
+      askedMattes.current.add(c.assetId)
+      void window.framevane.ai.matte(doc.id, c.assetId).catch(() => {})
+    }
+  }, [doc, media, mediaLoaded, mattes])
 
   const seek = useCallback((us: number) => {
     const t = Math.max(0, Math.min(us, projectDurationUs(useApp.getState().doc ?? doc)))

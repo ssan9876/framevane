@@ -11,7 +11,7 @@ async function pick(page: Page, label: string, option: string) {
 
 async function exportWith(page: Page, opts: { name?: string; res?: string; fps?: string; codec?: string } = {}) {
   await page.getByRole('button', { name: 'Export', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Export video' })
+  const dialog = page.getByRole('dialog', { name: 'Export', exact: true })
   await dialog.waitFor()
   if (opts.name) await dialog.getByRole('textbox', { name: 'File name' }).fill(opts.name)
   if (opts.res) await pick(page, 'Resolution', opts.res)

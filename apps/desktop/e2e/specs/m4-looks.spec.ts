@@ -180,7 +180,7 @@ test.describe('M4 export', () => {
     await setField(props(page), 'Strength', '100')
     await expect.poll(() => bar(page).then(isGrey)).toBe(true)
     await page.getByRole('button', { name: 'Export', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Export video' })
+    const dialog = page.getByRole('dialog', { name: 'Export', exact: true })
     await dialog.getByRole('button', { name: 'Export…' }).click()
     await expect(page.getByText('Your video is ready').first()).toBeVisible({ timeout: 300_000 })
     const mp4 = readdirSync(framevane.exportsDir).find((f) => f.endsWith('.mp4'))!

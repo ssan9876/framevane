@@ -179,6 +179,20 @@ Harder than expected:
 - **BUG-014:** reframe first centred on everyone in the shot, so with two people it framed the gap between them. It now follows the person whose head is highest.
 - **Test footage:** the seed media has no people. A 10 s public-domain clip (US House floor speech via C-SPAN, Wikimedia Commons) is downloaded once by the e2e setup into the git-ignored seed folder. Tests that need it skip when offline. No frames of it are in committed screenshots.
 
+## M6 export and settings (2026-10-12)
+
+| area | status | notes |
+| --- | --- | --- |
+| Export formats (S22) | done | MP4 (H.264, HEVC, AV1), MOV (H.264, HEVC), WebM (VP9 or AV1, with Opus audio). The dialog asks WebCodecs which codecs this PC can encode at the chosen size and shows the rest as unavailable; AV1 encodes here (RTX 4060). |
+| Quality and bitrate | done | Smaller / Recommended / Higher scale with codec efficiency, plus a custom Mbps field. The size estimate updates live. |
+| Ranges | done | Whole video, the span of the selected clips, or from–to seconds. The audio mix renders from the range start (`renderMix` gained a start time). |
+| GIF | done | A silent H.264 render at the GIF's width, then FFmpeg's two-pass palette (`palettegen` with diff stats, `paletteuse` with sierra2_4a dithering). |
+| Audio only | done | WAV written directly (16-bit, 48 kHz stereo); MP3 and M4A through FFmpeg at 192 kbps. |
+| Frame as image | done | PNG or JPG of the frame at the playhead, drawn by the same compositor. |
+| MCP export_video | done | The extension picks the format; codec, quality or bitrate, start/end seconds, and atSeconds for frames. |
+| Settings → Performance (S23) | done | Proxies; local AI on the graphics card or CPU only (the sidecar restarts on its next use, and the choice survives restarts); where new projects go (folder picker, checked for write access); storage per cache with sizes and Clear for the caches that rebuild themselves. Converted and generated media (reversed clips, cleaned audio, speech) is shown but never cleared, because projects use it. Cleared previews are made again when a project's media is listed; cleared mattes are made again when the editor shows a clip that uses them. |
+| ProRes, a background export queue, beyond-4K | not built | ProRes has no WebCodecs encoder; the queue and beyond-4K are could-haves. |
+
 ## Next (architecture build order)
 
 - **Still open from M1/M2:**
@@ -187,6 +201,6 @@ Harder than expected:
   - run F12 and `get_frames` against the live Claude API (needs a key)
   - OAuth MCP servers
   - agent import/export
-- **M6 export + settings:**
-  - S22 complete: H.264/HEVC/AV1 up to 4K60, bitrate presets, progress/cancel (most exist; AV1 and presets to add)
-  - S23 performance and cache settings (cache size and clearing, proxies, AI device)
+- **M7 photo editor (the last must-have milestone):**
+  - S25 layers, crop/resize, adjust/filters (reuse the M4 look pipeline), cutout (BiRefNet from M5)
+  - PNG/JPG/WebP export with alpha; the same op/agent model (`photo.*` ops)

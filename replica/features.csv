@@ -98,15 +98,15 @@ Long video to shorts,ai,should,yes,partial,"M2: Short-form maker agent (9:16, bl
 Script to video,ai,could,yes,no,agent recipe + user gen-AI keys
 AI image / video generation in media panel,ai,could,yes,partial,M2: reachable through a user-added MCP server (e.g. Higgsfield) + import_from_url / import_media; no media-panel UI
 AI avatars / presenter,ai,could,yes,no,via MCP provider only
-Export MP4/MOV H.264 HEVC up to 4K 60fps no watermark,export,must,yes,yes,"CapCut: 4K/60fps/no-watermark PRO | M0: MP4 H.264/HEVC, 720p–4K, 24–60 fps, no watermark; verified 1080p30"
+Export MP4/MOV H.264 HEVC up to 4K 60fps no watermark,export,must,yes,yes,"CapCut: 4K/60fps/no-watermark PRO | M0: MP4 H.264/HEVC, 720p–4K, 24–60 fps, no watermark; verified 1080p30 | M6: MP4 (H.264/HEVC/AV1), MOV (H.264/HEVC), WebM (VP9/AV1 + Opus); codecs this PC cannot encode are shown as unavailable"
 Export resolution beyond 4K and high fps,export,could,no,no,
-Custom bitrate and quality presets,export,must,yes,partial,M0: 3 quality presets; custom bitrate field not exposed
-Export audio only (MP3 WAV AAC),export,should,yes,no,
-Export GIF and WebM/ProRes,export,could,yes,no,
-Export selected range / in-out,export,should,yes,no,
+Custom bitrate and quality presets,export,must,yes,yes,M0: 3 quality presets | M6: custom Mbps; presets scale with codec efficiency (HEVC/AV1/VP9 need fewer bits)
+Export audio only (MP3 WAV AAC),export,should,yes,yes,"M6: WAV (16-bit 48 kHz), MP3 and M4A (AAC) 192 kbps; with a range"
+Export GIF and WebM/ProRes,export,could,yes,partial,"M6: animated GIF (two-pass palette, 360–720 px, 10–25 fps) and WebM; ProRes not built (WebCodecs has no ProRes encoder)"
+Export selected range / in-out,export,should,yes,yes,"M6: whole video, the span of the selected clips, or from–to seconds; MCP startSeconds/endSeconds"
 Export progress with cancel,export,must,yes,yes,
 Background export queue / batch export,export,could,no,no,
-Export frame as image,export,should,yes,no,
+Export frame as image,export,should,yes,yes,"M6: PNG or JPG of the frame at the playhead, at the export resolution"
 Photo editor: open image crop resize rotate,photo,must,yes,no,S25
 Photo editor: layers (image text sticker shape) reorder lock hide,photo,must,yes,no,
 Photo editor: adjust and filters,photo,must,yes,no,
@@ -119,7 +119,7 @@ Photo editor: export PNG JPG WebP with transparency,photo,must,yes,no,
 Photo editor: batch apply to many photos,photo,should,no,no,agent recipe
 Keyboard shortcuts matching common CapCut keys,shortcuts,must,yes,partial,S24 | M0: 16 shortcuts (S24 list); more with the features they belong to
 Rebind shortcuts,shortcuts,should,yes,no,
-Settings: performance cache project folder,settings,must,yes,partial,"S23 | M0: S23 shows paths/status | M5: AI models manager (download, remove, sizes, licences); cache and proxy controls M6"
+Settings: performance cache project folder,settings,must,yes,yes,"S23 | M5: AI models manager | M6: proxies, GPU or CPU for the local AI (restarts the sidecar, survives restarts), new-projects folder, cache sizes with clearing for the ones that rebuild (previews, proxies, transcripts, mattes, tracking); generated media kept"
 Agent panel: chat with an agent about the open project,agents,must,no,yes,"S27; CapCut EditPilot is the nearest analog | M0: S27 streaming transcript, tool steps, progress notes, cost"
 Typed edit-op API shared by UI undo/redo and agents,agents,must,no,yes,"foundation for all agent work | M0: @framevane/doc ops, 20 unit tests"
 Editor exposed as an MCP server (timeline read + edit ops + render frame),agents,must,no,yes,"lets Claude Code / any agent drive the editor | M2 early: streamable HTTP on 127.0.0.1:47821, bearer token, 23 tools, live edits = one undo step each, one-click ""Add to Claude Code""; review-mode for external agents not built"

@@ -64,13 +64,13 @@ export function schedule(doc: Project, buffers: Map<string, AudioBuffer | null>,
   return nodes
 }
 
-/** Render the whole mix offline (export). */
-export async function renderMix(doc: Project, pool: MediaPool, durationUs: number, sampleRate = 48000): Promise<AudioBuffer | null> {
+/** The timeline's sound from fromUs for durationUs, mixed offline. */
+export async function renderMix(doc: Project, pool: MediaPool, durationUs: number, sampleRate = 48000, fromUs = 0): Promise<AudioBuffer | null> {
   const length = Math.ceil((durationUs / 1e6) * sampleRate)
   if (length <= 0) return null
   const ctx = new OfflineAudioContext({ numberOfChannels: 2, length, sampleRate })
   const buffers = await loadAudio(doc, pool, ctx)
   if (![...buffers.values()].some(Boolean)) return null
-  schedule(doc, buffers, ctx, ctx.destination, 0, 0, durationUs)
+  schedule(doc, buffers, ctx, ctx.destination, fromUs, 0, fromUs + durationUs)
   return ctx.startRendering()
 }

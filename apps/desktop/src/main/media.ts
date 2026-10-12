@@ -104,6 +104,8 @@ export class Media {
 
   list(projectId: string): MediaInfo[] {
     const rows = this.db.prepare(`SELECT m.* FROM media_assets m JOIN project_media pm ON pm.asset_id = m.id WHERE pm.project_id = ? ORDER BY pm.added_at`).all(projectId) as unknown as AssetRow[]
+    // previews or proxies cleared in Settings are made again the next time the project's media is listed
+    for (const r of rows) if (r.status === 'ok') this.prepare(projectId, r)
     return rows.map((r) => this.info(this.checkExists(r)))
   }
 

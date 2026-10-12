@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Button, Dialog, Kbd, Select, Switch, TextField, UnderlineTabs, TabPanel, Badge, useToast } from '@framevane/ui'
-import type { AgentSettings, McpConnectInfo } from '../../shared/api'
+import { Button, Dialog, Kbd, Segmented, Select, Switch, TextField, UnderlineTabs, TabPanel, Badge, useToast } from '@framevane/ui'
+import type { AgentSettings, CacheUsage, McpConnectInfo } from '../../shared/api'
 import { useApp } from '../app/store'
 import { SHORTCUTS } from '../editor/shortcuts'
 import { ToolServers } from './ToolServers'
@@ -113,11 +113,70 @@ function ConnectClaude() {
 
 function Performance() {
   const useProxies = useApp((s) => s.useProxies)
+  const [usage, setUsage] = useState<CacheUsage[] | null>(null)
+  const [dir, setDir] = useState<string | null>(null)
+  const [device, setDevice] = useState<'auto' | 'cpu' | null>(null)
+  const [health, setHealth] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const toast = useToast()
+  useEffect(() => {
+    void window.framevane.storage.usage().then(setUsage)
+    void window.framevane.storage.projectsDir().then(setDir)
+    void window.framevane.storage.aiDevice().then(setDevice)
+    void window.framevane.storage.aiHealth().then((h) => setHealth(h.gpu ? 'Your graphics card is available to the local AI.' : 'No supported graphics card found: the local AI runs on the CPU.')).catch(() => setHealth(null))
+  }, [])
+  const err = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
+  const mb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(0)} MB` : b > 0 ? `${Math.ceil(b / 1e3)} KB` : 'Empty')
   return (
-    <div className="flex flex-col gap-3">
-      <Switch label="Use proxies for big media" description="Media larger than 1080p gets a light 1280px copy for smooth preview. Exports always use the originals." checked={useProxies}
-        onCheckedChange={(v) => { useApp.setState({ useProxies: v }); try { localStorage.setItem('framevane.useProxies', String(v)) } catch { /* private storage off: setting lasts this session */ } }} />
-      <p className="text-sm text-muted">Hardware decoding and encoding are on (WebCodecs uses your GPU). Cache controls arrive in M6.</p>
+    <div className="flex flex-col gap-5">
+      <section className="flex flex-col gap-2">
+        <h3 className="text-base">Preview</h3>
+        <Switch label="Use proxies for big media" description="Media larger than 1080p gets a light 1280px copy for smooth preview. Exports always use the originals." checked={useProxies}
+          onCheckedChange={(v) => { useApp.setState({ useProxies: v }); try { localStorage.setItem('framevane.useProxies', String(v)) } catch { /* private storage off: setting lasts this session */ } }} />
+        <p className="text-sm text-muted">Decoding and export use your graphics card (hardware video).</p>
+      </section>
+      <section className="flex flex-col gap-2">
+        <h3 className="text-base">Local AI</h3>
+        {device && (
+          <Segmented label="Run the local AI on" value={device} onValueChange={async (v) => setDevice(await window.framevane.storage.setAiDevice(v as 'auto' | 'cpu'))}
+            options={[{ value: 'auto', label: 'Graphics card when possible' }, { value: 'cpu', label: 'CPU only' }]} />
+        )}
+        <p className="text-sm text-muted">{device === 'cpu' ? 'Slower, but leaves the graphics card free for other apps. ' : ''}{health ?? ''}</p>
+      </section>
+      <section className="flex flex-col gap-2">
+        <h3 className="text-base">New projects folder</h3>
+        <div className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-sm [user-select:text]" title={dir ?? ''}>{dir}</span>
+          <Button size="sm" onClick={async () => {
+            const picked = await window.framevane.app.pickFolder()
+            if (!picked) return
+            try { setDir(await window.framevane.storage.setProjectsDir(picked)); toast({ tone: 'success', title: 'New projects will be saved there', description: 'Existing projects stay where they are.' }) } catch (e) { toast({ tone: 'error', title: "That folder can't be used", description: err(e) }) }
+          }}>Change…</Button>
+        </div>
+      </section>
+      <section className="flex flex-col gap-2">
+        <h3 className="text-base">Storage</h3>
+        <ul aria-label="Caches" className="flex flex-col gap-1.5">
+          {usage?.map((u) => (
+            <li key={u.id} className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2 text-sm"><span>{u.label}</span><span className="text-muted">{mb(u.bytes)}</span></div>
+                <p className="text-xs text-muted">{u.note}</p>
+              </div>
+              {u.clearable && (
+                <Button size="sm" variant="ghost" aria-label={`Clear ${u.label}`} disabled={!u.bytes || !!busy} loading={busy === u.id} onClick={async () => {
+                  setBusy(u.id)
+                  try {
+                    setUsage(await window.framevane.storage.clear(u.id))
+                    if (u.id === 'mattes') useApp.setState({ mattes: {} })
+                  } catch (e) { toast({ tone: 'error', title: "It wasn't cleared", description: err(e) }) } finally { setBusy(null) }
+                }}>Clear</Button>
+              )}
+            </li>
+          ))}
+        </ul>
+        {usage && <p className="text-xs text-muted">Total {mb(usage.reduce((n, u) => n + u.bytes, 0))}. AI models are managed in AI models.</p>}
+      </section>
     </div>
   )
 }

@@ -32,6 +32,8 @@ export class McpHub {
   private conns = new Map<string, Promise<Conn>>()
   sidecarStatus: SidecarStatus = 'unknown'
   sidecarError: string | null = null
+  /** Run the local AI on the CPU only (Settings → Performance); takes effect when the sidecar next starts. */
+  forceCpu = false
 
   constructor(private opts: { sidecarDir: string; modelsDir: string }) {}
 
@@ -45,7 +47,7 @@ export class McpHub {
         command: uv,
         args: ['run', '--project', this.opts.sidecarDir, '--frozen', 'python', '-m', 'framevane_sidecar'],
         cwd: this.opts.sidecarDir,
-        env: { ...cleanEnv(), FRAMEVANE_MODELS_DIR: this.opts.modelsDir, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8' },
+        env: { ...cleanEnv(), FRAMEVANE_MODELS_DIR: this.opts.modelsDir, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', ...(this.forceCpu ? { FRAMEVANE_FORCE_CPU: '1' } : {}) },
         stderr: 'pipe',
       })
     }, true)

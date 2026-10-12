@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { type OpInput } from '@framevane/doc'
-import type { ExternalActivity, McpConnectInfo } from '../shared/api'
+import type { ExportFormat, ExportRequest, ExternalActivity, McpConnectInfo } from '../shared/api'
 import { now, uuid7, type Db } from './db'
 import type { Analysis } from './analysis'
 import type { Media } from './media'
@@ -47,7 +47,7 @@ interface Deps {
   /** Ask the window to open a project; resolves once the editor shows it. */
   openInUi(projectId: string): Promise<void>
   /** Ask the window to export (WebCodecs lives in the renderer). */
-  exportInUi(projectId: string, settings: { outputPath: string; height: number; fps: number; codec: 'avc' | 'hevc' }): Promise<{ path: string; bytes: number }>
+  exportInUi(projectId: string, settings: ExportRequest): Promise<{ path: string; bytes: number }>
 }
 
 export class EditorMcp {
@@ -260,17 +260,30 @@ export class EditorMcp {
     wrap('undo', 'Undo the last edit in the open project (yours or the user\'s).', z.object({}), true, async () => { const id = target(); d.projects.undo(id); return { summary: 'undone', content: 'Undid the last edit.' } })
     wrap('redo', 'Redo the last undone edit.', z.object({}), true, async () => { const id = target(); d.projects.redo(id); return { summary: 'redone', content: 'Redid the last undone edit.' } })
 
-    wrap('export_video', 'Render the open project to an MP4 (no watermark) using the GPU. Takes roughly real time / 3 at 1080p.', z.object({
-      outputPath: z.string().describe('Absolute path of the .mp4 to write'),
-      height: z.union([z.literal(720), z.literal(1080), z.literal(1440), z.literal(2160)]).default(1080).describe('Short side in pixels'),
-      fps: z.number().int().min(12).max(120).default(30),
-      codec: z.enum(['h264', 'hevc']).default('h264'),
-    }), false, async ({ outputPath, height, fps, codec }) => {
+    wrap('export_video', 'Render the open project (no watermark, on the GPU): video as .mp4/.mov/.webm, an animated .gif, sound only as .wav/.mp3/.m4a, or one frame as .png/.jpg. The format comes from outputPath\'s extension. Optional time range. Video takes roughly real time / 3 at 1080p.', z.object({
+      outputPath: z.string().describe('Absolute path; the extension picks the format'),
+      height: z.union([z.literal(360), z.literal(480), z.literal(720), z.literal(1080), z.literal(1440), z.literal(2160)]).default(1080).describe('Short side in pixels (GIF: width, max 1080)'),
+      fps: z.number().int().min(5).max(120).default(30).describe('GIF: 10–20 is typical'),
+      codec: z.enum(['h264', 'hevc', 'av1', 'vp9']).optional().describe('Default: H.264 (MP4/MOV), VP9 (WebM)'),
+      quality: z.enum(['low', 'recommended', 'high']).default('recommended'),
+      bitrateMbps: z.number().min(0.5).max(200).optional(),
+      startSeconds: z.number().min(0).optional(),
+      endSeconds: z.number().min(0).optional(),
+      atSeconds: z.number().min(0).optional().describe('Frame time for .png/.jpg'),
+    }), false, async (i) => {
       const projectId = target()
-      if (!/\.mp4$/i.test(outputPath)) throw new Error('outputPath must end in .mp4')
+      const ext = /\.(mp4|mov|webm|gif|wav|mp3|m4a|png|jpe?g)$/i.exec(i.outputPath)?.[1]?.toLowerCase()
+      if (!ext) throw new Error('outputPath must end in .mp4, .mov, .webm, .gif, .wav, .mp3, .m4a, .png or .jpg')
+      const codec = i.codec === 'h264' ? 'avc' : i.codec
+      const us = (s: number) => Math.round(s * 1e6)
       await d.openInUi(projectId)
-      const r = await d.exportInUi(projectId, { outputPath, height, fps, codec: codec === 'hevc' ? 'hevc' : 'avc' })
-      return { summary: `${(r.bytes / 1e6).toFixed(1)} MB`, content: JSON.stringify(r) }
+      const r = await d.exportInUi(projectId, {
+        outputPath: i.outputPath, format: (ext === 'jpeg' ? 'jpg' : ext) as ExportFormat, height: i.height, fps: i.fps, quality: i.quality,
+        ...(codec ? { codec } : {}), ...(i.bitrateMbps ? { bitrateMbps: i.bitrateMbps } : {}),
+        ...(i.startSeconds !== undefined || i.endSeconds !== undefined ? { range: { startUs: us(i.startSeconds ?? 0), endUs: i.endSeconds !== undefined ? us(i.endSeconds) : Number.MAX_SAFE_INTEGER } } : {}),
+        ...(i.atSeconds !== undefined ? { atUs: us(i.atSeconds) } : {}),
+      })
+      return { summary: `${ext} · ${(r.bytes / 1e6).toFixed(1)} MB`, content: JSON.stringify(r) }
     })
 
     return server

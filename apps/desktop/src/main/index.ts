@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents } from 'electron'
-import { open as fsOpen, readFile, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
+import { mkdir, open as fsOpen, readFile, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AgentDefInput, AudioPreset, AgentEvent, BatchEvent, DocEvent, ExternalActivity, JobEvent, MediaInfo, ProviderInput, ToolPermission } from '../shared/api'
 import { AgentRunner } from './agent/runner'
@@ -9,7 +9,7 @@ import { ToolRegistry } from './tool-registry'
 import { EditorMcp, type UiState } from './editor-mcp'
 import { Analysis } from './analysis'
 import { openDb, uuid7 } from './db'
-import { ffmpegPaths } from './ffmpeg'
+import { ffmpegPaths, runFfmpeg } from './ffmpeg'
 import { JobQueue } from './jobs'
 import { defaultSidecarDir, McpHub } from './mcp-hub'
 import { Media } from './media'
@@ -18,6 +18,7 @@ import { Projects } from './projects'
 import { Fonts } from './fonts'
 import { Luts } from './luts'
 import { Ai } from './ai'
+import { Storage } from './storage'
 import type { Follow, ReframeRatio } from '@framevane/doc'
 import { Tts } from './tts'
 import { handleMediaProtocol, registerSchemePrivileges } from './protocol'
@@ -58,6 +59,7 @@ async function main() {
   void registry.connectAll()
   const fonts = new Fonts(join(paths.userData, 'fonts'))
   const luts = new Luts(paths.userData)
+  const storage = new Storage(db, paths, hub)
   const ai = new Ai(hub, media, jobs, paths, (assetId: string) => broadcast('ai:matte', assetId))
   const tts = new Tts(paths.cacheDir, hub)
   handleMediaProtocol(media, fonts, ai)
@@ -125,6 +127,18 @@ async function main() {
     })
     return r.canceled ? [] : r.filePaths
   })
+  ipcMain.handle('app:pickFolder', async (e) => {
+    if (process.env.FRAMEVANE_TEST_PICK_FOLDER) return process.env.FRAMEVANE_TEST_PICK_FOLDER
+    const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender)!, { properties: ['openDirectory', 'createDirectory'] })
+    return r.canceled ? null : r.filePaths[0] ?? null
+  })
+  ipcMain.handle('storage:usage', () => storage.usage())
+  ipcMain.handle('storage:clear', (_e, id: Parameters<Storage['clear']>[0]) => storage.clear(id))
+  ipcMain.handle('storage:projectsDir', () => storage.projectsDir())
+  ipcMain.handle('storage:setProjectsDir', (_e, dir: string) => storage.setProjectsDir(dir))
+  ipcMain.handle('storage:aiDevice', () => storage.aiDevice())
+  ipcMain.handle('storage:setAiDevice', (_e, d: 'auto' | 'cpu') => storage.setAiDevice(d))
+  ipcMain.handle('storage:aiHealth', () => storage.aiHealth())
   ipcMain.handle('app:pickSavePath', async (e, opts: { defaultName: string; ext: string }) => {
     if (process.env.FRAMEVANE_TEST_SAVE_DIR) return join(process.env.FRAMEVANE_TEST_SAVE_DIR, `${opts.defaultName}.${opts.ext}`)
     const win = BrowserWindow.fromWebContents(e.sender)!
@@ -235,6 +249,28 @@ async function main() {
     exports.delete(handle)
     if (opts.abort) await rm(x.path, { force: true })
     return { path: x.path, bytes: x.bytes }
+  })
+  ipcMain.handle('export:tempPath', async (_e, ext: string) => {
+    if (!/^[a-z0-9]{2,4}$/.test(ext)) throw new Error('Bad extension')
+    const dir = join(paths.cacheDir, 'export-tmp')
+    await mkdir(dir, { recursive: true })
+    return join(dir, `${uuid7()}.${ext}`)
+  })
+  ipcMain.handle('export:convert', async (_e, o: { kind: 'gif'; src: string; out: string; fps: number; width: number } | { kind: 'audio'; src: string; out: string; format: 'mp3' | 'm4a' }) => {
+    // the source must be one of our scratch files
+    if (!o.src.startsWith(join(paths.cacheDir, 'export-tmp'))) throw new Error('Unknown export source')
+    try {
+      if (o.kind === 'gif') {
+        const fps = Math.max(5, Math.min(30, Math.round(o.fps)))
+        const w = Math.max(64, Math.min(1920, Math.round(o.width)))
+        await runFfmpeg(['-i', o.src, '-vf', `fps=${fps},scale=${w}:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a`, '-loop', '0', o.out])
+      } else {
+        await runFfmpeg(['-i', o.src, '-vn', ...(o.format === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', '192k'] : ['-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart']), o.out])
+      }
+    } finally {
+      await rm(o.src, { force: true })
+    }
+    return { path: o.out, bytes: (await stat(o.out)).size }
   })
 
   /* ── agent ── */

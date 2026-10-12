@@ -185,6 +185,19 @@ Not built in M0 (n/b). The screens exist as stubs; cases are written when each i
 | M5-M1 | manual | real footage: hair, motion blur, busy backgrounds, several people walking | clean edges, follows the right person | manual | partial: one C-SPAN clip checked by eye (clean, includes the on-screen banner as "foreground") |
 | M5-M2 | manual | a 10-minute 4K clip | matte job finishes, preview stays smooth | manual | not run |
 
+## M6 export and settings
+| case | type | steps | expected | auto | result |
+| --- | --- | --- | --- | --- | --- |
+| M6-H1 | happy | Export MOV 720p from 2 s to 5 s | MOV container, H.264 1280×720, 3.0 s | e2e | pass |
+| M6-H2 | happy | Export WebM 720p, 0–2 s | WebM, VP9 or AV1 video, Opus audio | e2e | pass |
+| M6-H3 | happy | MP4 with a custom 3 Mbps bitrate, 0–6 s | video stream between 1.2 and 4.5 Mbps | e2e | pass |
+| M6-H4 | happy | AV1 in MP4 (or marked "not on this PC") | AV1 stream | e2e | pass (AV1 encodes on this PC) |
+| M6-H5 | happy | GIF 360 px 10 fps 0–2 s; MP3, WAV, M4A; PNG frame | GIF89a 360 wide; mp3 / pcm_s16le / aac, 48 kHz stereo, 29.1 s, audio only; PNG 1920×1080 | e2e | pass |
+| M6-H6 | happy | split at 4 s, select the first piece, export "Selected clips" | 4.0 s file | e2e | pass |
+| M6-H7 | happy | Settings → Performance: clear thumbnails, change projects folder, CPU only; restart | 6 caches listed, generated media not clearable; previews empty then made again; new project lands in the picked folder; CPU only survives a restart | e2e | pass |
+| M6-H8 | happy | MCP export_video to .webm (1–3 s), .jpg at 5 s, .avi | 2 s WebM; 1280×720 JPEG; .avi refused with the list of extensions | e2e | pass |
+| M6-M1 | manual | play every exported format in Windows' player, VLC and a browser | plays, in sync | manual | partial: ffprobe checks every file; not opened in players |
+
 ## Cross-cutting
 | case | type | steps | expected | auto | result |
 | --- | --- | --- | --- | --- | --- |
