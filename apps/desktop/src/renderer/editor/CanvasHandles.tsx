@@ -1,7 +1,7 @@
 import { useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { applyOps, clipEnd, findClip, valueAt, type AnimatableClip, type Clip, type OpInput, type Project } from '@framevane/doc'
 import { useApp } from '../app/store'
-import { layersAt, mediaGeometry, textGeometry } from '../engine/compositor'
+import { layersAt, mediaGeometry, shapeGeometry, textGeometry } from '../engine/compositor'
 import { localPlayhead, setAnimProp } from './actions-m1'
 import { useEditor } from './Editor'
 
@@ -27,11 +27,12 @@ export function CanvasHandles({ doc, cssW, cssH }: { doc: Project; cssW: number;
   const H = doc.canvas.height
   const k = cssW / W // canvas px → css px
 
-  const movable = (c: Clip): c is AnimatableClip => c.kind === 'video' || c.kind === 'image' || c.kind === 'text'
+  const movable = (c: Clip): c is AnimatableClip => c.kind === 'video' || c.kind === 'image' || c.kind === 'text' || c.kind === 'shape'
   /** Canvas-space box of a picture or text clip at the playhead (null when its size isn't known yet). */
   const geometry = (c: AnimatableClip) => {
     const local = localPlayhead(c, playheadUs)
     if (c.kind === 'text') return textGeometry(c, local, W, H)
+    if (c.kind === 'shape') return shapeGeometry(c, local, W, H)
     const a = doc.assets[c.assetId]
     return a?.width && a.height ? mediaGeometry(c, local, a.width, a.height, W, H) : null
   }

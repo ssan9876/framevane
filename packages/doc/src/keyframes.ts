@@ -1,7 +1,7 @@
-import type { AnimProp, Easing, Keyframe, Keyframes, MediaClip, TextClip } from './schema'
+import type { AnimProp, Easing, Keyframe, Keyframes, MediaClip, ShapeClip, TextClip } from './schema'
 
 /** Clips with a transform that can be keyframed: media and text. */
-export type AnimatableClip = MediaClip | TextClip
+export type AnimatableClip = MediaClip | TextClip | ShapeClip
 
 /**
  * Keyframes live on a clip, at times relative to the clip start (timeline µs). A property with keyframes is animated;
@@ -18,7 +18,7 @@ const ease: Record<Easing, (t: number) => number> = {
 }
 
 export function staticValue(clip: AnimatableClip, prop: AnimProp): number {
-  if (prop === 'volumeDb') return clip.kind === 'text' ? 0 : clip.volumeDb
+  if (prop === 'volumeDb') return clip.kind === 'text' || clip.kind === 'shape' ? 0 : clip.volumeDb
   return clip.transform[prop]
 }
 

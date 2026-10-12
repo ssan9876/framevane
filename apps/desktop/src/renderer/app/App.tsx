@@ -46,9 +46,6 @@ export function App() {
         <div className="flex h-full flex-col">
           {route.name === 'home' && <Home />}
           {route.name === 'editor' && <Editor key={route.projectId} projectId={route.projectId} />}
-          {route.name === 'photo' && (
-            <ComingSoon id="S25" title="Photo editor" body="Layers, cutout, adjustments and AI tools for single images. It uses the same agent tools as the video editor." milestone="M7" />
-          )}
           {route.name === 'ai-maker' && (
             <ComingSoon id="S26" title="Script to video" body="Write or generate a script and get a rough cut with voice-over, captions and b-roll. It will be built as an agent recipe." milestone="should-have" />
           )}

@@ -52,7 +52,8 @@ export class Player {
 
   attach(canvas: HTMLCanvasElement | null) {
     this.canvas = canvas
-    this.c2d = canvas?.getContext('2d', { alpha: false }) ?? null
+    // photos can be see-through (the editor shows a checkerboard behind); video frames are always opaque
+    this.c2d = canvas?.getContext('2d', { alpha: this.doc.kind === 'photo' }) ?? null
     if (canvas) this.seek(this.lastUs)
   }
 

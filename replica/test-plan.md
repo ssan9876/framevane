@@ -49,7 +49,7 @@ Legend for `auto`: e2e = Playwright spec · unit = vitest · manual · n/b = fea
 | F02-N1 | negative: overlap on overlay track | drag an overlay clip onto another | rejected with a clear message, no change | manual | not run (manual) |
 | — | ops engine | 20 unit tests: split/ripple/undo/atomicity/locks/source bounds/captions | | unit | pass |
 
-## F11 photo (F08 remove BG: see M5; F06 transitions, F09 colour: see M4; F03 text, F05 fades, F15 transcript: see M3; F13, F14: see M2)
+## (F11 photo: see M7; F08 remove BG: see M5; F06 transitions, F09 colour: see M4; F03 text, F05 fades, F15 transcript: see M3; F13, F14: see M2)
 Not built in M0 (n/b). The screens exist as stubs; cases are written when each is built. Partial checks today:
 | case | type | steps | expected | auto | result |
 | --- | --- | --- | --- | --- | --- |
@@ -197,6 +197,17 @@ Not built in M0 (n/b). The screens exist as stubs; cases are written when each i
 | M6-H7 | happy | Settings → Performance: clear thumbnails, change projects folder, CPU only; restart | 6 caches listed, generated media not clearable; previews empty then made again; new project lands in the picked folder; CPU only survives a restart | e2e | pass |
 | M6-H8 | happy | MCP export_video to .webm (1–3 s), .jpg at 5 s, .avi | 2 s WebM; 1280×720 JPEG; .avi refused with the list of extensions | e2e | pass |
 | M6-M1 | manual | play every exported format in Windows' player, VLC and a browser | plays, in sync | manual | partial: ffprobe checks every file; not opened in players |
+
+## M7 photo editor
+| case | type | steps | expected | auto | result |
+| --- | --- | --- | --- | --- | --- |
+| M7-H1 | happy | Home → Photo editor with still.png; add text, a star, a fire sticker; hide two; move the star down twice; lock and delete; undo | canvas 1920×1080; 4 layers top first; the star's colour at the centre, then covered; locked layer can't be deleted; undo brings the sticker back | e2e | pass |
+| M7-H2 | happy | rectangle → ellipse; crop 1:1; resize to 540; delete the image; export PNG, JPG, WebP; then 540×300 and a right turn | 1080×1080 → 540×540; PNG corner alpha 0 and ellipse #ff7a3d; JPG corner white; WebP 540×540; 300×540 after the turn | e2e | pass |
+| M7-H3 | happy | Mono filter at 100 % on the image layer; reopen from Home | grey picture; inspector shows Image/Adjust/Effects (no Speed); reopens in the photo editor with no timeline | e2e | pass |
+| M7-H4 | happy | person.png → Remove BG → export PNG | background alpha 0, face kept | e2e | pass (skips offline) |
+| M7-H5 | happy | MCP: create_project photo, add_shape, add_text, move_layer, edit_shape, crop_photo, export .webp | layers appear live and restack; 1080×1080 WebP | e2e | pass |
+| M7-U | unit | photo kind, shapes and set_shape, move_track + undo, crop/resize/canvas size/turn/flip geometry | 8 new unit tests | unit | pass |
+| M7-M1 | manual | a real photo shoot: big JPEGs (24 MP), EXIF rotation, many layers | smooth editing, right orientation | manual | not run |
 
 ## Cross-cutting
 | case | type | steps | expected | auto | result |

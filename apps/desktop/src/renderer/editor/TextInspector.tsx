@@ -16,12 +16,14 @@ import { CAPTION_PRESETS } from './textPresets'
 /** S19 · Text: content, look, position (keyframable), in/out animation and text to speech. */
 export function TextInspector({ clip, track }: { clip: TextClip; track: Track }) {
   const [tab, setTab] = useState('text')
+  // a photo has no time: no in/out animation, and speech belongs to video
+  const photo = useApp((s) => s.doc?.kind === 'photo')
   const apply = (op: { text?: string; style?: Partial<TextStyle>; anim?: { in?: { kind?: TextAnimKind; durationUs?: number }; out?: { kind?: TextAnimKind; durationUs?: number } } }) =>
     void useApp.getState().apply([{ type: 'set_text', clipId: clip.id, ...op }])
   return (
     <div className={track.locked ? 'pointer-events-none opacity-60' : ''}>
       <PanelHeader title={<span className="flex items-center gap-1.5"><Type className="size-3.5 text-muted" />Text</span>} />
-      <UnderlineTabs tabs={[{ value: 'text', label: 'Text' }, { value: 'animation', label: 'Animation' }, { value: 'speech', label: 'Speech' }]} value={tab} onValueChange={setTab}>
+      <UnderlineTabs tabs={photo ? [{ value: 'text', label: 'Text' }] : [{ value: 'text', label: 'Text' }, { value: 'animation', label: 'Animation' }, { value: 'speech', label: 'Speech' }]} value={tab} onValueChange={setTab}>
         <div className="flex flex-col gap-3 p-3">
           <TabPanel value="text" className="flex flex-col gap-3">
             <ContentBox value={clip.text} max={2000} label="Text" onCommit={(text) => apply({ text })} />
@@ -150,6 +152,7 @@ export function StyleControls({ style, onStyle }: { style: TextStyle; onStyle: (
 }
 
 function PositionControls({ clip }: { clip: TextClip }) {
+  const photo = useApp((s) => s.doc?.kind === 'photo')
   const playheadUs = useApp((s) => s.playheadUs)
   const doc = useApp((s) => s.doc)!
   const local = localPlayhead(clip, playheadUs)
@@ -164,7 +167,7 @@ function PositionControls({ clip }: { clip: TextClip }) {
       <AnimSlider clip={clip} prop="scale" label="Scale" min={5} max={400} unit="%" toUi={(v) => Math.round(v * 100)} fromUi={(v) => v / 100} defaultValue={100} />
       <AnimSlider clip={clip} prop="rotation" label="Rotation" min={-180} max={180} unit="°" defaultValue={0} bipolar />
       <AnimSlider clip={clip} prop="opacity" label="Opacity" min={0} max={100} unit="%" toUi={(v) => Math.round(v * 100)} fromUi={(v) => v / 100} defaultValue={100} />
-      <KeyframeTools clip={clip} keysHere={keysHere} animated={animated} local={local} />
+      {!photo && <KeyframeTools clip={clip} keysHere={keysHere} animated={animated} local={local} />}
     </div>
   )
 }

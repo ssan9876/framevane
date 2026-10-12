@@ -6,9 +6,10 @@ import { useApp } from '../app/store'
 import { useEditor } from './Editor'
 import { stepFrames } from './actions'
 import { CanvasHandles } from './CanvasHandles'
+import { CropOverlay } from './PhotoPanels'
 
-/** S13 · Player: the project canvas fitted into the panel, transport controls and timecode. */
-export function Viewer() {
+/** S13 · Player: the project canvas fitted into the panel, transport controls and timecode. S25: the photo, no transport. */
+export function Viewer({ photo = false }: { photo?: boolean }) {
   const doc = useApp((s) => s.doc)!
   const playheadUs = useApp((s) => s.playheadUs)
   const playing = useApp((s) => s.playing)
@@ -41,6 +42,25 @@ export function Viewer() {
 
   const dur = projectDurationUs(doc)
   const empty = dur === 0
+  const cropping = useApp((s) => !!s.photoCrop)
+  if (photo) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div ref={box} className="relative grid min-h-0 flex-1 place-items-center overflow-hidden">
+          {empty ? <p className="text-sm text-muted">Add an image, text or a shape from the Add tab.</p> : (
+            // a checkerboard shows through where the photo is see-through
+            <div className="relative bg-[conic-gradient(var(--fv-color-surface-3)_25%,var(--fv-color-surface)_0_50%,var(--fv-color-surface-3)_0_75%,var(--fv-color-surface)_0)] bg-[length:16px_16px] shadow-card" style={{ width: size.w, height: size.h }}>
+              <canvas ref={setCanvas} width={pw} height={ph} style={{ width: size.w, height: size.h }} className="block" aria-label={`Photo ${doc.canvas.width} by ${doc.canvas.height}`} role="img" />
+              {cropping ? <CropOverlay cssW={size.w} cssH={size.h} /> : <CanvasHandles doc={doc} cssW={size.w} cssH={size.h} />}
+            </div>
+          )}
+        </div>
+        <div className="flex h-10 shrink-0 items-center justify-end gap-2 border-t border-border px-3">
+          <span className="text-xs text-muted">{doc.canvas.width} × {doc.canvas.height} px</span>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div ref={box} className="relative grid min-h-0 flex-1 place-items-center overflow-hidden">

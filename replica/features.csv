@@ -107,15 +107,15 @@ Export selected range / in-out,export,should,yes,yes,"M6: whole video, the span 
 Export progress with cancel,export,must,yes,yes,
 Background export queue / batch export,export,could,no,no,
 Export frame as image,export,should,yes,yes,"M6: PNG or JPG of the frame at the playhead, at the export resolution"
-Photo editor: open image crop resize rotate,photo,must,yes,no,S25
-Photo editor: layers (image text sticker shape) reorder lock hide,photo,must,yes,no,
-Photo editor: adjust and filters,photo,must,yes,no,
-Photo editor: remove background / cutout,photo,must,yes,no,CapCut: credits
+Photo editor: open image crop resize rotate,photo,must,yes,yes,"S25 | M7: Home → Photo editor opens an image as a photo project (canvas = image size); crop with ratio presets and a draggable box, resize (scale or canvas size), quarter turns, mirror/upside down; every layer keeps its place"
+Photo editor: layers (image text sticker shape) reorder lock hide,photo,must,yes,yes,"M7: layers = tracks; image, text, emoji sticker and shape (rect, ellipse, triangle, star, line, arrow) layers; move up/down, hide, lock, delete; undo"
+Photo editor: adjust and filters,photo,must,yes,yes,"M7: the M4 look pipeline on image layers (13 colour sliders, 20 filters, LUTs, 22 effects)"
+Photo editor: remove background / cutout,photo,must,yes,yes,M7: BiRefNet cutout from M5 on photo layers; transparent canvas background
 Photo editor: AI expand / outpaint,photo,should,yes,no,via MCP or local SD
 Photo editor: inpaint / remove object,photo,should,yes,no,LaMa local
 Photo editor: upscale,photo,should,yes,no,Real-ESRGAN
 Photo editor: retouch,photo,could,yes,no,
-Photo editor: export PNG JPG WebP with transparency,photo,must,yes,no,
+Photo editor: export PNG JPG WebP with transparency,photo,must,yes,yes,"M7: PNG and WebP keep transparency, JPG is flattened on white; full, half, quarter or double size; quality for JPG/WebP"
 Photo editor: batch apply to many photos,photo,should,no,no,agent recipe
 Keyboard shortcuts matching common CapCut keys,shortcuts,must,yes,partial,S24 | M0: 16 shortcuts (S24 list); more with the features they belong to
 Rebind shortcuts,shortcuts,should,yes,no,

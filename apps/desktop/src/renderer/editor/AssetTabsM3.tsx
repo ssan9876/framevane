@@ -11,7 +11,7 @@ import { TEXT_PRESETS, type TextPreset } from './textPresets'
 const errText = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
 
 /** A preset's sample drawn by the real compositor (so the tile shows exactly what you get). */
-function PresetPreview({ preset }: { preset: TextPreset }) {
+export function PresetPreview({ preset }: { preset: TextPreset }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const W = 720

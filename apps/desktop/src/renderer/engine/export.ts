@@ -160,17 +160,25 @@ export async function exportAudio(doc: Project, o: { outputPath: string; format:
 }
 
 /** One frame of the timeline as a picture, exactly as the preview draws it. */
-export async function exportFrame(doc: Project, o: { outputPath: string; format: 'png' | 'jpg'; width: number; height: number; tUs: number }, hasMatte: HasMatte = () => false) {
+/** One frame of the timeline (or a photo) as a picture. PNG and WebP keep transparency; JPG gets a white background. */
+export async function exportFrame(doc: Project, o: { outputPath: string; format: 'png' | 'jpg' | 'webp'; width: number; height: number; tUs: number; quality?: number }, hasMatte: HasMatte = () => false) {
   checkMattes(doc, hasMatte)
   await ensureFonts(doc)
   await ensureLuts(doc)
   const pool = new MediaPool()
   try {
-    const canvas = new OffscreenCanvas(even(o.width), even(o.height))
-    const ctx = canvas.getContext('2d', { alpha: false })!
+    const canvas = new OffscreenCanvas(Math.max(1, Math.round(o.width)), Math.max(1, Math.round(o.height)))
+    const ctx = canvas.getContext('2d', { alpha: o.format !== 'jpg' })!
+    if (o.format === 'jpg') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height) }
     const t = Math.max(0, Math.min(o.tUs, projectDurationUs(doc) - 1))
-    drawFrame(ctx, doc, t, await fetchVisuals(doc, pool, t, undefined, hasMatte), canvas.width / doc.canvas.width)
-    const blob = await canvas.convertToBlob(o.format === 'png' ? { type: 'image/png' } : { type: 'image/jpeg', quality: 0.92 })
+    const visuals = await fetchVisuals(doc, pool, t, undefined, hasMatte)
+    if (o.format === 'jpg' && doc.canvas.background.kind === 'transparent') {
+      // draw onto the white page instead of clearing it
+      const layer = new OffscreenCanvas(canvas.width, canvas.height)
+      drawFrame(layer.getContext('2d')!, doc, t, visuals, canvas.width / doc.canvas.width)
+      ctx.drawImage(layer, 0, 0)
+    } else drawFrame(ctx, doc, t, visuals, canvas.width / doc.canvas.width)
+    const blob = await canvas.convertToBlob(o.format === 'png' ? { type: 'image/png' } : { type: o.format === 'webp' ? 'image/webp' : 'image/jpeg', quality: o.quality ?? 0.92 })
     return await writeFile(o.outputPath, new Uint8Array(await blob.arrayBuffer()))
   } finally {
     await pool.dispose()
@@ -226,7 +234,7 @@ export async function runExport(doc: Project, r: ExportRequest, onProgress: (p: 
     // for a GIF the size given is its width
     case 'gif': return exportGif(doc, { outputPath: r.outputPath, width: Math.min(r.height, 1080), fps: Math.min(r.fps, 30), range: r.range }, onProgress, signal, hasMatte)
     case 'wav': case 'mp3': case 'm4a': return exportAudio(doc, { outputPath: r.outputPath, format: r.format, range: r.range })
-    case 'png': case 'jpg': return exportFrame(doc, { outputPath: r.outputPath, format: r.format, width, height, tUs: r.atUs ?? 0 }, hasMatte)
+    case 'png': case 'jpg': case 'webp': return exportFrame(doc, { outputPath: r.outputPath, format: r.format, width: r.width ?? width, height: r.width ? Math.round((r.width * doc.canvas.height) / doc.canvas.width) : height, tUs: r.atUs ?? 0, quality: r.imageQuality }, hasMatte)
     default: {
       const codec = r.codec ?? (r.format === 'webm' ? 'vp9' : 'avc')
       const bitrate = bitrateFor(width, height, r.fps, codec, r.quality, r.bitrateMbps)

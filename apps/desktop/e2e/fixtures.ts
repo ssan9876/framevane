@@ -82,7 +82,8 @@ export const test = base.extend<Options & { framevane: Framevane }>({
     if (testInfo.status !== testInfo.expectedStatus) await cur.page.screenshot({ path: testInfo.outputPath('failure.png') }).catch(() => {})
     await cur.app.close().catch(() => {})
     // each test's profile, projects and exports live in a temp folder: remove it (set FRAMEVANE_KEEP_TEST_DIRS=1 to inspect)
-    if (!process.env.FRAMEVANE_KEEP_TEST_DIRS) rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+    // best effort: a killed app's helpers can still hold files; the global teardown sweeps what's left
+    if (!process.env.FRAMEVANE_KEEP_TEST_DIRS) { try { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }) } catch { /* swept later */ } }
     expect(errors, `console errors (failed requests: ${JSON.stringify(failedRequests)})`).toEqual([])
     expect(failedRequests.filter((r) => r.status >= 500), '5xx responses').toEqual([])
   },

@@ -10,7 +10,6 @@ import type { AgentDefView, AgentEvent, AgentRunStatus, ExternalActivity, JobEve
 export type Route =
   | { name: 'home' }
   | { name: 'editor'; projectId: string }
-  | { name: 'photo' }
   | { name: 'ai-maker' }
 
 export interface AgentTurn {
@@ -45,6 +44,8 @@ interface State {
   jobs: Record<string, JobEvent>
   /** Assets whose background matte (M5 remove BG) is ready. */
   mattes: Record<string, true>
+  /** Photo editor crop box in canvas px while cropping (S25); ratio w/h or null for free. */
+  photoCrop: { x: number; y: number; w: number; h: number; ratio: number | null } | null
   playheadUs: number
   playing: boolean
   selection: string[]
@@ -95,6 +96,7 @@ export const useApp = create<State>((set, get) => ({
   mediaLoaded: false,
   jobs: {},
   mattes: {},
+  photoCrop: null,
   playheadUs: 0,
   playing: false,
   selection: [],
@@ -116,7 +118,7 @@ export const useApp = create<State>((set, get) => ({
   go(route) {
     const cur = get().route
     if (cur.name === 'editor' && (route.name !== 'editor' || route.projectId !== cur.projectId)) void window.framevane.projects.close(cur.projectId)
-    set({ route, ...(route.name !== 'editor' ? { doc: null, media: [], mediaLoaded: false, selection: [], playheadUs: 0, agentRuns: [] } : {}) })
+    set({ route, ...(route.name !== 'editor' ? { doc: null, media: [], mediaLoaded: false, selection: [], playheadUs: 0, agentRuns: [], photoCrop: null } : {}) })
   },
 
   async loadProjects() {

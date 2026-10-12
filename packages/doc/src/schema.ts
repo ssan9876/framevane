@@ -27,6 +27,8 @@ export const HexColor = z.string().regex(/^#[0-9a-f]{6}$/i)
 export const Background = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('color'), color: HexColor }),
   z.object({ kind: z.literal('blur'), amount: z.number().min(0).max(1).default(0.5) }),
+  /** Photos: see-through where nothing covers the canvas (PNG/WebP keep it; video and JPG get black or white). */
+  z.object({ kind: z.literal('transparent') }),
 ])
 export type Background = z.infer<typeof Background>
 
@@ -268,7 +270,33 @@ export const TextClip = z.object({
 })
 export type TextClip = z.infer<typeof TextClip>
 
-export const Clip = z.discriminatedUnion('kind', [MediaClip, CaptionClip, TextClip])
+export const SHAPES = ['rect', 'ellipse', 'triangle', 'star', 'line', 'arrow'] as const
+export const ShapeKind = z.enum(SHAPES)
+export type ShapeKind = z.infer<typeof ShapeKind>
+/** Shape look; width/height are px at canvas resolution before transform.scale. Colours are #rrggbb or #rrggbbaa. */
+export const ShapeProps = z.object({
+  shape: ShapeKind.default('rect'),
+  width: z.number().min(1).max(8192).default(400),
+  height: z.number().min(1).max(8192).default(400),
+  fill: z.string().regex(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i).nullable().default('#ff7a3d'),
+  stroke: z.string().regex(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i).default('#ffffff'),
+  strokeWidth: z.number().min(0).max(200).default(0),
+  /** Rectangle corner radius as a fraction of the shorter side. */
+  radius: z.number().min(0).max(0.5).default(0),
+})
+export type ShapeProps = z.infer<typeof ShapeProps>
+
+/** A vector shape (photo layers, overlays). Centred at canvas centre + transform.x/y; transform and keyframes like text. */
+export const ShapeClip = z.object({
+  ...ClipBase,
+  kind: z.literal('shape'),
+  ...ShapeProps.shape,
+  transform: Transform.default(IDENTITY_TRANSFORM),
+  keyframes: Keyframes.default({}),
+})
+export type ShapeClip = z.infer<typeof ShapeClip>
+
+export const Clip = z.discriminatedUnion('kind', [MediaClip, CaptionClip, TextClip, ShapeClip])
 export type Clip = z.infer<typeof Clip>
 
 export const TrackKind = z.enum(['video', 'audio', 'text', 'caption'])
@@ -294,9 +322,14 @@ export type Marker = z.infer<typeof Marker>
 
 export const SCHEMA_VERSION = 1
 
+/** How long every layer of a photo lasts (a photo is a one-frame project). */
+export const PHOTO_DURATION_US = 5_000_000
+
 export const Project = z.object({
   schema: z.literal(SCHEMA_VERSION),
   id: Id,
+  /** A video timeline, or a photo (layers = tracks, each with one clip at 0, shown as one picture). */
+  kind: z.enum(['video', 'photo']).default('video'),
   name: z.string().min(1).max(200),
   canvas: Canvas,
   assets: z.record(Id, AssetRef),
@@ -310,10 +343,11 @@ export const Project = z.object({
 })
 export type Project = z.infer<typeof Project>
 
-export function emptyProject(id: string, name: string, canvas?: Partial<Canvas>): Project {
+export function emptyProject(id: string, name: string, canvas?: Partial<Canvas>, kind: 'video' | 'photo' = 'video'): Project {
   return {
     schema: SCHEMA_VERSION,
     id,
+    kind,
     name,
     canvas: { width: 1920, height: 1080, fps: { num: 30, den: 1 }, background: { kind: 'color', color: '#000000' }, ...canvas },
     assets: {},
