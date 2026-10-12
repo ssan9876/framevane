@@ -5,14 +5,14 @@ Only reproduced bugs are listed. Each one has a test that failed before the fix 
 
 | ID | sev | title | status |
 | --- | --- | --- | --- |
-| BUG-001 | S2 | Dropdowns inside dialogs open behind the dialog | fixed in {{FIX1}} |
-| BUG-002 | S3 | Double-clicking an agent suggestion starts two runs (double cost) | fixed in {{FIX1}} |
-| BUG-003 | S3 | "VideoSample is closed" uncaught error when edits land mid-frame | fixed in {{FIX1}} |
-| BUG-004 | S3 | Frame step lands one frame short; timecode lags a frame | fixed in {{FIX1}} |
-| BUG-005 | S3 | Missing or still-converting media is requested anyway (404s); a missing source isn't shown offline on the timeline | fixed in {{FIX1}} |
-| BUG-006 | S3 | Tabs in Settings and the inspector point aria-controls at panels that don't exist | fixed in {{FIX1}} |
-| BUG-007 | S3 | Inspector slider thumbs have no accessible name | fixed in {{FIX1}} |
-| BUG-008 | S4 | Home requests project covers before their thumbnails exist (404) | fixed in {{FIX1}} |
+| BUG-001 | S2 | Dropdowns inside dialogs open behind the dialog | fixed in 16aa598 |
+| BUG-002 | S3 | Double-clicking an agent suggestion starts two runs (double cost) | fixed in 16aa598 |
+| BUG-003 | S3 | "VideoSample is closed" uncaught error when edits land mid-frame | fixed in 16aa598 |
+| BUG-004 | S3 | Frame step lands one frame short; timecode lags a frame | fixed in 16aa598 |
+| BUG-005 | S3 | Missing or still-converting media is requested anyway (404s); a missing source isn't shown offline on the timeline | fixed in 16aa598 |
+| BUG-006 | S3 | Tabs in Settings and the inspector point aria-controls at panels that don't exist | fixed in 16aa598 |
+| BUG-007 | S3 | Inspector slider thumbs have no accessible name | fixed in 16aa598 |
+| BUG-008 | S4 | Home requests project covers before their thumbnails exist (404) | fixed in 16aa598 |
 
 Open: none. No S1 bugs found.
 
@@ -34,7 +34,7 @@ Actual: the list renders under the dialog's overlay, and the click never reaches
 Evidence: run1 F10-E2/E3/E5 failures, `test-results/artifacts/f10-export-*/test-failed-1.png`
 Suspected cause: z-index tokens put popovers (40) below modals (50), and Radix portals selects to the body.
 Fix: tokens now stack popover 60 over modal 50 (toast 70, tooltip 80), noted in tokens.json `_notes.z`.
-Status: fixed in {{FIX1}}
+Status: fixed in 16aa598
 
 ### BUG-002: Double-clicking an agent suggestion starts two runs
 
@@ -51,7 +51,7 @@ Actual: two "Your message" turns and two runs.
 Evidence: run1 F12-E4 "Expected: 1, Received: 2".
 Suspected cause: the `running` flag comes from the store, which updates only after the first IPC call returns.
 Fix: a synchronous `useRef` guard in `send()`.
-Status: fixed in {{FIX1}}
+Status: fixed in 16aa598
 
 ### BUG-003: "VideoSample is closed" uncaught error when edits land mid-frame
 
@@ -68,7 +68,7 @@ Actual: `pageerror: VideoSample is closed.`
 Evidence: run1 F02-E5 console errors.
 Suspected cause: `setDoc` pruned decoders for clips that no longer exist while a render still held a frame from one of them.
 Fix: pruning is deferred until the render finishes, and drawing a frame closed in flight is skipped.
-Status: fixed in {{FIX1}}
+Status: fixed in 16aa598
 
 ### BUG-004: Frame step lands one frame short
 
@@ -84,7 +84,7 @@ Expected: timecode 00:00:00:01.
 Actual: 00:00:00:00. One frame at 30 fps was rounded to 33333 µs, which is just under 1/30 s, and the timecode floors it.
 Evidence: run1 X-KB "Expected: Preview at 00:00:00:01, Received: …:00".
 Fix: `stepFrames()` steps by frame index and lands exactly on the frame. The timecode tolerates 0.001-frame rounding.
-Status: fixed in {{FIX1}}
+Status: fixed in 16aa598
 
 ### BUG-005: Missing or still-converting media is requested anyway; a missing source isn't shown offline
 
@@ -101,7 +101,7 @@ Expected: no failed requests, and the clip shows "Media offline".
 Actual: `reel-media://asset/<id>` returns 404 (console error) and the clip looks normal. The same request happens for an AVI while its mezzanine transcode is still running.
 Evidence: run2 failed requests `[{"url":"reel-media://asset/…","status":404}]`.
 Fix: the player decodes only media whose status is `ready`, and only once the media list has loaded. It redraws when statuses change. The timeline marks missing sources "Media offline".
-Status: fixed in {{FIX1}}
+Status: fixed in 16aa598
 
 ### BUG-006: Tabs point aria-controls at panels that don't exist
 
@@ -116,7 +116,7 @@ Steps
 Expected: no violations.
 Actual: `aria-valid-attr-value` on `#radix-…-trigger-general` / `-agents` / `-shortcuts` / `-video`.
 Fix: tab content now renders inside `TabPanel` (Radix Tabs.Content) in Settings and the inspector.
-Status: fixed in {{FIX1}}
+Status: fixed in 16aa598
 
 ### BUG-007: Inspector slider thumbs have no accessible name
 
@@ -131,7 +131,7 @@ Steps
 Expected: each slider is announced by its label ("Scale", "Opacity"…).
 Actual: unnamed sliders.
 Fix: `aria-label` on the Radix slider thumb (the root's labelledby doesn't reach it).
-Status: fixed in {{FIX1}}
+Status: fixed in 16aa598
 
 ### BUG-008: Home requests project covers before their thumbnails exist
 
@@ -146,7 +146,7 @@ Steps
 Expected: placeholder icon, no failed request.
 Actual: `reel-media://thumb/<id>` returns 404.
 Fix: `projects.list` joins the cover asset and only returns `coverUrl` when its poster exists on disk.
-Status: fixed in {{FIX1}}
+Status: fixed in 16aa598
 
 ---
 
