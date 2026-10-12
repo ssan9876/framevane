@@ -1,7 +1,7 @@
 import { test as base, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -81,6 +81,8 @@ export const test = base.extend<Options & { framevane: Framevane }>({
     await use(framevane)
     if (testInfo.status !== testInfo.expectedStatus) await cur.page.screenshot({ path: testInfo.outputPath('failure.png') }).catch(() => {})
     await cur.app.close().catch(() => {})
+    // each test's profile, projects and exports live in a temp folder: remove it (set FRAMEVANE_KEEP_TEST_DIRS=1 to inspect)
+    if (!process.env.FRAMEVANE_KEEP_TEST_DIRS) rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
     expect(errors, `console errors (failed requests: ${JSON.stringify(failedRequests)})`).toEqual([])
     expect(failedRequests.filter((r) => r.status >= 500), '5xx responses').toEqual([])
   },

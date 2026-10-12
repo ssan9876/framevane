@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
@@ -154,6 +154,7 @@ test.describe('M6 export formats', () => {
 
 test.describe('M6 settings', () => {
   const folder = mkdtempSync(join(tmpdir(), 'framevane-newprojects-'))
+  test.afterAll(() => rmSync(folder, { recursive: true, force: true }))
   test.use({ pickFiles: [files.talk], reelEnv: { FRAMEVANE_TEST_PICK_FOLDER: folder } })
 
   test('projects folder, AI device (survives a restart), caches with sizes and clearing', async ({ framevane }) => {

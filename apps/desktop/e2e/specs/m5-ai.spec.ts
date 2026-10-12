@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
@@ -124,6 +124,7 @@ test.describe('M5 auto reframe', () => {
 
 test.describe('M5 model manager', () => {
   const models = mkdtempSync(join(tmpdir(), 'framevane-models-'))
+  test.afterAll(() => rmSync(models, { recursive: true, force: true }))
   test.use({ reelEnv: { FRAMEVANE_MODELS_DIR: models } })
 
   test('lists the local models; downloads and removes one (checksum-verified)', async ({ framevane }) => {

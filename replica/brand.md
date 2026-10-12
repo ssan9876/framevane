@@ -127,7 +127,7 @@ Three words, and what each does not mean:
 - the MCP server name (`framevane`) and the sidecar package (`framevane_sidecar`)
 
 **Still to do by hand (outside the sweep's reach):**
-- **Repo names:** the GitHub repo and the local folder are still named `capcut-clone-ai`. Rename both, e.g. `gh repo rename framevane`, then rename the folder.
+- **Repo names:** the GitHub repo was renamed to `framevane` on 2026-10-12 (GitHub redirects the old URL). The local folder is still `capcut-clone-ai`; rename it when no editor or Claude Code session has it open.
 - **App icon and favicon:** none exist yet; Electron's default icon is used. Make them from the brief above.
 - **Claude Code entry:** anyone who added the old "reel" entry should click **Add to Claude Code** again; the server is now named "framevane".
 - **Original's colours:** add the original's exact brand hex values to `brand.json` once confirmed from a primary source.

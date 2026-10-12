@@ -1,5 +1,5 @@
 import { _electron as electron } from '@playwright/test'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -20,6 +20,8 @@ export async function launch({ pickFiles = [], saveDir, env = {} } = {}) {
       ...env,
     },
   })
+  // the temp profile goes when the script ends (FRAMEVANE_KEEP_TEST_DIRS=1 keeps it)
+  app.on('close', () => { if (!process.env.FRAMEVANE_KEEP_TEST_DIRS) setTimeout(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }), 300) })
   const page = await app.firstWindow()
   const errors = []
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
