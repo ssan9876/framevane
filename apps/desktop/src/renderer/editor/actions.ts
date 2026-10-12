@@ -101,3 +101,10 @@ function isFree(clips: Clip[], at: number, dur: number) {
 export function frameUs(doc: Project) {
   return Math.round((1e6 * doc.canvas.fps.den) / doc.canvas.fps.num)
 }
+
+/** Move n frames from `us`, landing exactly on a frame (no drift from rounding 1/fps to whole µs). BUG-004 */
+export function stepFrames(doc: Project, us: number, n: number) {
+  const fps = doc.canvas.fps.num / doc.canvas.fps.den
+  const f = Math.round((us * fps) / 1e6) + n
+  return Math.max(0, Math.ceil((f * 1e6) / fps))
+}

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Button, Dialog, Kbd, Select, TextField, UnderlineTabs, Badge, useToast } from '@reel/ui'
+import { Button, Dialog, Kbd, Select, TextField, UnderlineTabs, TabPanel, Badge, useToast } from '@reel/ui'
 import type { AgentSettings } from '../../shared/api'
 import { useApp } from '../app/store'
 import { SHORTCUTS } from '../editor/shortcuts'
@@ -13,13 +13,14 @@ export function SettingsDialog() {
   return (
     <Dialog open onOpenChange={(o) => !o && close()} title="Settings" width={640}>
       <div className="-mx-5 -mt-4">
-        <UnderlineTabs value={tab} onValueChange={setTab} label="Settings sections" tabs={[{ value: 'general', label: 'General' }, { value: 'agents', label: 'Agents & AI' }, { value: 'shortcuts', label: 'Shortcuts' }, { value: 'performance', label: 'Performance' }]} />
-      </div>
-      <div className="min-h-[360px] pt-4">
-        {tab === 'general' && <General />}
-        {tab === 'agents' && <Agents />}
-        {tab === 'shortcuts' && <Shortcuts />}
-        {tab === 'performance' && <p className="text-sm text-muted">Hardware decoding and encoding are on (WebCodecs uses your GPU). Proxy and cache controls arrive in M6.</p>}
+        <UnderlineTabs value={tab} onValueChange={setTab} label="Settings sections" tabs={[{ value: 'general', label: 'General' }, { value: 'agents', label: 'Agents & AI' }, { value: 'shortcuts', label: 'Shortcuts' }, { value: 'performance', label: 'Performance' }]}>
+          <div className="min-h-[360px] px-5 pt-4">
+            <TabPanel value="general"><General /></TabPanel>
+            <TabPanel value="agents"><Agents /></TabPanel>
+            <TabPanel value="shortcuts"><Shortcuts /></TabPanel>
+            <TabPanel value="performance"><p className="text-sm text-muted">Hardware decoding and encoding are on (WebCodecs uses your GPU). Proxy and cache controls arrive in M6.</p></TabPanel>
+          </div>
+        </UnderlineTabs>
       </div>
     </Dialog>
   )

@@ -24,6 +24,22 @@ export class Player {
   private lastUs = 0
   private audioReady: Promise<Map<string, AudioBuffer | null>> | null = null
   private disposed = false
+  private pendingPrune: Set<string> | null = null
+  private isReady: (assetId: string) => boolean = () => false // nothing decodes until the editor says what is ready
+
+  /** Media that is missing or still being prepared is not decoded (BUG-005). Call again when statuses change. */
+  setAvailability(isReady: (assetId: string) => boolean) {
+    this.isReady = isReady
+    this.audioReady = null
+    if (!this.playing) this.seek(this.lastUs)
+  }
+
+  private flushPrune() {
+    if (!this.pendingPrune) return
+    const live = this.pendingPrune
+    this.pendingPrune = null
+    void this.pool.prune(live)
+  }
 
   constructor(doc: Project, private onTime: (us: number) => void, private onEnded: () => void) {
     this.doc = doc
@@ -40,7 +56,9 @@ export class Player {
     const fontsChanged = JSON.stringify(doc.tracks.map((t) => t.style?.fontFamily)) !== JSON.stringify(this.doc.tracks.map((t) => t.style?.fontFamily))
     this.doc = doc
     this.audioReady = null
-    void this.pool.prune(new Set(doc.tracks.flatMap((t) => t.clips.map((c) => c.id))))
+    // never close decoders under a frame that is being drawn: prune after the render (BUG-003)
+    this.pendingPrune = new Set(doc.tracks.flatMap((t) => t.clips.map((c) => c.id)))
+    if (!this.rendering) this.flushPrune()
     if (fontsChanged) void ensureFonts(doc)
     if (this.playing) { const t = this.now(); this.pause(); void this.play(t) }
     else this.seek(this.lastUs)
@@ -55,7 +73,7 @@ export class Player {
     this.ctx ??= new AudioContext({ latencyHint: 'interactive' })
     if (!this.master) { this.master = this.ctx.createGain(); this.master.connect(this.ctx.destination) }
     if (this.ctx.state === 'suspended') await this.ctx.resume()
-    this.audioReady ??= loadAudio(this.doc, this.pool, this.ctx)
+    this.audioReady ??= loadAudio(this.doc, this.pool, this.ctx, this.isReady)
     const buffers = await this.audioReady
     if (this.disposed) return
     this.playing = true
@@ -109,11 +127,12 @@ export class Player {
     this.rendering = true
     try {
       const doc = this.doc
-      const visuals = await fetchVisuals(doc, this.pool, tUs)
+      const visuals = await fetchVisuals(doc, this.pool, tUs, this.isReady)
       if (this.disposed || !this.c2d) return
       drawFrame(this.c2d, doc, tUs, visuals, this.canvas.width / doc.canvas.width)
     } finally {
       this.rendering = false
+      this.flushPrune()
     }
   }
 

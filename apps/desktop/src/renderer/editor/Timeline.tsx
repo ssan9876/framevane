@@ -321,7 +321,7 @@ function ClipView({ doc, clip, track, start, dur, pxPerUs, selected, peaks, medi
   const label = clip.kind === 'caption' || clip.kind === 'text' ? clip.text : asset?.name ?? 'Missing media'
   // filmstrip: the sprite spans the whole asset; position it so the clip shows its own source range
   let stripStyle: CSSProperties | undefined
-  const info = (mediaReady as { asset: { id: string }; urls: { filmstrip: string | null; thumb: string | null } }[]).find((m) => m.asset.id === asset?.id)
+  const info = (mediaReady as { asset: { id: string }; status: string; urls: { filmstrip: string | null; thumb: string | null } }[]).find((m) => m.asset.id === asset?.id)
   if (media && media.kind === 'video' && asset?.durationUs && info?.urls.filmstrip) {
     const assetW = (asset.durationUs / media.speed) * pxPerUs
     stripStyle = { backgroundImage: `url("${info.urls.filmstrip}")`, backgroundSize: `${assetW}px 100%`, backgroundPositionX: `${-(media.inUs / media.speed) * pxPerUs}px`, backgroundRepeat: 'no-repeat' }
@@ -349,7 +349,7 @@ function ClipView({ doc, clip, track, start, dur, pxPerUs, selected, peaks, medi
           height={h - 4}
           selected={selected}
           disabled={!clip.enabled}
-          missing={!!media && !asset}
+          missing={!!media && (!asset || info?.status === 'missing')}
           stripStyle={stripStyle}
           waveform={waveform}
           speedLabel={media && media.speed !== 1 ? `${+media.speed.toFixed(2)}×` : undefined}

@@ -37,6 +37,8 @@ interface State {
   canUndo: boolean
   canRedo: boolean
   media: MediaInfo[]
+  /** The media list for the open project has arrived (until then, readiness is unknown). */
+  mediaLoaded: boolean
   jobs: Record<string, JobEvent>
   playheadUs: number
   playing: boolean
@@ -70,6 +72,7 @@ export const useApp = create<State>((set, get) => ({
   canUndo: false,
   canRedo: false,
   media: [],
+  mediaLoaded: false,
   jobs: {},
   playheadUs: 0,
   playing: false,
@@ -86,7 +89,7 @@ export const useApp = create<State>((set, get) => ({
   go(route) {
     const cur = get().route
     if (cur.name === 'editor' && (route.name !== 'editor' || route.projectId !== cur.projectId)) void window.reel.projects.close(cur.projectId)
-    set({ route, ...(route.name !== 'editor' ? { doc: null, media: [], selection: [], playheadUs: 0, agentRuns: [] } : {}) })
+    set({ route, ...(route.name !== 'editor' ? { doc: null, media: [], mediaLoaded: false, selection: [], playheadUs: 0, agentRuns: [] } : {}) })
   },
 
   async loadProjects() {

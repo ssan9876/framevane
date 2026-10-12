@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Trash2, Captions, Construction } from 'lucide-react'
-import { Button, ColorPicker, EmptyState, PanelHeader, Segmented, SliderField, Switch, UnderlineTabs } from '@reel/ui'
+import { Button, ColorPicker, EmptyState, PanelHeader, Segmented, SliderField, Switch, TabPanel, UnderlineTabs } from '@reel/ui'
 import { DEFAULT_CAPTION_STYLE, findClip, formatUs, projectDurationUs, type CaptionClip, type MediaClip, type OpInput, type Project, type Track } from '@reel/doc'
 import { useApp } from '../app/store'
 import { deleteSelection } from './actions'
@@ -86,10 +86,10 @@ function MediaInspector({ clip, doc, locked }: { clip: MediaClip; doc: Project; 
   return (
     <div className={locked ? 'pointer-events-none opacity-60' : ''}>
       <PanelHeader title={<span className="truncate" title={asset?.name}>{asset?.name ?? 'Clip'}</span>} />
-      <UnderlineTabs tabs={tabs} value={tab} onValueChange={setTab} />
+      <UnderlineTabs tabs={tabs} value={tab} onValueChange={setTab}>
       <div className="flex flex-col gap-2 p-3">
         {locked && <p className="text-sm text-warning">This track is locked.</p>}
-        {tab === 'video' && (
+        <TabPanel value="video" className="flex flex-col gap-2">
           <>
             <Segmented label="Video tools" value={sub} onValueChange={setSub} options={[{ value: 'basic', label: 'Basic' }, { value: 'bg', label: 'Remove BG' }, { value: 'mask', label: 'Mask' }, { value: 'retouch', label: 'Retouch' }]} />
             {sub === 'basic' ? (
@@ -106,21 +106,23 @@ function MediaInspector({ clip, doc, locked }: { clip: MediaClip; doc: Project; 
               <EmptyState icon={<Construction />} title={sub === 'bg' ? 'Background removal comes in M5' : sub === 'mask' ? 'Masks come as a should-have' : 'Retouch comes as a could-have'} body="It will run locally on your GPU, free." />
             )}
           </>
-        )}
-        {tab === 'audio' && (
+        </TabPanel>
+        <TabPanel value="audio">
           <div className="flex flex-col gap-1.5">
             <SliderField label="Volume" value={vol} onChange={setVol} min={-60} max={20} step={0.5} precision={1} unit="dB" defaultValue={0} bipolar />
             <p className="pt-2 text-xs text-muted">Fades, noise reduction and voice enhancement come in M3.</p>
           </div>
-        )}
-        {tab === 'speed' && (
+        </TabPanel>
+        <TabPanel value="speed">
           <div className="flex flex-col gap-1.5">
             <SliderField label="Speed" value={speed} onChange={setSpeed} min={0.1} max={Math.min(10, Math.floor(maxSpeedForSource * 10) / 10 || 10)} step={0.1} precision={1} unit="×" defaultValue={1} />
             <p className="text-xs text-muted">Duration {formatUs(clip.durationUs)}. Curves and smooth slow motion come later.</p>
           </div>
-        )}
-        {(tab === 'animation' || tab === 'adjust') && <EmptyState icon={<Construction />} title={tab === 'animation' ? 'Animations come as a should-have' : 'Color adjustments come in M4'} />}
+        </TabPanel>
+        <TabPanel value="animation"><EmptyState icon={<Construction />} title="Animations come as a should-have" /></TabPanel>
+        <TabPanel value="adjust"><EmptyState icon={<Construction />} title="Color adjustments come in M4" /></TabPanel>
       </div>
+      </UnderlineTabs>
     </div>
   )
 }

@@ -105,6 +105,7 @@ export function findUv(): string | null {
 }
 
 export function defaultSidecarDir(appPath: string, resourcesPath?: string) {
+  if (process.env.REEL_SIDECAR_DIR) return process.env.REEL_SIDECAR_DIR
   const packaged = resourcesPath ? join(resourcesPath, 'sidecar') : null
   if (packaged && existsSync(packaged)) return packaged
   return resolve(appPath, '..', '..', 'sidecar')

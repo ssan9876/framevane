@@ -121,8 +121,8 @@
   --reel-z-base: 0;
   --reel-z-timeline-overlay: 10;
   --reel-z-dock: 20;
-  --reel-z-popover: 40;
   --reel-z-modal: 50;
-  --reel-z-toast: 60;
-  --reel-z-tooltip: 70;
+  --reel-z-popover: 60;
+  --reel-z-toast: 70;
+  --reel-z-tooltip: 80;
 }

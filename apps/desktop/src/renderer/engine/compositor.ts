@@ -28,11 +28,11 @@ export function layersAt(doc: Project, tUs: number): { clip: Clip; trackStyle?: 
 }
 
 /** Fetch every visual needed for time t in parallel (decoders run concurrently). */
-export async function fetchVisuals(doc: Project, pool: MediaPool, tUs: number): Promise<Map<string, Visual>> {
+export async function fetchVisuals(doc: Project, pool: MediaPool, tUs: number, isReady: (assetId: string) => boolean = () => true): Promise<Map<string, Visual>> {
   const jobs = layersAt(doc, tUs).flatMap(({ clip }) => {
     if (clip.kind !== 'video' && clip.kind !== 'image') return []
     const asset = doc.assets[clip.assetId]
-    if (!asset) return []
+    if (!asset || !isReady(asset.id)) return []
     const p: Promise<Visual | null> = clip.kind === 'image'
       ? pool.image(asset).then((bitmap) => ({ kind: 'image' as const, bitmap })).catch(() => null)
       : pool.frameAt(asset, clip.id, sourceTimeAt(clip, tUs) / 1e6).then((s) => (s ? { kind: 'video' as const, sample: s } : null)).catch((e) => { console.warn('[compositor] frame', e); return null })
@@ -57,7 +57,12 @@ export function drawFrame(ctx: Ctx2D, doc: Project, tUs: number, visuals: Map<st
   for (const { clip, trackStyle } of layersAt(doc, tUs)) {
     if (clip.kind === 'video' || clip.kind === 'image') {
       const v = visuals.get(clip.id)
-      if (v) drawMedia(ctx, clip, v, W, H, scale)
+      if (v) {
+        try { drawMedia(ctx, clip, v, W, H, scale) } catch (e) {
+          // an edit can close a clip's decoder while this frame is in flight; the next render draws the new state (BUG-003)
+          if (!/closed/i.test(String(e))) throw e
+        }
+      }
     } else if (clip.kind === 'caption') {
       drawText(ctx, clip, trackStyle ?? DEFAULT_CAPTION_STYLE, tUs - clip.startUs, W, H)
     } else if (clip.kind === 'text') {

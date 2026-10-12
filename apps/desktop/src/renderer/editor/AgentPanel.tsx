@@ -22,19 +22,24 @@ export function AgentPanel() {
   const [settings, setSettings] = useState<AgentSettings | null>(null)
   const log = useRef<HTMLDivElement>(null)
   const running = runs.some((r) => r.status === 'running')
+  // synchronous guard: a double click fires twice before the store sees the first run (BUG-002)
+  const sending = useRef(false)
 
   useEffect(() => { void window.reel.agent.settings().then(setSettings) }, [])
   useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight }) }, [runs])
 
   async function send(text = draft) {
     const prompt = text.trim()
-    if (!prompt || running) return
+    if (!prompt || running || sending.current) return
+    sending.current = true
     setDraft('')
     try {
       const { runId } = await window.reel.agent.run(doc.id, prompt, { selection, playheadUs })
       useApp.getState().startAgentRun(runId, prompt)
     } catch (e) {
       useApp.getState().setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      sending.current = false
     }
   }
 

@@ -4,7 +4,7 @@ import { IconButton, Select } from '@reel/ui'
 import { projectDurationUs } from '@reel/doc'
 import { useApp } from '../app/store'
 import { useEditor } from './Editor'
-import { frameUs } from './actions'
+import { stepFrames } from './actions'
 
 /** S13 · Player: the project canvas fitted into the panel, transport controls and timecode. */
 export function Viewer() {
@@ -50,14 +50,14 @@ export function Viewer() {
         )}
       </div>
       <div className="flex h-10 shrink-0 items-center gap-2 border-t border-border px-3">
-        <span className="font-mono text-xs tabular-nums">
+        <span className="font-mono text-xs tabular-nums" role="timer" aria-label={`Timecode ${tc(playheadUs, doc)} of ${tc(dur, doc)}`}>
           <span className="text-fg">{tc(playheadUs, doc)}</span>
           <span className="text-muted"> / {tc(dur, doc)}</span>
         </span>
         <div className="flex flex-1 items-center justify-center gap-1">
-          <IconButton size="sm" label="Previous frame" shortcut="←" icon={<SkipBack />} onClick={() => seek(playheadUs - frameUs(doc))} />
+          <IconButton size="sm" label="Previous frame" shortcut="←" icon={<SkipBack />} onClick={() => seek(stepFrames(doc, playheadUs, -1))} />
           <IconButton label={playing ? 'Pause' : 'Play'} shortcut="Space" icon={playing ? <Pause /> : <Play />} onClick={togglePlay} disabled={empty} className="text-fg" />
-          <IconButton size="sm" label="Next frame" shortcut="→" icon={<SkipForward />} onClick={() => seek(playheadUs + frameUs(doc))} />
+          <IconButton size="sm" label="Next frame" shortcut="→" icon={<SkipForward />} onClick={() => seek(stepFrames(doc, playheadUs, 1))} />
         </div>
         <Select label="Preview quality" hideLabel width={96} value={quality} onValueChange={setQuality}
           options={[{ value: 'full', label: 'Full' }, { value: 'half', label: 'Half' }, { value: 'quarter', label: 'Quarter' }]} />
@@ -70,7 +70,8 @@ export function Viewer() {
 
 export function tc(us: number, doc: { canvas: { fps: { num: number; den: number } } }) {
   const fps = doc.canvas.fps.num / doc.canvas.fps.den
-  const totalFrames = Math.floor((us / 1e6) * fps + 1e-6)
+  // +0.001 frame tolerates µs rounding (1/30 s is 33333.33 µs)
+  const totalFrames = Math.floor((us / 1e6) * fps + 1e-3)
   const f = totalFrames % Math.round(fps)
   const s = Math.floor(us / 1e6)
   const pad = (n: number) => String(n).padStart(2, '0')

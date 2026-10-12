@@ -22,8 +22,8 @@ export function audibleClips(doc: Project): MediaClip[] {
 export const dbToGain = (db: number) => Math.pow(10, db / 20)
 
 /** Preload decoded audio for every audible clip. */
-export async function loadAudio(doc: Project, pool: MediaPool, ctx: BaseAudioContext) {
-  const ids = new Set(audibleClips(doc).map((c) => c.assetId))
+export async function loadAudio(doc: Project, pool: MediaPool, ctx: BaseAudioContext, isReady: (assetId: string) => boolean = () => true) {
+  const ids = new Set(audibleClips(doc).map((c) => c.assetId).filter(isReady))
   const entries = await Promise.all([...ids].map(async (id) => [id, await pool.audioBuffer(doc.assets[id]!, ctx).catch(() => null)] as const))
   return new Map(entries)
 }

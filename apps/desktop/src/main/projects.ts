@@ -35,7 +35,9 @@ export class Projects {
   constructor(private db: Db, private paths: AppPaths, private emit: (e: DocEvent) => void) {}
 
   list(): ProjectSummary[] {
-    const rows = this.db.prepare(`SELECT * FROM projects ORDER BY COALESCE(opened_at, updated_at) DESC`).all() as unknown as ProjectRow[]
+    const rows = this.db.prepare(
+      `SELECT p.*, m.thumbs_path AS cover_thumb FROM projects p LEFT JOIN media_assets m ON m.id = p.cover_path ORDER BY COALESCE(p.opened_at, p.updated_at) DESC`,
+    ).all() as unknown as (ProjectRow & { cover_thumb: string | null })[]
     return rows.map((r) => this.summary(r))
   }
 
@@ -222,11 +224,11 @@ export class Projects {
     return { projectId, doc: o.doc, canUndo: o.undo.length > 0, canRedo: o.redo.length > 0, source }
   }
 
-  private summary(r: ProjectRow): ProjectSummary {
+  private summary(r: ProjectRow & { cover_thumb?: string | null }): ProjectSummary {
     return {
       id: r.id, type: r.type, name: r.name, dirPath: r.dir_path,
       // cover_path holds the asset id of the first main-track clip; its poster is served by the media protocol
-      coverUrl: r.cover_path ? `reel-media://thumb/${r.cover_path}` : null,
+      coverUrl: r.cover_path && r.cover_thumb && existsSync(r.cover_thumb) ? `reel-media://thumb/${r.cover_path}` : null,
       width: r.width, height: r.height, durationUs: r.duration_us,
       status: existsSync(r.dir_path) ? r.status : 'missing_dir',
       updatedAt: r.updated_at, openedAt: r.opened_at,

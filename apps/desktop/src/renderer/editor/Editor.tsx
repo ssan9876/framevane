@@ -27,7 +27,8 @@ export function Editor({ projectId }: { projectId: string }) {
   useEffect(() => {
     let alive = true
     window.reel.projects.open(projectId).then((e) => { if (alive) useApp.getState().setDoc(e.doc, e.canUndo, e.canRedo) }).catch((e) => setLoadError(e instanceof Error ? e.message : String(e)))
-    window.reel.media.list(projectId).then((m) => alive && useApp.setState({ media: m })).catch(() => {})
+    useApp.setState({ mediaLoaded: false })
+    window.reel.media.list(projectId).then((m) => alive && useApp.setState({ media: m, mediaLoaded: true })).catch(() => {})
     return () => { alive = false }
   }, [projectId])
 
@@ -51,6 +52,13 @@ function EditorLoaded({ doc }: { doc: Project }) {
   const [agentOpen, setAgentOpen] = useState(true)
 
   useEffect(() => { player.setDoc(doc) }, [doc, player])
+  const media = useApp((s) => s.media)
+  const mediaLoaded = useApp((s) => s.mediaLoaded)
+  useEffect(() => {
+    // decode only media known to be ready: not missing, not still being transcoded (BUG-005)
+    const ready = new Set(media.filter((m) => m.status === 'ready').map((m) => m.asset.id))
+    player.setAvailability((id) => mediaLoaded && ready.has(id))
+  }, [media, mediaLoaded, player])
   useEffect(() => () => { void player.dispose() }, [player])
 
   const seek = useCallback((us: number) => {

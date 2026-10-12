@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { projectDurationUs } from '@reel/doc'
 import { useApp } from '../app/store'
-import { deleteSelection, frameUs, rippleDeleteSide, splitAtPlayhead } from './actions'
+import { deleteSelection, rippleDeleteSide, splitAtPlayhead, stepFrames } from './actions'
 
 /** Editor keyboard shortcuts (common NLE keys). Ignored while typing in a field. Listed in Settings → Shortcuts (S24). */
 export const SHORTCUTS: { keys: string; action: string; group: string }[] = [
@@ -53,9 +53,9 @@ export function useEditorShortcuts(ctx: { seek(us: number): void; togglePlay(): 
       if (k === 'n' || k === 'N') { handled(); useApp.setState({ snapping: !s.snapping }); return }
       if (k === 'Z' && e.shiftKey) { handled(); window.dispatchEvent(new CustomEvent('reel:fit-timeline')); return }
       if (e.altKey && (k === 'k' || k === 'K')) { handled(); s.setError('The keyframe graph (S21) arrives in M1 with keyframes.'); return }
-      const step = e.shiftKey ? 1_000_000 : frameUs(doc)
-      if (k === 'ArrowLeft') { handled(); ctx.seek(s.playheadUs - step); return }
-      if (k === 'ArrowRight') { handled(); ctx.seek(s.playheadUs + step); return }
+      const n = e.shiftKey ? Math.round(doc.canvas.fps.num / doc.canvas.fps.den) : 1
+      if (k === 'ArrowLeft') { handled(); ctx.seek(stepFrames(doc, s.playheadUs, -n)); return }
+      if (k === 'ArrowRight') { handled(); ctx.seek(stepFrames(doc, s.playheadUs, n)); return }
       if (k === 'Home') { handled(); ctx.seek(0); return }
       if (k === 'End') { handled(); ctx.seek(projectDurationUs(doc)); return }
     }
