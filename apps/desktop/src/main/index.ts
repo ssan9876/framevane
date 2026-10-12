@@ -51,7 +51,7 @@ async function main() {
   const jobs = new JobQueue(db, (e: JobEvent) => broadcast('jobs:event', e))
   const media = new Media(db, paths, jobs, (projectId: string, m: MediaInfo) => broadcast('media:change', { projectId, ...m }))
   const projects = new Projects(db, paths, (e: DocEvent) => broadcast('doc:change', e))
-  const hub = new McpHub({ sidecarDir: defaultSidecarDir(app.getAppPath(), app.isPackaged ? process.resourcesPath : undefined), modelsDir: paths.models })
+  const hub = new McpHub({ sidecarDir: defaultSidecarDir(app.getAppPath(), app.isPackaged ? process.resourcesPath : undefined), modelsDir: paths.models, ...(app.isPackaged ? { venvDir: join(paths.userData, 'sidecar-env') } : {}) })
   const analysis = new Analysis(db, paths, jobs, media, hub)
   const registry = new ToolRegistry(db, hub)
   const defs = new AgentDefs(db)

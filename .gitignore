@@ -8,3 +8,5 @@ replica/screens/
 replica/seed-media/
 apps/desktop/test-results/
 *.tsbuildinfo
+apps/desktop/release/
+apps/desktop/vendor/

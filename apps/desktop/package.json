@@ -34,6 +34,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
+    "@electron/packager": "20.3.0",
     "@playwright/test": "1.64.0",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "24",

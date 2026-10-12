@@ -35,7 +35,8 @@ export class McpHub {
   /** Run the local AI on the CPU only (Settings → Performance); takes effect when the sidecar next starts. */
   forceCpu = false
 
-  constructor(private opts: { sidecarDir: string; modelsDir: string }) {}
+  /** venvDir: where the sidecar's Python environment lives (the release keeps it in app data; dev uses sidecar/.venv). */
+  constructor(private opts: { sidecarDir: string; modelsDir: string; venvDir?: string }) {}
 
   /** The local AI sidecar, started on first use. */
   sidecar(): Promise<Conn> {
@@ -47,7 +48,7 @@ export class McpHub {
         command: uv,
         args: ['run', '--project', this.opts.sidecarDir, '--frozen', 'python', '-m', 'framevane_sidecar'],
         cwd: this.opts.sidecarDir,
-        env: { ...cleanEnv(), FRAMEVANE_MODELS_DIR: this.opts.modelsDir, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', ...(this.forceCpu ? { FRAMEVANE_FORCE_CPU: '1' } : {}) },
+        env: { ...cleanEnv(), FRAMEVANE_MODELS_DIR: this.opts.modelsDir, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', ...(this.forceCpu ? { FRAMEVANE_FORCE_CPU: '1' } : {}), ...(this.opts.venvDir ? { UV_PROJECT_ENVIRONMENT: this.opts.venvDir } : {}) },
         stderr: 'pipe',
       })
     }, true)
@@ -140,6 +141,9 @@ export class McpHub {
 
 export function findUv(): string | null {
   if (process.env.FRAMEVANE_UV && existsSync(process.env.FRAMEVANE_UV)) return process.env.FRAMEVANE_UV
+  // the release bundles uv next to the app
+  const bundled = process.resourcesPath ? join(process.resourcesPath, 'uv', process.platform === 'win32' ? 'uv.exe' : 'uv') : null
+  if (bundled && existsSync(bundled)) return bundled
   const r = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['uv'], { encoding: 'utf8' })
   if (r.status === 0) {
     const first = r.stdout.split(/\r?\n/).find(Boolean)
