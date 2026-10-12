@@ -1,5 +1,5 @@
 import {
-  applyOps, clipEnd, findClip, isAnimated, sourceTimeAt,
+  NO_LOOK, applyOps, clipEnd, findClip, isAnimated, sourceTimeAt,
   type AnimatableClip, type AnimProp, type Clip, type MediaClip, type OpInput, type Project, type Track, type TrackKind,
 } from '@framevane/doc'
 import { useApp } from '../app/store'
@@ -144,7 +144,7 @@ export async function detachAudio() {
     const audio: MediaClip = {
       id: newId('clip'), kind: 'audio', assetId: c.assetId, startUs: c.startUs, durationUs: c.durationUs, enabled: true,
       inUs: c.inUs, speed: c.speed, transform: c.transform, volumeDb: c.volumeDb, blend: 'normal', audioEnabled: true, reversed: c.reversed,
-      keyframes: c.keyframes.volumeDb ? { volumeDb: c.keyframes.volumeDb } : {}, linkId, fadeInUs: c.fadeInUs, fadeOutUs: c.fadeOutUs,
+      keyframes: c.keyframes.volumeDb ? { volumeDb: c.keyframes.volumeDb } : {}, linkId, fadeInUs: c.fadeInUs, fadeOutUs: c.fadeOutUs, ...NO_LOOK,
     }
     const own: OpInput = { type: 'set_clip_props', clipId: c.id, audioEnabled: false, linkId, fadeInUs: 0, fadeOutUs: 0 }
     const free = work.tracks.find((t) => t.kind === 'audio' && !t.locked && simulate(work, [{ type: 'add_clip', trackId: t.id, clip: audio }]))

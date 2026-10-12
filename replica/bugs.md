@@ -13,6 +13,7 @@ Only reproduced bugs are listed. Each one has a test that failed before the fix 
 | BUG-006 | S3 | Tabs in Settings and the inspector point aria-controls at panels that don't exist | fixed in 16aa598 |
 | BUG-007 | S3 | Inspector slider thumbs have no accessible name | fixed in 16aa598 |
 | BUG-008 | S4 | Home requests project covers before their thumbnails exist (404) | fixed in 16aa598 |
+| BUG-013 | S2 | Chroma key leaves a real green screen in place at the default settings | fixed in M4 (before release) |
 | BUG-012 | S3 | Agent library tool checkboxes are too small and too close together to hit reliably (WCAG 2.5.8) | fixed in M3 |
 | BUG-011 | S2 | Audio clean-up fails on media whose sound is shorter than its picture | fixed in M3 (before release) |
 | BUG-010 | S2 | Editing one transform or caption-style field silently reset the others to defaults | fixed in b26aae5 |
@@ -185,6 +186,22 @@ Evidence: found while building M1. The on-canvas drag sends x then y, and x came
 Suspected cause: zod's `.partial()` keeps field defaults, so a patch `{y: 100}` parsed to `{x: 0, y: 100, scale: 1, …}`.
 Fix: `patchOf()` builds patch schemas without defaults. It's used for transform and caption-style patches, and covered by two regression tests.
 Status: fixed in b26aae5
+
+---
+
+### BUG-013: Chroma key leaves a real green screen in place at the default settings
+- Severity: S2 (the feature appears to do nothing on typical footage; raising Intensity to the top was the only workaround, and that eats into the subject)
+- Build: M4 work in progress, never shipped
+
+Steps
+1. Import a green-screen clip whose screen is #10c040 (a typical, darker green), select it, Remove BG → Chroma key on.
+
+Expected: the screen turns see-through.
+Actual: the corner stays green (max channel 151).
+Evidence: m4-looks.spec.ts › chroma key.
+Cause: the key compared colours by straight Cb/Cr distance from pure green (#00ff00). A darker green of the same hue has a much shorter Cb/Cr vector, so it was "far" from the key.
+Fix: the key distance is the hue angle between the colour and the key, plus a penalty for being much greyer than the key. Darker or lighter screens of the same hue key, and greys, skin and whites stay.
+Status: fixed before release (M4 commit)
 
 ---
 

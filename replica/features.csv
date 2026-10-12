@@ -35,13 +35,13 @@ Real-time player preview with frame-accurate seek,player,must,yes,yes,hard part 
 On-canvas move scale rotate with snap guides,player,must,yes,yes,"M1: centre-line snapping, Shift = 15° rotation steps, Alt = no snap"
 Preview quality setting,player,should,yes,yes,
 Fullscreen preview,player,should,yes,yes,
-Keyframes on transform opacity volume and effect params,keyframes,must,yes,partial,"S14 diamonds | M1: position, scale, rotation, opacity, volume with easing, continuous across split/trim/speed; effect params when effects exist (M4)"
+Keyframes on transform opacity volume and effect params,keyframes,must,yes,partial,"S14 diamonds | M1: position, scale, rotation, opacity, volume with easing, continuous across split/trim/speed | M4: effect and colour params are static per clip (not keyframable yet)"
 Keyframe graph panel with easing curves,keyframes,should,yes,partial,"S21 | M1: easing presets (linear, ease in/out, smooth, hold); no curve graph yet"
 Blend modes and opacity,compositing,must,yes,yes,M1: 16 blend modes
 Picture-in-picture / overlay tracks,compositing,must,yes,yes,M0: overlay tracks + position/scale/opacity in inspector; no on-canvas handles | M1: on-canvas handles
 Canvas background (color blur image),compositing,must,yes,partial,M1: colour and blurred fill; image background not yet
 Masks (linear mirror circle rectangle heart star) with feather invert keyframes,compositing,should,yes,no,
-Chroma key with intensity shadow edge,compositing,must,yes,no,
+Chroma key with intensity shadow edge,compositing,must,yes,yes,"M4: key colour (swatches, hex or pick from screen), intensity, edge softness, keep shadows, spill removal; hue-based so darker/lighter screens still key; Remove BG tab and chroma_key tool"
 Video stabilization (3 levels),compositing,should,yes,no,CapCut: possibly PRO on Windows; ffmpeg vidstab
 Motion tracking (attach text/sticker to subject),compositing,could,yes,no,CapCut: conflicting gating
 Add text with font size color stroke shadow background spacing,text,must,yes,yes,"S19 | M3: text clips with font, weight, bold/italic/underline, size, colour, outline, shadow, box (colour/opacity/roundness), letter spacing, line height, alignment; position/scale/rotation/opacity with keyframes; on-canvas handles"
@@ -71,15 +71,15 @@ Beat detection and beat markers,audio,should,yes,no,
 Auto ducking music under voice,audio,should,no,yes,"M3: ""Lower under speech"" writes a volume curve from the main-track transcript; duck_music tool; Sound fixer agent"
 Voiceover recording,audio,should,yes,yes,"M3: mic picker, record at the playhead while the timeline plays, saved with the project as AAC"
 Voice cloning / AI dubbing,audio,could,yes,no,CapCut: PRO/credits; via user API or local model
-Video effects (our authored shader presets),effects,must,yes,no,CapCut: PRO pack; write our own GLSL
-Transitions (our authored set) with duration and apply-to-all,effects,must,yes,no,CapCut: PRO pack
-Filters / looks with intensity,effects,must,yes,no,CapCut: PRO pack
-Import .cube LUTs,effects,must,yes,no,
+Video effects (our authored shader presets),effects,must,yes,yes,"S08 | M4: 22 own GLSL effects (blur, glow, VHS, old film, grain, scanlines, glitch, RGB split, wave, shake, zoom pulse, bulge, mirror, kaleidoscope, pixelate, halftone, sketch, posterize, duotone, invert, light leak, flash) with params, up to 8 per clip in order; per clip, not as separate timeline segments"
+Transitions (our authored set) with duration and apply-to-all,effects,must,yes,yes,"S09 | M4: 16 own transitions (dissolve, dips, 4 pushes, 3 wipes, circle, clock, zoom, blur, pixelate, glitch), 0.1–5 s, centred on the cut using the clips' handles, apply to all cuts"
+Filters / looks with intensity,effects,must,yes,yes,S10 | M4: 20 own filters in 6 groups with strength; previews drawn by the real pipeline
+Import .cube LUTs,effects,must,yes,yes,"M4: 3D .cube up to 65³ (DOMAIN_MIN/MAX), validated on import, stored once by content hash, strength; apply_lut tool"
 Stickers / emoji / shapes (import PNG GIF Lottie),effects,should,yes,no,use OpenMoji/Twemoji
 Clip in/out/combo animations,effects,should,yes,no,
 Body effects (person-segmented effects),effects,could,yes,no,
 Adjustment layers,color,should,yes,no,
-Basic color adjust (exposure contrast temp tint sat etc),color,must,yes,no,S18
+Basic color adjust (exposure contrast temp tint sat etc),color,must,yes,yes,"S18 | M4: exposure, brightness, contrast, highlights, shadows, saturation, vibrance, temperature, tint, fade, sharpen, vignette, grain; reset; not keyframable yet"
 HSL,color,should,yes,no,
 Curves,color,should,yes,no,
 Color wheels,color,could,yes,no,

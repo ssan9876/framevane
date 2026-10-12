@@ -6,8 +6,9 @@ import type { MediaInfo } from '../../shared/api'
 import { useApp } from '../app/store'
 import { addAssetToTimeline } from './actions'
 import { CaptionFiles, TextTab, TranscriptEditor, VoiceoverRecorder } from './AssetTabsM3'
+import { EffectsTab, FiltersTab, TransitionsTab } from './LookTabs'
 
-/** S04–S12 · Asset panel. Media, Audio, Text and Captions work; effects, transitions, filters and stickers are reachable stubs. */
+/** S04–S12 · Asset panel. Stickers and adjustment layers are reachable stubs; everything else works. */
 export function AssetPanel() {
   const [tab, setTab] = useState('media')
   return (
@@ -31,9 +32,9 @@ export function AssetPanel() {
       <TabPanel value="audio" className="flex min-h-0"><AudioTab /></TabPanel>
       <TabPanel value="text" className="flex min-h-0 flex-col"><TextTab /></TabPanel>
       <TabPanel value="stickers"><Stub id="S07" what="Stickers, emoji and shapes" when="should-have" /></TabPanel>
-      <TabPanel value="effects"><Stub id="S08" what="Video effects" when="M4" /></TabPanel>
-      <TabPanel value="transitions"><Stub id="S09" what="Transitions" when="M4" /></TabPanel>
-      <TabPanel value="filters"><Stub id="S10" what="Filters and LUTs" when="M4" /></TabPanel>
+      <TabPanel value="effects" className="flex min-h-0 flex-col"><EffectsTab /></TabPanel>
+      <TabPanel value="transitions" className="flex min-h-0 flex-col"><TransitionsTab /></TabPanel>
+      <TabPanel value="filters" className="flex min-h-0 flex-col"><FiltersTab /></TabPanel>
       <TabPanel value="captions" className="scroll-y"><CaptionsTab /></TabPanel>
       <TabPanel value="adjust"><Stub id="S12" what="Adjustment layers and saved color presets" when="should-have" /></TabPanel>
     </PanelTabs>

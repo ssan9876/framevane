@@ -100,6 +100,55 @@ export const Keyframes = z.object({
 })
 export type Keyframes = z.infer<typeof Keyframes>
 
+/**
+ * Basic colour (S18). Values are −100…100 with 0 = unchanged, except fade, sharpen, vignette and grain (0…100).
+ */
+export const ColorAdjust = z.object({
+  exposure: z.number().min(-100).max(100).default(0),
+  brightness: z.number().min(-100).max(100).default(0),
+  contrast: z.number().min(-100).max(100).default(0),
+  saturation: z.number().min(-100).max(100).default(0),
+  vibrance: z.number().min(-100).max(100).default(0),
+  temperature: z.number().min(-100).max(100).default(0),
+  tint: z.number().min(-100).max(100).default(0),
+  highlights: z.number().min(-100).max(100).default(0),
+  shadows: z.number().min(-100).max(100).default(0),
+  fade: z.number().min(0).max(100).default(0),
+  sharpen: z.number().min(0).max(100).default(0),
+  vignette: z.number().min(0).max(100).default(0),
+  grain: z.number().min(0).max(100).default(0),
+})
+export type ColorAdjust = z.infer<typeof ColorAdjust>
+export const NO_COLOR: ColorAdjust = ColorAdjust.parse({})
+
+/** A filter (look) from the built-in catalogue (looks.ts), mixed with the original by intensity. */
+export const FilterUse = z.object({ id: z.string().min(1).max(40), intensity: z.number().min(0).max(1).default(0.8) })
+export type FilterUse = z.infer<typeof FilterUse>
+
+/** A .cube LUT the project knows about; the file lives in the project's luts folder. */
+export const LutRef = z.object({ id: Id, name: z.string().max(200), file: z.string().min(1).max(200) })
+export type LutRef = z.infer<typeof LutRef>
+export const LutUse = z.object({ id: Id, intensity: z.number().min(0).max(1).default(1) })
+export type LutUse = z.infer<typeof LutUse>
+
+/** Green/blue screen. intensity: how much colour around the key goes; edge: softness; shadow: keep darker areas; spill: remove the key colour's cast. */
+export const ChromaKey = z.object({
+  color: HexColor.default('#00ff00'),
+  intensity: z.number().min(0).max(1).default(0.4),
+  edge: z.number().min(0).max(1).default(0.2),
+  shadow: z.number().min(0).max(1).default(0),
+  spill: z.number().min(0).max(1).default(0.5),
+})
+export type ChromaKey = z.infer<typeof ChromaKey>
+
+/** One effect on a clip (kinds and their params: looks.ts). Effects run in list order. */
+export const Effect = z.object({ id: Id, kind: z.string().min(1).max(40), params: z.record(z.string().max(40), z.number()).default({}) })
+export type Effect = z.infer<typeof Effect>
+
+/** A transition from this clip into the clip that starts right where it ends (same track), centred on the cut. */
+export const Transition = z.object({ kind: z.string().min(1).max(40), durationUs: z.number().int().min(100_000).max(5_000_000).default(500_000) })
+export type Transition = z.infer<typeof Transition>
+
 const ClipBase = {
   id: Id,
   startUs: Us.min(0),
@@ -131,8 +180,17 @@ export const MediaClip = z.object({
   /** Audio fade in / out lengths (timeline µs), on top of volume and its keyframes. */
   fadeInUs: Us.min(0).default(0),
   fadeOutUs: Us.min(0).default(0),
+  /** Picture look, applied in this order: chroma key, filter, LUT, colour, effects. Ignored on audio clips. */
+  chroma: ChromaKey.nullable().default(null),
+  filter: FilterUse.nullable().default(null),
+  lut: LutUse.nullable().default(null),
+  color: ColorAdjust.default(NO_COLOR),
+  effects: z.array(Effect).max(8).default([]),
+  transition: Transition.nullable().default(null),
 })
 export type MediaClip = z.infer<typeof MediaClip>
+/** The look fields of a clip with no look (for building audio clips from video ones). */
+export const NO_LOOK = { chroma: null, filter: null, lut: null, color: NO_COLOR, effects: [], transition: null } satisfies Partial<MediaClip>
 
 export const Word = z.object({ text: z.string(), startUs: Us.min(0), endUs: Us.min(0) }) // relative to clip start
 export type Word = z.infer<typeof Word>
@@ -237,6 +295,8 @@ export const Project = z.object({
   /** Render order: index 0 is drawn first (bottom). The main track is usually index 0. */
   tracks: z.array(Track),
   markers: z.array(Marker).default([]),
+  /** .cube LUTs imported into this project. */
+  luts: z.record(Id, LutRef).default({}),
   /** Bumped by every committed op batch. Agents and exports remember the version they started from. */
   version: z.number().int().min(0),
 })
@@ -251,6 +311,7 @@ export function emptyProject(id: string, name: string, canvas?: Partial<Canvas>)
     assets: {},
     tracks: [{ id: 'track-main', kind: 'video', name: 'Main', main: true, locked: false, hidden: false, muted: false, clips: [] }],
     markers: [],
+    luts: {},
     version: 0,
   }
 }

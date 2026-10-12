@@ -1,5 +1,5 @@
 import {
-  applyOps, captionLines, clipEnd, duckingKeyframes, findClip, isFiller, parseSrt, speechRanges, timelineWords, toPlainText, toSrt, wordCutRanges,
+  NO_LOOK, applyOps, captionLines, clipEnd, duckingKeyframes, findClip, isFiller, parseSrt, speechRanges, timelineWords, toPlainText, toSrt, wordCutRanges,
   DEFAULT_CAPTION_STYLE, NO_TEXT_ANIM, TextStyle,
   type Clip, type MediaClip, type OpInput, type Project, type TextClip, type TimelineWord,
 } from '@framevane/doc'
@@ -90,7 +90,7 @@ export async function cleanUpAudio(clipId: string, preset: AudioPreset) {
     const audio: MediaClip = {
       id: newId('clip'), kind: 'audio', assetId: m.asset.id, startUs: now.startUs, durationUs: now.durationUs, enabled: true, inUs: now.inUs, speed: now.speed,
       transform: now.transform, volumeDb: now.volumeDb, blend: 'normal', audioEnabled: true, reversed: false, linkId,
-      keyframes: now.keyframes.volumeDb ? { volumeDb: now.keyframes.volumeDb } : {}, fadeInUs: now.fadeInUs, fadeOutUs: now.fadeOutUs,
+      keyframes: now.keyframes.volumeDb ? { volumeDb: now.keyframes.volumeDb } : {}, fadeInUs: now.fadeInUs, fadeOutUs: now.fadeOutUs, ...NO_LOOK,
     }
     const tid = cur.tracks.find((t) => t.kind === 'audio' && !t.locked && free(t.clips, audio.startUs, audio.durationUs))?.id
     if (tid) ops.push({ type: 'add_clip', trackId: tid, clip: audio })

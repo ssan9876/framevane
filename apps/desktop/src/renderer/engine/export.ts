@@ -5,6 +5,7 @@ import { projectDurationUs, type Project } from '@framevane/doc'
 import type { ExportSettings } from '../../shared/api'
 import { renderMix } from './audio'
 import { drawFrame, ensureFonts, fetchVisuals } from './compositor'
+import { ensureLuts } from './luts'
 import { MediaPool } from './sources'
 
 /**
@@ -23,6 +24,7 @@ export async function exportProject(doc: Project, s: ExportSettings, onProgress:
     throw new Error(`This system can't encode ${s.codec === 'hevc' ? 'HEVC' : 'H.264'} at ${W}×${H}. Try H.264 or a lower resolution.`)
   }
   await ensureFonts(doc)
+  await ensureLuts(doc)
   const pool = new MediaPool()
   const { handle } = await window.framevane.export.open(s.outputPath)
   let finished = false

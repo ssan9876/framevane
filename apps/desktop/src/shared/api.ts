@@ -1,4 +1,4 @@
-import type { AssetRef, OpInput, Project } from '@framevane/doc'
+import type { AssetRef, LutRef, OpInput, Project } from '@framevane/doc'
 
 /** The typed bridge between renderer and main (exposed as window.framevane by the preload). */
 
@@ -134,7 +134,7 @@ export interface BatchEvent { batchId: string; items: BatchItem[]; done: boolean
 export interface ReelApi {
   app: {
     info(): Promise<{ version: string; userData: string; projectsDir: string; ffmpeg: string | null; sidecar: 'unknown' | 'ready' | 'starting' | 'error'; gpu?: string }>
-    pickFiles(opts: { kind: 'media' | 'image' | 'subtitle' | 'font' }): Promise<string[]>
+    pickFiles(opts: { kind: 'media' | 'image' | 'subtitle' | 'font' | 'lut' }): Promise<string[]>
     writeTextFile(path: string, text: string): Promise<void>
     readTextFile(path: string): Promise<string>
     pickSavePath(opts: { defaultName: string; ext: string }): Promise<string | null>
@@ -166,6 +166,11 @@ export interface ReelApi {
     /** A voiceover recorded in the window (WebM/Opus bytes), saved with the project and imported. */
     saveRecording(projectId: string, data: Uint8Array): Promise<MediaInfo>
     onChange(cb: (m: MediaInfo) => void): () => void
+  }
+  luts: {
+    /** Copy .cube files into the app (validated); returns refs to add to a project with add_lut. */
+    import(paths: string[]): Promise<LutRef[]>
+    read(file: string): Promise<string>
   }
   fonts: {
     system(): Promise<string[]>

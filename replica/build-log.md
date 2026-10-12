@@ -66,7 +66,8 @@ Count: 31 screens. 12 done, 9 partial, 10 stub. Every screen is reachable.
 
 ## Deviations from architecture.md
 
-- **Compositor is Canvas 2D for M0, not WebGPU.** It is the same single renderer for preview and export, so parity holds. WebGPU replaces `drawFrame` internals when effects, masks and color arrive (M4).
+- **Compositor is Canvas 2D for M0, not WebGPU.** It is the same single renderer for preview and export, so parity holds.
+- **Looks run on WebGL2 (GLSL ES 3.0), not WebGPU (WGSL) (M4).** WebGL2 calls are synchronous, so the shader passes run inside the one `drawFrame` that preview and export share. WebGPU would have made that path async. WebGL2 also works on every Windows GPU driver, and in software for tests. Masks and AI cut-outs (M5) can reuse the same pipeline.
 - **The agent loop is the documented streaming manual loop, not the beta Tool Runner.** That gives direct control of streaming, cancellation and mixed Zod/MCP tool schemas.
 - **SQLite runs on Electron's built-in `node:sqlite` (Node 24.21), not better-sqlite3.** No native rebuild is needed; the SQL is the same.
 - **Silence detection runs in the main process via ffmpeg `silencedetect`, not in the Python sidecar.** It is faster and needs no model.
@@ -141,6 +142,25 @@ Harder than expected:
 - axe checks colour contrast even on `aria-hidden` text, and treats outlined text by its stroke colour. The preset previews are now drawn on canvases by the compositor (more faithful anyway).
 - The inspector column didn't scroll; the longer text inspector spilled over the timeline.
 
+## M4 visuals (2026-10-12)
+
+| area | status | notes |
+| --- | --- | --- |
+| Look pipeline | done | WebGL2 shader passes per clip (chroma key → filter → LUT → colour → effects), run inside the shared compositor, so preview and export match (the export test checks pixels of the MP4). Clips without a look take the old path unchanged. Pictures are processed at the size they are shown, never above the source. |
+| Filters (S10) | done | 20 own looks in 6 groups (natural, warm, cool, vivid, film, black & white) with strength. Each is a set of colour values plus optional split toning, so agents can read what a filter does. Tile previews are drawn by the same shaders on a drawn sample scene. |
+| LUTs | done | 3D .cube import (validated, 1D refused with a reason), stored once in the app's luts folder by content hash, strength per clip. Project files list them (`luts`), and `add_lut` registers one (undoable). |
+| Basic colour (S18) | done | 13 sliders in Light, Colour and Finish groups, and Reset. Not keyframable yet. |
+| Effects (S08) | done | 22 own effects with params, up to 8 per clip, run in order; reorder and remove in the inspector's new Effects tab. They go on clips, not as separate effect segments on the timeline. |
+| Transitions (S09) | done | 16 own transitions, 0.1–5 s, centred on the cut. They read past each clip's ends (the media's handles), holding the first or last frame where there's no more media, so the timeline's timing never changes. "Apply to all cuts". A diamond on the timeline marks each one. A split keeps the transition on the right piece. |
+| Chroma key | done | Remove BG tab: colour (swatches, hex, or pick from the screen), intensity, edge softness, keep shadows, remove spill. |
+| Agent tools | done | list_looks, adjust_color, apply_filter, apply_lut (path or id), add_effect, remove_effect, set_transition (per clip or a whole track), chroma_key; get_timeline now reports each clip's look. New built-in agent "Look designer". All of these also go to Claude Code over MCP. |
+| Adjustment layers, saved colour presets, HSL, curves, keyframed effect params | not built | should-haves |
+
+Harder than expected:
+- **BUG-013:** the first chroma key measured plain colour distance, so a real green screen (darker than pure #00ff00) didn't key at the default settings. It now compares hue direction and relative saturation.
+- Picking the GPU API: WebGPU submits work asynchronously, which would have split the one synchronous draw function that preview and export share. WebGL2 (GLSL ES 3.0) runs inside it (see Deviations).
+- Transitions mix premultiplied layers; with straight alpha a cross-fade over the background came out too dark.
+
 ## Next (architecture build order)
 
 - **Still open from M1/M2:**
@@ -149,6 +169,7 @@ Harder than expected:
   - run F12 and `get_frames` against the live Claude API (needs a key)
   - OAuth MCP servers
   - agent import/export
-- **M4 visuals:**
-  - own WGSL effects, transitions and filters (≈20 / 15 / 20), .cube LUTs
-  - basic colour (S18), chroma key
+- **M5 AI:**
+  - Remove BG (RVM for video, BiRefNet for photos), local on the GPU
+  - auto reframe (subject tracking → keyframes)
+  - a model download manager in settings (S23)

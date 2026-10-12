@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import {
-  AnimProp, AssetRef, BlendMode, Keyframe, CaptionClip, Canvas, Clip, Easing, Id, MediaClip, Marker, patchOf, PositiveUs, Project, TextAnimKind, TextStyle, Track, Transform, Us,
+  AnimProp, AssetRef, BlendMode, Keyframe, CaptionClip, Canvas, ChromaKey, Clip, ColorAdjust, Easing, Effect, FilterUse, Id, LutRef, LutUse, MediaClip, Marker, Transition, patchOf, PositiveUs, Project, TextAnimKind, TextStyle, Track, Transform, Us,
   type Clip as ClipT, type Project as ProjectT, type TextClip, type Track as TrackT,
 } from './schema'
 import { removeKeyframeAt, scaleKeyframes, sliceKeyframes, upsertKeyframe, type AnimatableClip } from './keyframes'
@@ -69,6 +69,21 @@ export const Op = z.discriminatedUnion('type', [
       out: z.object({ kind: TextAnimKind.optional(), durationUs: PositiveUs.optional() }).optional(),
     }).optional(),
   }),
+  /**
+   * A video or image clip's look: colour (a patch), filter, LUT, chroma key (a patch; null turns it off), the whole
+   * effect list, and the transition into the next clip. Fields left out are unchanged.
+   */
+  z.object({
+    type: z.literal('set_look'), clipId: Id,
+    color: patchOf(ColorAdjust).optional(),
+    filter: FilterUse.nullable().optional(),
+    lut: LutUse.nullable().optional(),
+    chroma: patchOf(ChromaKey).nullable().optional(),
+    effects: z.array(Effect).max(8).optional(),
+    transition: Transition.nullable().optional(),
+  }),
+  /** Register a .cube LUT already copied into the project's luts folder. */
+  z.object({ type: z.literal('add_lut'), lut: LutRef }),
   z.object({ type: z.literal('set_keyframe'), clipId: Id, prop: AnimProp, tUs: Us.min(0), value: z.number(), easing: Easing.optional() }),
   z.object({ type: z.literal('remove_keyframe'), clipId: Id, prop: AnimProp, tUs: Us.min(0) }),
   /** Replace every keyframe of one property (e.g. a generated ducking curve). An empty list removes the animation. */
@@ -87,6 +102,7 @@ export const Op = z.discriminatedUnion('type', [
     assets: z.record(Id, AssetRef.nullable()).optional(),
     canvas: Canvas.optional(),
     markers: z.array(Marker).optional(),
+    luts: z.record(Id, LutRef.nullable()).optional(),
   }),
 ])
 export type Op = z.infer<typeof Op>
@@ -343,6 +359,27 @@ function applyOne(doc: ProjectT, op: Op): ProjectT {
       }))
     }
 
+    case 'set_look': {
+      const f = needClip(doc, op.clipId)
+      if (f.clip.kind !== 'video' && f.clip.kind !== 'image') throw new OpError('kind_mismatch', 'Looks apply to video and image clips')
+      const c = f.clip
+      if (op.lut && !doc.luts[op.lut.id]) throw new OpError('not_found', `LUT ${op.lut.id} not found`)
+      if (op.effects && new Set(op.effects.map((e) => e.id)).size !== op.effects.length) throw new OpError('invalid', 'Effect ids must be unique on a clip')
+      const next: MediaClip = {
+        ...c,
+        ...(op.color ? { color: ColorAdjust.parse({ ...c.color, ...defined(op.color) }) } : {}),
+        ...(op.filter !== undefined ? { filter: op.filter } : {}),
+        ...(op.lut !== undefined ? { lut: op.lut } : {}),
+        ...(op.chroma !== undefined ? { chroma: op.chroma === null ? null : ChromaKey.parse({ ...(c.chroma ?? {}), ...defined(op.chroma) }) } : {}),
+        ...(op.effects ? { effects: op.effects } : {}),
+        ...(op.transition !== undefined ? { transition: op.transition } : {}),
+      }
+      return mapTrack(doc, f.track.id, (t) => ({ ...t, clips: t.clips.map((x) => (x.id === c.id ? next : x)) }))
+    }
+
+    case 'add_lut':
+      return { ...doc, luts: { ...doc.luts, [op.lut.id]: op.lut } }
+
     case 'set_text': {
       const f = needClip(doc, op.clipId)
       if (f.clip.kind !== 'text') throw new OpError('kind_mismatch', 'Not a text clip')
@@ -433,7 +470,12 @@ function applyOne(doc: ProjectT, op: Op): ProjectT {
         assets = { ...assets }
         for (const [id, a] of Object.entries(op.assets)) if (a === null) delete assets[id]; else assets[id] = a
       }
-      return { ...doc, tracks, assets, canvas: op.canvas ?? doc.canvas, markers: op.markers ?? doc.markers }
+      let luts = doc.luts
+      if (op.luts) {
+        luts = { ...luts }
+        for (const [id, l] of Object.entries(op.luts)) if (l === null) delete luts[id]; else luts[id] = l
+      }
+      return { ...doc, tracks, assets, luts, canvas: op.canvas ?? doc.canvas, markers: op.markers ?? doc.markers }
     }
   }
 }
@@ -454,6 +496,13 @@ function inverseOf(prev: ProjectT, next: ProjectT): Op {
       if (prev.assets[id] !== next.assets[id]) assets[id] = prev.assets[id] ?? null
     }
     inv.assets = assets
+  }
+  if (prev.luts !== next.luts) {
+    const luts: Record<string, z.infer<typeof LutRef> | null> = {}
+    for (const id of new Set([...Object.keys(prev.luts), ...Object.keys(next.luts)])) {
+      if (prev.luts[id] !== next.luts[id]) luts[id] = prev.luts[id] ?? null
+    }
+    inv.luts = luts
   }
   if (prev.canvas !== next.canvas) inv.canvas = prev.canvas
   if (prev.markers !== next.markers) inv.markers = prev.markers
@@ -532,7 +581,7 @@ function sampleKeys(kfs: { tUs: number; value: number }[], t: number) {
 /** Keep [start, at) of a clip. */
 function trimRight(c: ClipT, atUs: number): ClipT {
   const durationUs = atUs - c.startUs
-  if (isMedia(c)) return { ...c, durationUs, fadeOutUs: 0, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, 0, durationUs) } : {}) }
+  if (isMedia(c)) return { ...c, durationUs, fadeOutUs: 0, transition: null, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, 0, durationUs) } : {}) }
   if (c.kind === 'text') return { ...c, durationUs, anim: { ...c.anim, out: { ...c.anim.out, kind: 'none' } }, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, 0, durationUs) } : {}) }
   if (c.kind === 'caption') return { ...c, durationUs, words: c.words.filter((w) => w.startUs < durationUs).map((w) => ({ ...w, endUs: Math.min(w.endUs, durationUs) })) }
   return c
@@ -597,6 +646,13 @@ export function describeOp(doc: ProjectT, raw: OpInput): string {
     case 'add_marker': return `Add marker at ${formatUs(op.marker.atUs)}`
     case 'remove_marker': return 'Remove marker'
     case 'set_caption_text': return `Edit caption → "${op.text.slice(0, 32)}"`
+    case 'set_look': {
+      const what = [op.color && 'colour', op.filter !== undefined && (op.filter ? `filter ${op.filter.id}` : 'no filter'), op.lut !== undefined && (op.lut ? 'LUT' : 'no LUT'),
+        op.chroma !== undefined && (op.chroma ? 'chroma key' : 'no chroma key'), op.effects && `${op.effects.length} effect${op.effects.length === 1 ? '' : 's'}`,
+        op.transition !== undefined && (op.transition ? `${op.transition.kind} transition` : 'no transition')].filter(Boolean)
+      return `Look of ${clipName(op.clipId)}: ${what.join(', ') || 'unchanged'}`
+    }
+    case 'add_lut': return `Import LUT ${op.lut.name}`
     case 'set_text': return op.text !== undefined ? `Edit text → "${op.text.slice(0, 32)}"` : op.anim ? `Animate ${clipName(op.clipId)}` : `Restyle ${clipName(op.clipId)}`
     case 'set_clip_props': return `Change ${clipName(op.clipId)} (${Object.keys(op).filter((k) => !['type', 'clipId'].includes(k)).join(', ')})`
     case 'set_track_style': return 'Restyle captions'

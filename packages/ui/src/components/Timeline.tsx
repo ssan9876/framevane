@@ -37,6 +37,10 @@ export interface TimelineClipProps {
   /** Real waveform peaks (0..1), already sliced to this clip's source range. Overrides waveformSeed. */
   waveform?: ArrayLike<number>
   speedLabel?: string
+  /** Short tags shown on the clip and read out with it (e.g. "fx", "key"). */
+  tags?: string[]
+  /** Extra words for screen readers only (e.g. a transition drawn next to the clip). */
+  srNote?: string
   /** Proposed by an agent and not yet applied (S29 preview): dashed agent outline. */
   proposed?: boolean
 }
@@ -46,7 +50,7 @@ export interface TimelineClipProps {
  * a11y: the timeline is a role="grid" of tracks; each clip is a focusable gridcell announced as
  * "<label>, <kind>, <start>–<end>, selected". Arrow keys move between clips, Enter opens it in the inspector.
  */
-export function TimelineClip({ kind, label, width, height, selected, disabled, missing, processing, keyframes, waveformSeed, thumbs, stripStyle, waveform: peaks, speedLabel, proposed }: TimelineClipProps) {
+export function TimelineClip({ kind, label, width, height, selected, disabled, missing, processing, keyframes, waveformSeed, thumbs, stripStyle, waveform: peaks, speedLabel, tags, srNote, proposed }: TimelineClipProps) {
   const bars = useMemo(() => {
     if (peaks) return resample(peaks, Math.max(4, Math.floor(width / 3)))
     return kind === 'audio' || waveformSeed !== undefined ? waveform(Math.floor(width / 3), waveformSeed ?? 1) : null
@@ -57,7 +61,7 @@ export function TimelineClip({ kind, label, width, height, selected, disabled, m
       role="gridcell"
       tabIndex={0}
       aria-selected={selected}
-      aria-label={`${label}, ${kind}${disabled ? ', disabled' : ''}${missing ? ', media missing' : ''}`}
+      aria-label={`${label}, ${kind}${tags?.length ? `, ${tags.join(', ')}` : ''}${srNote ? `, ${srNote}` : ''}${disabled ? ', disabled' : ''}${missing ? ', media missing' : ''}`}
       style={{ width, height }}
       className={cn(
         'group relative shrink-0 overflow-hidden rounded-sm text-fg',
@@ -81,7 +85,12 @@ export function TimelineClip({ kind, label, width, height, selected, disabled, m
       <div className={cn('relative flex items-center gap-1 px-1.5 [&_svg]:size-3 [&_svg]:shrink-0', compact ? 'h-full' : 'h-5 bg-gradient-to-b from-scrim/50 to-transparent')}>
         {clipIcon[kind]}
         <span className="truncate text-xs">{label}</span>
-        {speedLabel && <span className="ml-auto rounded-xs bg-scrim/50 px-1 text-[10px]">{speedLabel}</span>}
+        {(speedLabel || tags?.length) && (
+          <span className="ml-auto flex shrink-0 gap-0.5">
+            {tags?.map((t) => <span key={t} className="rounded-xs bg-scrim/50 px-1 text-[10px]">{t}</span>)}
+            {speedLabel && <span className="rounded-xs bg-scrim/50 px-1 text-[10px]">{speedLabel}</span>}
+          </span>
+        )}
       </div>
       {keyframes?.map((k, i) => (
         <Diamond key={i} state={k.on ? 'on' : 'has'} size={12} className="absolute bottom-0.5 -translate-x-1/2 drop-shadow-[0_0_2px_rgba(0,0,0,0.95)]" style={{ left: `${Math.min(99, Math.max(1, k.at * 100))}%` }} />

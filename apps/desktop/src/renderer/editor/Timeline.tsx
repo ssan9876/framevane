@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent as RPointerEvent } from 'react'
 import { ArrowLeftRight, Magnet, MousePointer2, Scissors, Trash2, ChevronsLeft, ChevronsRight, Maximize2, ZoomIn, ZoomOut, Link2, Snowflake, Undo2 as Rewind, FlipHorizontal, Bookmark, Copy, ClipboardPaste, CopyPlus, AudioLines, EyeOff, Group, Ungroup } from 'lucide-react'
 import { ContextMenu, IconButton, IconToggle, Ruler, SnapGuide, TimelineClip, TrackHeader, Playhead as PlayheadMark, type ClipKind } from '@framevane/ui'
-import { clipEnd, findClip, projectDurationUs, type Clip, type MediaClip, type OpInput, type Project, type Track } from '@framevane/doc'
+import { clipEnd, findClip, isNeutralColor, nextAdjacent, projectDurationUs, transitionDef, type Clip, type MediaClip, type OpInput, type Project, type Track } from '@framevane/doc'
 import { useApp } from '../app/store'
 import { useEditor } from './Editor'
 import { addAssetToTimeline, deleteSelection, newId, rippleDeleteSide, splitAtPlayhead } from './actions'
@@ -365,6 +365,12 @@ function ClipView({ doc, clip, track, start, dur, pxPerUs, selected, peaks, medi
     waveform = Array.from(p.subarray(a, Math.max(a + 1, b)), (v) => v / 255)
   }
   const visual = clip.kind === 'video' || clip.kind === 'image'
+  const tags = media && visual ? [
+    ...(media.chroma ? ['key'] : []),
+    ...(media.filter || media.lut || !isNeutralColor(media.color) ? ['colour'] : []),
+    ...(media.effects.length ? ['fx'] : []),
+  ] : []
+  const tr = media && visual && media.transition && nextAdjacent(track, media.id) ? transitionDef(media.transition.kind)?.name ?? media.transition.kind : null
   const items = [
     { label: 'Copy', shortcut: 'Ctrl+C', icon: <Copy />, onSelect: () => void copySelection() },
     { label: 'Cut', shortcut: 'Ctrl+X', icon: <Scissors />, onSelect: cutSelection },
@@ -396,7 +402,12 @@ function ClipView({ doc, clip, track, start, dur, pxPerUs, selected, peaks, medi
           waveform={waveform}
           speedLabel={media && media.speed !== 1 ? `${+media.speed.toFixed(2)}×` : media?.linkId ? '🔗' : undefined}
           keyframes={keyframes.length ? keyframes : undefined}
+          tags={tags.length ? tags : undefined}
+          srNote={tr ? `${tr} transition into the next clip` : undefined}
         />
+        {tr && (
+          <span aria-hidden title={`${tr} transition`} className="pointer-events-none absolute -right-2 top-1/2 z-10 size-4 -translate-y-1/2 rotate-45 rounded-xs border border-accent bg-accent-soft" />
+        )}
         <span data-edge="l" className="absolute inset-y-0 left-0 w-2 cursor-ew-resize" aria-hidden />
         <span data-edge="r" className="absolute inset-y-0 right-0 w-2 cursor-ew-resize" aria-hidden />
       </div>

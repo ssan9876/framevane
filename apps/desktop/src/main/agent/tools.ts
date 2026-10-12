@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type Anthropic from '@anthropic-ai/sdk'
 import {
-  applyOps, BLEND_MODES, buildCaptionClips, captionLines, clipEnd, DEFAULT_CAPTION_STYLE, duckingKeyframes, findClip, formatUs, isFiller, mergeRanges, NO_TEXT_ANIM,
+  applyOps, BLEND_MODES, EFFECTS, effectDef, effectParams, FILTERS, filterDef, nextAdjacent, NO_COLOR, TRANSITIONS, transitionDef, buildCaptionClips, captionLines, clipEnd, DEFAULT_CAPTION_STYLE, duckingKeyframes, findClip, formatUs, isFiller, mergeRanges, NO_TEXT_ANIM,
   parseSrt, projectDurationUs, sourceTimeAt, speechRanges, TEXT_ANIMS, TextStyle, timelineSilences, timelineWords, toPlainText, toSrt, wordCutRanges,
   type MediaClip, type OpInput, type Project, type SourceWord, type TextClip,
 } from '@framevane/doc'
@@ -11,6 +11,7 @@ import { uuid7 } from '../db'
 import type { Analysis } from '../analysis'
 import type { Media } from '../media'
 import type { Tts } from '../tts'
+import type { Luts } from '../luts'
 
 /**
  * The editor's agent tools. Read tools look at the run's working copy of the project ("fork"); write tools change only
@@ -28,6 +29,8 @@ export interface ToolCtx {
   media: Media
   /** Text to speech (absent in contexts that can't speak). */
   tts?: Tts
+  /** Imported .cube LUTs (absent where files can't be imported). */
+  luts?: Luts
   /** The run's working copy. */
   doc(): Project
   /** Apply ops to the working copy and record them as proposed edits. Throws OpError if invalid. */
@@ -131,6 +134,7 @@ export const TOOLS: AgentTool[] = [
           id: c.id, kind: c.kind, start: sec(c.startUs), end: sec(clipEnd(c)),
           ...(c.kind === 'caption' || c.kind === 'text' ? { text: c.text } : {}),
           ...('assetId' in c ? { media: d.assets[c.assetId]?.name, sourceIn: sec(c.inUs), speed: c.speed, ...(c.enabled ? {} : { enabled: false }) } : {}),
+          ...(c.kind === 'video' || c.kind === 'image' ? lookSummary(c) : {}),
         })),
       }))
       const n = tracks.reduce((s, t) => s + t.clips.length, 0)
@@ -371,7 +375,7 @@ export const TOOLS: AgentTool[] = [
   tool({
     name: 'get_frames',
     provider: 'editor',
-    description: 'Look at the video: JPEG frames (max 768px) of the top visible clip at the given timeline times. Use sparingly (max 6).',
+    description: 'Look at the video: JPEG frames (max 768px) of the top visible clip at the given timeline times. They show the source footage, before colour, filters, LUTs and effects. Use sparingly (max 6).',
     schema: z.object({ timesSeconds: z.array(z.number().min(0)).min(1).max(6) }),
     permission: 'auto',
     mutates: false,
@@ -668,7 +672,201 @@ export const TOOLS: AgentTool[] = [
       return { summary: `${voice} · ${sec(m!.asset.durationUs ?? 0)}s`, content: JSON.stringify({ assetId: m!.asset.id, voice, durationSeconds: sec(m!.asset.durationUs ?? 0) }) }
     },
   }),
+
+  tool({
+    name: 'list_looks',
+    provider: 'editor',
+    description: 'The built-in effects (with their params), filters, transitions, and the LUTs imported into this project. Use the ids with add_effect, apply_filter, set_transition and apply_lut.',
+    schema: z.object({}),
+    permission: 'auto',
+    mutates: false,
+    async run(_i, ctx) {
+      const d = ctx.doc()
+      return {
+        summary: `${EFFECTS.length} effects, ${FILTERS.length} filters, ${TRANSITIONS.length} transitions`,
+        content: JSON.stringify({
+          effects: EFFECTS.map((e) => ({ kind: e.kind, name: e.name, description: e.description, params: e.params.map((p) => ({ key: p.key, min: p.min, max: p.max, default: p.default })) })),
+          filters: FILTERS.map((f) => ({ id: f.id, name: f.name, category: f.category })),
+          transitions: TRANSITIONS.map((t) => ({ kind: t.kind, name: t.name, description: t.description })),
+          luts: Object.values(d.luts).map((l) => ({ lutId: l.id, name: l.name })),
+        }),
+      }
+    },
+  }),
+
+  tool({
+    name: 'adjust_color',
+    provider: 'editor',
+    description: 'Basic colour on video/photo clips. Values -100…100 (0 = unchanged): exposure, brightness, contrast, saturation, vibrance, temperature (+ warmer), tint (+ magenta), highlights, shadows. 0…100: fade, sharpen, vignette, grain. Only the fields you pass change; reset: true starts from neutral.',
+    schema: z.object({
+      clipIds: z.array(z.string()).min(1).max(200),
+      reset: z.boolean().default(false),
+      ...Object.fromEntries((['exposure', 'brightness', 'contrast', 'saturation', 'vibrance', 'temperature', 'tint', 'highlights', 'shadows'] as const).map((k) => [k, z.number().min(-100).max(100).optional()])),
+      ...Object.fromEntries((['fade', 'sharpen', 'vignette', 'grain'] as const).map((k) => [k, z.number().min(0).max(100).optional()])),
+    }) as z.ZodType<{ clipIds: string[]; reset: boolean } & Partial<Record<keyof typeof NO_COLOR, number>>>,
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const { clipIds, reset, ...rest } = i
+      const color = { ...(reset ? NO_COLOR : {}), ...Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)) }
+      ctx.propose(visualClips(ctx, clipIds).map((clipId) => ({ type: 'set_look', clipId, color })))
+      return { summary: `${clipIds.length} clip${clipIds.length === 1 ? '' : 's'}: ${Object.keys(color).join(', ') || 'no change'}`, content: 'ok' }
+    },
+  }),
+
+  tool({
+    name: 'apply_filter',
+    provider: 'editor',
+    description: 'Put a filter (look) on video/photo clips, or remove it with filter "none". Ids from list_looks (e.g. warm, cinema, teal-orange, mono, noir, vivid). intensity 0…1.',
+    schema: z.object({ clipIds: z.array(z.string()).min(1).max(200), filter: z.string(), intensity: z.number().min(0).max(1).default(0.8) }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      if (i.filter !== 'none' && !filterDef(i.filter)) throw new Error(`Unknown filter "${i.filter}". Known: ${FILTERS.map((f) => f.id).join(', ')}`)
+      ctx.propose(visualClips(ctx, i.clipIds).map((clipId) => ({ type: 'set_look', clipId, filter: i.filter === 'none' ? null : { id: i.filter, intensity: i.intensity } })))
+      return { summary: `${i.filter} on ${i.clipIds.length}`, content: 'ok' }
+    },
+  }),
+
+  tool({
+    name: 'apply_lut',
+    provider: 'editor',
+    description: 'Colour-grade video/photo clips with a 3D .cube LUT: an absolute path to a .cube file on this computer (imported into the project), or the lutId of one already imported (list_looks). lutId "none" removes it. intensity 0…1.',
+    schema: z.object({ clipIds: z.array(z.string()).min(1).max(200), path: z.string().optional(), lutId: z.string().optional(), intensity: z.number().min(0).max(1).default(1) }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const ids = visualClips(ctx, i.clipIds)
+      if (i.lutId === 'none') { ctx.propose(ids.map((clipId) => ({ type: 'set_look', clipId, lut: null }))); return { summary: 'LUT removed', content: 'ok' } }
+      let lutId = i.lutId
+      const ops: OpInput[] = []
+      if (i.path) {
+        if (!ctx.luts) throw new Error('LUT import is not available here')
+        const [ref] = await ctx.luts.import([i.path])
+        lutId = ref!.id
+        if (!ctx.doc().luts[ref!.id]) ops.push({ type: 'add_lut', lut: ref! })
+      }
+      if (!lutId) throw new Error('Pass path (a .cube file) or lutId')
+      if (!ops.length && !ctx.doc().luts[lutId]) throw new Error(`LUT ${lutId} is not in this project; pass its path instead`)
+      ops.push(...ids.map((clipId): OpInput => ({ type: 'set_look', clipId, lut: { id: lutId!, intensity: i.intensity } })))
+      ctx.propose(ops)
+      return { summary: `LUT on ${ids.length}`, content: JSON.stringify({ lutId }) }
+    },
+  }),
+
+  tool({
+    name: 'add_effect',
+    provider: 'editor',
+    description: 'Add a visual effect to video/photo clips (runs after colour; several effects run in order). Kinds and params from list_looks, e.g. {kind:"glitch", params:{amount:60}}. Max 8 per clip.',
+    schema: z.object({ clipIds: z.array(z.string()).min(1).max(200), kind: z.string(), params: z.record(z.string(), z.number()).default({}) }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const def = effectDef(i.kind)
+      if (!def) throw new Error(`Unknown effect "${i.kind}". Known: ${EFFECTS.map((e) => e.kind).join(', ')}`)
+      const bad = Object.keys(i.params).filter((k) => !def.params.some((p) => p.key === k))
+      if (bad.length) throw new Error(`${def.name} has no param ${bad.join(', ')}; it takes ${def.params.map((p) => p.key).join(', ')}`)
+      const doc = ctx.doc()
+      const added: { clipId: string; effectId: string }[] = []
+      ctx.propose(visualClips(ctx, i.clipIds).map((clipId) => {
+        const c = findClip(doc, clipId)!.clip as MediaClip
+        const effectId = `fx-${uuid7().slice(-10)}`
+        added.push({ clipId, effectId })
+        return { type: 'set_look', clipId, effects: [...c.effects, { id: effectId, kind: i.kind, params: effectParams({ kind: i.kind, params: i.params }) }] }
+      }))
+      return { summary: `${def.name} on ${added.length}`, content: JSON.stringify(added) }
+    },
+  }),
+
+  tool({
+    name: 'remove_effect',
+    provider: 'editor',
+    description: 'Remove effects from a clip: one by effectId, every effect of a kind, or all of them.',
+    schema: z.object({ clipId: z.string(), effectId: z.string().optional(), kind: z.string().optional(), all: z.boolean().default(false) }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const [clipId] = visualClips(ctx, [i.clipId])
+      const c = findClip(ctx.doc(), clipId!)!.clip as MediaClip
+      const keep = i.all ? [] : c.effects.filter((e) => e.id !== i.effectId && e.kind !== i.kind)
+      if (keep.length === c.effects.length) return { summary: 'nothing to remove', content: JSON.stringify({ effects: c.effects }) }
+      ctx.propose([{ type: 'set_look', clipId: clipId!, effects: keep }])
+      return { summary: `${c.effects.length - keep.length} removed`, content: 'ok' }
+    },
+  }),
+
+  tool({
+    name: 'set_transition',
+    provider: 'editor',
+    description: 'Transition on the cut AFTER each given clip (the next clip must start exactly where it ends, same track), or on every cut of a track with allOnTrackId. kind from list_looks (dissolve, dip-black, push-left, wipe-right, iris, zoom, glitch…) or "none" to remove. Centred on the cut; never longer than either clip.',
+    schema: z.object({ clipIds: z.array(z.string()).max(500).default([]), allOnTrackId: z.string().optional(), kind: z.string(), durationSeconds: z.number().min(0.1).max(5).default(0.5) }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      if (i.kind !== 'none' && !transitionDef(i.kind)) throw new Error(`Unknown transition "${i.kind}". Known: ${TRANSITIONS.map((t) => t.kind).join(', ')}`)
+      const doc = ctx.doc()
+      let ids = i.clipIds
+      if (i.allOnTrackId) {
+        const t = doc.tracks.find((x) => x.id === i.allOnTrackId)
+        if (!t) throw new Error(`Track ${i.allOnTrackId} not found`)
+        ids = [...ids, ...t.clips.filter((c) => nextAdjacent(t, c.id)).map((c) => c.id)]
+      }
+      if (!ids.length) throw new Error('Pass clipIds or allOnTrackId')
+      const skipped: string[] = []
+      const ops: OpInput[] = []
+      for (const clipId of new Set(ids)) {
+        const f = findClip(doc, clipId)
+        if (!f || (f.clip.kind !== 'video' && f.clip.kind !== 'image')) { skipped.push(`${clipId} (not a video/photo clip)`); continue }
+        if (i.kind !== 'none' && !nextAdjacent(f.track, clipId)) { skipped.push(`${clipId} (no clip starts where it ends)`); continue }
+        ops.push({ type: 'set_look', clipId, transition: i.kind === 'none' ? null : { kind: i.kind, durationUs: us(i.durationSeconds) } })
+      }
+      if (ops.length) ctx.propose(ops)
+      return { summary: `${i.kind} on ${ops.length} cut${ops.length === 1 ? '' : 's'}`, content: JSON.stringify({ applied: ops.length, skipped }) }
+    },
+  }),
+
+  tool({
+    name: 'chroma_key',
+    provider: 'editor',
+    description: 'Green/blue screen: make a colour see-through on a video/photo clip (put it on a track above its new background). color: hex of the screen; intensity 0…1 (how much around the colour goes, default 0.4); edge 0…1 softness; shadow 0…1 keeps darker shadows; spill 0…1 removes the colour cast. enabled: false turns it off.',
+    schema: z.object({
+      clipId: z.string(), enabled: z.boolean().default(true), color: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
+      intensity: z.number().min(0).max(1).optional(), edge: z.number().min(0).max(1).optional(), shadow: z.number().min(0).max(1).optional(), spill: z.number().min(0).max(1).optional(),
+    }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const [clipId] = visualClips(ctx, [i.clipId])
+      const { enabled, clipId: _c, ...patch } = i
+      ctx.propose([{ type: 'set_look', clipId: clipId!, chroma: enabled ? Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) : null }])
+      return { summary: enabled ? `key ${i.color ?? 'green'}` : 'off', content: 'ok' }
+    },
+  }),
 ]
+
+/** Clip ids that are video/photo clips in the working copy (throws naming the first that isn't). */
+function visualClips(ctx: ToolCtx, ids: string[]): string[] {
+  const doc = ctx.doc()
+  for (const id of ids) {
+    const f = findClip(doc, id)
+    if (!f) throw new Error(`Clip ${id} not found`)
+    if (f.clip.kind !== 'video' && f.clip.kind !== 'image') throw new Error(`${id} is a ${f.clip.kind} clip; looks apply to video and photo clips`)
+  }
+  return ids
+}
+
+/** A clip's look in get_timeline: only what is set. */
+function lookSummary(c: MediaClip) {
+  const color = Object.fromEntries(Object.entries(c.color).filter(([, v]) => v !== 0))
+  return {
+    ...(Object.keys(color).length ? { color } : {}),
+    ...(c.filter ? { filter: c.filter } : {}),
+    ...(c.lut ? { lut: c.lut } : {}),
+    ...(c.chroma ? { chromaKey: c.chroma } : {}),
+    ...(c.effects.length ? { effects: c.effects.map((e) => ({ effectId: e.id, kind: e.kind, params: e.params })) } : {}),
+    ...(c.transition ? { transitionToNext: { kind: c.transition.kind, seconds: sec(c.transition.durationUs) } } : {}),
+  }
+}
 
 async function importInto(ctx: ToolCtx, paths: string[]): Promise<ToolResult> {
   const infos = await ctx.media.import(ctx.projectId, paths)

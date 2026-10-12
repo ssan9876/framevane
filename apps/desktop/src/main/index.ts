@@ -16,6 +16,7 @@ import { Media } from './media'
 import { appPaths } from './paths'
 import { Projects } from './projects'
 import { Fonts } from './fonts'
+import { Luts } from './luts'
 import { Tts } from './tts'
 import { handleMediaProtocol, registerSchemePrivileges } from './protocol'
 
@@ -54,6 +55,7 @@ async function main() {
   const agent = new AgentRunner(db, projects, analysis, media, registry, defs, (e: AgentEvent) => broadcast('agent:event', e), (e: BatchEvent) => broadcast('agent:batch', e))
   void registry.connectAll()
   const fonts = new Fonts(join(paths.userData, 'fonts'))
+  const luts = new Luts(paths.userData)
   const tts = new Tts(paths.cacheDir, hub)
   handleMediaProtocol(media, fonts)
 
@@ -73,8 +75,9 @@ async function main() {
     win.webContents.send(channel, { requestId, ...payload })
   })
   agent.tts = tts
+  agent.luts = luts
   const editorMcp = new EditorMcp({
-    db, projects, media, analysis, tts,
+    db, projects, media, analysis, tts, luts,
     emitActivity: (a: ExternalActivity) => broadcast('mcp:activity', a),
     ui: () => ui,
     openInUi: async (projectId) => {
@@ -100,7 +103,7 @@ async function main() {
     version: app.getVersion(), userData: paths.userData, projectsDir: paths.projectsDir,
     ffmpeg: ffmpegPaths()?.ffmpeg ?? null, sidecar: hub.sidecarStatus,
   }))
-  ipcMain.handle('app:pickFiles', async (e, opts: { kind: 'media' | 'image' | 'subtitle' | 'font' }) => {
+  ipcMain.handle('app:pickFiles', async (e, opts: { kind: 'media' | 'image' | 'subtitle' | 'font' | 'lut' }) => {
     // test hook: e2e runs can't click native dialogs
     if (process.env.FRAMEVANE_TEST_PICK_FILES) return process.env.FRAMEVANE_TEST_PICK_FILES.split(';').filter(Boolean)
     const win = BrowserWindow.fromWebContents(e.sender)!
@@ -110,6 +113,8 @@ async function main() {
         ? [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'avif'] }]
         : opts.kind === 'subtitle'
         ? [{ name: 'Subtitles', extensions: ['srt', 'vtt'] }]
+        : opts.kind === 'lut'
+        ? [{ name: '3D LUTs', extensions: ['cube'] }]
         : opts.kind === 'font'
         ? [{ name: 'Fonts', extensions: ['ttf', 'otf', 'woff', 'woff2'] }]
         : [{ name: 'Media', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi', 'mts', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'png', 'jpg', 'jpeg', 'webp', 'gif'] }, { name: 'All files', extensions: ['*'] }],
@@ -180,6 +185,8 @@ async function main() {
   ipcMain.handle('media:relink', (_e, projectId: string, assetId: string, newPath: string) => media.relink(projectId, assetId, newPath))
   ipcMain.handle('media:processAudio', (_e, projectId: string, assetId: string, preset: AudioPreset) => media.processAudio(projectId, assetId, preset))
   ipcMain.handle('media:saveRecording', (_e, projectId: string, data: Uint8Array) => media.saveRecording(projectId, data, projects.dirOf(projectId)))
+  ipcMain.handle('luts:import', (_e, paths: string[]) => luts.import(paths))
+  ipcMain.handle('luts:read', (_e, file: string) => luts.read(file))
   ipcMain.handle('fonts:system', () => fonts.systemFamilies())
   ipcMain.handle('fonts:custom', () => fonts.custom())
   ipcMain.handle('fonts:import', (_e, paths: string[]) => fonts.import(paths))

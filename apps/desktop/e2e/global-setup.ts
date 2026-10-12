@@ -22,6 +22,16 @@ export const files = {
   fake: join(EDGE, 'not-really-a-video.mp4'),
   uhd: join(EDGE, 'uhd-4k.mp4'),
   relink: join(EDGE, 'relink-me.mp4'),
+  greenscreen: join(EDGE, 'greenscreen.mp4'),
+  lut: join(EDGE, 'Swap RB.cube'),
+  lut1d: join(EDGE, 'one-dimensional.cube'),
+}
+
+/** A 3D LUT that swaps red and blue (easy to check in pixels). */
+function swapLut(n: number) {
+  const rows: string[] = []
+  for (let b = 0; b < n; b++) for (let g = 0; g < n; g++) for (let r = 0; r < n; r++) rows.push(`${(b / (n - 1)).toFixed(4)} ${(g / (n - 1)).toFixed(4)} ${(r / (n - 1)).toFixed(4)}`)
+  return ['TITLE "Swap red and blue"', `LUT_3D_SIZE ${n}`, ...rows, ''].join('\n')
 }
 
 function ff(args: string[]) {
@@ -45,6 +55,9 @@ export default function globalSetup() {
   }
   if (!existsSync(files.vfr)) ff(['-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=30:duration=6', '-vf', "setpts='if(lt(N,60),N/30,2+(N-60)/12)/TB'", '-fps_mode', 'vfr', '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', files.vfr])
   if (!existsSync(files.uhd)) ff(['-f', 'lavfi', '-i', 'testsrc2=size=3840x2160:rate=30:duration=3', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', files.uhd])
+  if (!existsSync(files.greenscreen)) ff(['-f', 'lavfi', '-i', 'color=c=0x10c040:s=640x360:r=25:d=4', '-f', 'lavfi', '-i', 'testsrc=size=240x180:rate=25:duration=4', '-filter_complex', '[0][1]overlay=200:90,format=yuv420p', '-c:v', 'libx264', '-preset', 'veryfast', files.greenscreen])
+  if (!existsSync(files.lut)) writeFileSync(files.lut, swapLut(9))
+  if (!existsSync(files.lut1d)) writeFileSync(files.lut1d, ['LUT_1D_SIZE 2', '0 0 0', '1 1 1', ''].join('\n'))
   if (!existsSync(files.fake)) writeFileSync(files.fake, 'This is a text file wearing an .mp4 name.\n')
   // a copy we can delete to test missing media
   const victim = join(EDGE, 'will-be-deleted.mp4')

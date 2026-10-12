@@ -44,6 +44,10 @@ const api = {
     saveRecording: inv('media:saveRecording') as ReelApi['media']['saveRecording'],
     onChange: on('media:change'),
   },
+  luts: {
+    import: inv('luts:import') as ReelApi['luts']['import'],
+    read: inv('luts:read') as ReelApi['luts']['read'],
+  },
   fonts: {
     system: inv('fonts:system') as ReelApi['fonts']['system'],
     custom: inv('fonts:custom') as ReelApi['fonts']['custom'],

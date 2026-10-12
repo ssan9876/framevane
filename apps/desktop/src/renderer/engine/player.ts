@@ -1,6 +1,7 @@
 import { projectDurationUs, type Project } from '@framevane/doc'
 import { loadAudio, schedule } from './audio'
 import { drawFrame, ensureFonts, fetchVisuals } from './compositor'
+import { ensureLuts } from './luts'
 import { MediaPool } from './sources'
 
 /**
@@ -129,6 +130,7 @@ export class Player {
     this.rendering = true
     try {
       const doc = this.doc
+      await ensureLuts(doc)
       const visuals = await fetchVisuals(doc, this.pool, tUs, this.isReady)
       if (this.disposed || !this.c2d) return
       drawFrame(this.c2d, doc, tUs, visuals, this.canvas.width / doc.canvas.width)

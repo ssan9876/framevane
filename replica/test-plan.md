@@ -49,7 +49,7 @@ Legend for `auto`: e2e = Playwright spec · unit = vitest · manual · n/b = fea
 | F02-N1 | negative: overlap on overlay track | drag an overlay clip onto another | rejected with a clear message, no change | manual | not run (manual) |
 | — | ops engine | 20 unit tests: split/ripple/undo/atomicity/locks/source bounds/captions | | unit | pass |
 
-## F06 transitions · F08 remove BG · F09 color · F11 photo (F03 text, F05 fades, F15 transcript: see M3; F13, F14: see M2)
+## F08 remove BG · F11 photo (F06 transitions, F09 colour: see M4; F03 text, F05 fades, F15 transcript: see M3; F13, F14: see M2)
 Not built in M0 (n/b). The screens exist as stubs; cases are written when each is built. Partial checks today:
 | case | type | steps | expected | auto | result |
 | --- | --- | --- | --- | --- | --- |
@@ -154,6 +154,22 @@ Not built in M0 (n/b). The screens exist as stubs; cases are written when each i
 | M3-U | unit | text ops, fades, split rules, ducking curve, set_keyframes, SRT round trip/parse, fillers | 16 new unit tests | unit | pass |
 | M3-M1 | manual | listen: fades, denoise strength, enhance, ducking depth, Kokoro voices | sounds right | manual | not run (needs ears) |
 | M3-M2 | manual | export a project with every text animation and check frames | matches the preview | manual | partial: the compositor is shared, so export uses the same drawing code; not pixel-checked per animation |
+
+## M4 visuals
+| case | type | steps | expected | auto | result |
+| --- | --- | --- | --- | --- | --- |
+| M4-H1 | happy | Filters → Mono, strength 100; Remove; Saturation −100; Reset colour | preview pixel grey, then red again; clip tagged "colour" | e2e | pass |
+| M4-H2 | happy | Import .cube (swaps red/blue) from Filters; Ctrl+Z | red bar turns blue, LUT shown in Adjust; undo restores red, LUT stays imported | e2e | pass |
+| M4-N1 | negative | import a 1D .cube | refused: "This is a 1D LUT…" | e2e | pass |
+| M4-H3 | happy | Effects → Pixelate, Invert; Size 80; Move Invert up; Remove Invert; Ctrl+Z | 2 effects listed in order; red → cyan; back to red; undo restores | e2e | pass |
+| M4-H4 | happy | 3 clips; Dissolve on the first cut, 2 s; Apply to all cuts; Remove one | preview at the cut differs from the plain frame; 2 cuts marked; then 1; plain frame returns | e2e | pass |
+| M4-H5 | happy | green-screen clip → Remove BG → Chroma key on, then off | corner turns black (see-through), test card kept (>60 %); green back | e2e | pass (BUG-013 regression) |
+| M4-H6 | happy | Mono at 100 %, export 1080p | every sampled pixel of the exported frame is grey | e2e | pass |
+| M4-H7 | happy | MCP: list_looks, adjust_color, apply_filter (+ unknown id), apply_lut (path), add_effect (+ bad param), set_transition (whole track), chroma_key, remove_effect | each edit appears live; get_timeline reports the looks; bad input gets a clear error | e2e | pass |
+| M4-D1 | diagnostic | compile every shader on this GPU | no errors (39 programs) | e2e | pass |
+| M4-U | unit | set_look patching, LUT registration + undo, effect ids/params, split keeps looks, transition window/length, catalogue, .cube parsing | 14 new unit tests | unit | pass |
+| M4-M1 | manual | every effect and transition at several strengths and lengths, in motion | looks good, no seams or flicker | manual | partial: screenshots checked by eye (M4-looks, M4-transition, M4-chroma, M4-filters-tab); not every effect in motion |
+| M4-M2 | manual | 4K timeline with effects on several tracks | real-time preview | manual | not run |
 
 ## Cross-cutting
 | case | type | steps | expected | auto | result |

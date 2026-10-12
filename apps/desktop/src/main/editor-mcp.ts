@@ -11,6 +11,7 @@ import type { Analysis } from './analysis'
 import type { Media } from './media'
 import type { Projects } from './projects'
 import type { Tts } from './tts'
+import type { Luts } from './luts'
 import { TOOLS, type ToolCtx, type ToolResult } from './agent/tools'
 
 /**
@@ -38,6 +39,7 @@ interface Deps {
   media: Media
   analysis: Analysis
   tts?: Tts
+  luts?: Luts
   emitActivity(a: ExternalActivity): void
   ui(): UiState
   /** Ask the window to open a project; resolves once the editor shows it. */
@@ -201,6 +203,7 @@ export class EditorMcp {
           analysis: d.analysis,
           media: d.media,
           tts: d.tts,
+          luts: d.luts,
           doc: () => d.projects.get(projectId),
           propose: (ops: OpInput[]) => {
             const doc = d.projects.get(projectId)

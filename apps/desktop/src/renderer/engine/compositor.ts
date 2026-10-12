@@ -1,6 +1,11 @@
-import { clipEnd, DEFAULT_CAPTION_STYLE, resolveAt, sourceTimeAt, type CaptionClip, type Clip, type MediaClip, type Project, type TextClip, type TextStyle } from '@framevane/doc'
+import {
+  clipEnd, DEFAULT_CAPTION_STYLE, hasLook, resolveAt, sourceTimeAt, transitionAt,
+  type ActiveTransition, type AssetRef, type CaptionClip, type Clip, type MediaClip, type Project, type TextClip, type TextStyle,
+} from '@framevane/doc'
 import type { VideoSample } from 'mediabunny'
 import { loadCustomFonts } from './fonts'
+import { LookRenderer } from './gl'
+import { lutFor } from './luts'
 import type { MediaPool } from './sources'
 
 /**
@@ -14,11 +19,15 @@ type Visual = { kind: 'video'; sample: VideoSample } | { kind: 'image'; bitmap: 
 
 export interface FrameJob { clip: MediaClip; visual: Promise<Visual | null> }
 
-/** Visible items at time t, bottom to top. */
-export function layersAt(doc: Project, tUs: number): { clip: Clip; trackStyle?: TextStyle }[] {
-  const out: { clip: Clip; trackStyle?: TextStyle }[] = []
+export interface Layer { clip: Clip; trackStyle?: TextStyle; transition?: ActiveTransition }
+
+/** Visible items at time t, bottom to top. A transition between two clips is one layer. */
+export function layersAt(doc: Project, tUs: number): Layer[] {
+  const out: Layer[] = []
   for (const track of doc.tracks) {
     if (track.hidden) continue
+    const tr = track.kind === 'video' ? transitionAt(track, tUs) : null
+    if (tr) { out.push({ clip: tr.from, transition: tr }); continue }
     for (const clip of track.clips) {
       if (!clip.enabled || tUs < clip.startUs || tUs >= clipEnd(clip)) continue
       if (clip.kind === 'audio') continue
@@ -28,15 +37,23 @@ export function layersAt(doc: Project, tUs: number): { clip: Clip; trackStyle?: 
   return out
 }
 
+/** Source time to show; a transition reads past a clip's ends (its handles), held at the media's first/last frame. */
+function frameSeconds(clip: MediaClip, asset: AssetRef, tUs: number) {
+  const s = sourceTimeAt(clip, tUs)
+  const max = asset.durationUs !== undefined ? Math.max(0, asset.durationUs - 1000) : s
+  return Math.max(0, Math.min(max, s)) / 1e6
+}
+
 /** Fetch every visual needed for time t in parallel (decoders run concurrently). */
 export async function fetchVisuals(doc: Project, pool: MediaPool, tUs: number, isReady: (assetId: string) => boolean = () => true): Promise<Map<string, Visual>> {
-  const jobs = layersAt(doc, tUs).flatMap(({ clip }) => {
+  const clips = layersAt(doc, tUs).flatMap((l) => (l.transition ? [l.transition.from, l.transition.to] : [l.clip]))
+  const jobs = clips.flatMap((clip) => {
     if (clip.kind !== 'video' && clip.kind !== 'image') return []
     const asset = doc.assets[clip.assetId]
     if (!asset || !isReady(asset.id)) return []
     const p: Promise<Visual | null> = clip.kind === 'image'
       ? pool.image(asset).then((bitmap) => ({ kind: 'image' as const, bitmap })).catch(() => null)
-      : pool.frameAt(asset, clip.id, sourceTimeAt(clip, tUs) / 1e6).then((s) => (s ? { kind: 'video' as const, sample: s } : null)).catch((e) => { console.warn('[compositor] frame', e); return null })
+      : pool.frameAt(asset, clip.id, frameSeconds(clip, asset, tUs)).then((s) => (s ? { kind: 'video' as const, sample: s } : null)).catch((e) => { console.warn('[compositor] frame', e); return null })
     return [p.then((v) => [clip.id, v] as const)]
   })
   const out = new Map<string, Visual>()
@@ -76,11 +93,15 @@ export function drawFrame(ctx: Ctx2D, doc: Project, tUs: number, visuals: Map<st
       } catch (e) { if (!/closed/i.test(String(e))) throw e }
     }
   }
-  for (const { clip, trackStyle } of layers) {
+  for (const { clip, trackStyle, transition } of layers) {
+    if (transition) {
+      try { drawTransition(ctx, doc, transition, visuals, W, H, scale, tUs) } catch (e) { if (!/closed/i.test(String(e))) throw e }
+      continue
+    }
     if (clip.kind === 'video' || clip.kind === 'image') {
       const v = visuals.get(clip.id)
       if (v) {
-        try { drawMedia(ctx, clip, v, W, H, scale, tUs - clip.startUs) } catch (e) {
+        try { drawMedia(ctx, doc, clip, v, W, H, scale, tUs - clip.startUs) } catch (e) {
           // an edit can close a clip's decoder while this frame is in flight; the next render draws the new state (BUG-003)
           if (!/closed/i.test(String(e))) throw e
         }
@@ -116,11 +137,34 @@ export function mediaGeometry(clip: MediaClip, localUs: number, sw: number, sh: 
   return { cx, cy, w, h, rotation: t.rotation, opacity: t.opacity, flipH: t.flipH, flipV: t.flipV, crop: c, src: { x: c.left * sw, y: c.top * sh, w: sw * (1 - c.left - c.right), h: sh * (1 - c.top - c.bottom) } }
 }
 
-function drawMedia(ctx: Ctx2D, clip: MediaClip, v: Visual, W: number, H: number, scale: number, localUs: number) {
+let scratch: OffscreenCanvasRenderingContext2D | null = null
+
+/**
+ * A clip's picture with its look applied (crop, then the GPU passes), sized for where it lands on screen. Null when
+ * the clip has no look or the GPU path is unavailable (the plain picture is drawn then).
+ */
+function lookImage(doc: Project, clip: MediaClip, v: Visual, g: ReturnType<typeof mediaGeometry>, scale: number, localUs: number) {
+  if (!hasLook(clip)) return null
+  const fx = LookRenderer.get()
+  if (!fx) return null
+  // process at the size it is shown, never above the source's own pixels
+  const ow = Math.max(2, Math.round(Math.min(g.w * scale, g.src.w)))
+  const oh = Math.max(2, Math.round(ow * (g.src.h / g.src.w)))
+  scratch ??= new OffscreenCanvas(ow, oh).getContext('2d')!
+  if (scratch.canvas.width !== ow || scratch.canvas.height !== oh) { scratch.canvas.width = ow; scratch.canvas.height = oh }
+  scratch.clearRect(0, 0, ow, oh)
+  if (v.kind === 'video') v.sample.draw(scratch, g.src.x, g.src.y, g.src.w, g.src.h, 0, 0, ow, oh)
+  else scratch.drawImage(v.bitmap, g.src.x, g.src.y, g.src.w, g.src.h, 0, 0, ow, oh)
+  const lut = clip.lut ? lutFor(doc, clip.lut.id) : null
+  return fx.look(scratch.canvas, ow, oh, clip, localUs / 1e6, lut?.lut ?? null, lut?.key ?? null)
+}
+
+function drawMedia(ctx: Ctx2D, doc: Project, clip: MediaClip, v: Visual, W: number, H: number, scale: number, localUs: number) {
   const sw = v.kind === 'video' ? v.sample.displayWidth : v.bitmap.width
   const sh = v.kind === 'video' ? v.sample.displayHeight : v.bitmap.height
   const g = mediaGeometry(clip, localUs, sw, sh, W, H)
   if (g.w <= 0 || g.h <= 0 || g.opacity <= 0) return
+  const looked = lookImage(doc, clip, v, g, scale, localUs)
   ctx.save()
   ctx.globalAlpha = g.opacity
   ctx.globalCompositeOperation = clip.blend === 'normal' ? 'source-over' : clip.blend
@@ -128,8 +172,47 @@ function drawMedia(ctx: Ctx2D, clip: MediaClip, v: Visual, W: number, H: number,
   ctx.translate(g.cx, g.cy)
   if (g.rotation) ctx.rotate((g.rotation * Math.PI) / 180)
   if (g.flipH || g.flipV) ctx.scale(g.flipH ? -1 : 1, g.flipV ? -1 : 1)
-  if (v.kind === 'video') v.sample.draw(ctx, g.src.x, g.src.y, g.src.w, g.src.h, -g.w / 2, -g.h / 2, g.w, g.h)
+  if (looked) ctx.drawImage(looked.canvas, looked.sx, looked.sy, looked.w, looked.h, -g.w / 2, -g.h / 2, g.w, g.h)
+  else if (v.kind === 'video') v.sample.draw(ctx, g.src.x, g.src.y, g.src.w, g.src.h, -g.w / 2, -g.h / 2, g.w, g.h)
   else ctx.drawImage(v.bitmap, g.src.x, g.src.y, g.src.w, g.src.h, -g.w / 2, -g.h / 2, g.w, g.h)
+  ctx.restore()
+}
+
+const layerCanvases: OffscreenCanvasRenderingContext2D[] = []
+function layerCtx(i: number, w: number, h: number) {
+  let c = layerCanvases[i]
+  if (!c) { c = new OffscreenCanvas(w, h).getContext('2d')!; layerCanvases[i] = c }
+  if (c.canvas.width !== w || c.canvas.height !== h) { c.canvas.width = w; c.canvas.height = h }
+  c.setTransform(1, 0, 0, 1, 0, 0)
+  c.globalAlpha = 1
+  c.globalCompositeOperation = 'source-over'
+  c.clearRect(0, 0, w, h)
+  return c
+}
+
+/** Both clips drawn as full-frame layers (each with its own transform and look), then mixed by the transition shader. */
+function drawTransition(ctx: Ctx2D, doc: Project, tr: ActiveTransition, visuals: Map<string, Visual>, W: number, H: number, scale: number, tUs: number) {
+  const cw = ctx.canvas.width
+  const ch = ctx.canvas.height
+  const a = layerCtx(0, cw, ch)
+  const b = layerCtx(1, cw, ch)
+  const va = visuals.get(tr.from.id)
+  const vb = visuals.get(tr.to.id)
+  if (va) drawMedia(a, doc, { ...tr.from, blend: 'normal' }, va, W, H, scale, tUs - tr.from.startUs)
+  if (vb) drawMedia(b, doc, { ...tr.to, blend: 'normal' }, vb, W, H, scale, tUs - tr.to.startUs)
+  const out = LookRenderer.get()?.transition(a.canvas, b.canvas, cw, ch, tr.kind, tr.progress)
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.globalAlpha = 1
+  ctx.globalCompositeOperation = 'source-over'
+  if (out) ctx.drawImage(out.canvas, out.sx, out.sy, out.w, out.h, 0, 0, cw, ch)
+  else {
+    // no GPU: a plain cross-fade
+    ctx.globalAlpha = 1 - tr.progress
+    ctx.drawImage(a.canvas, 0, 0)
+    ctx.globalAlpha = tr.progress
+    ctx.drawImage(b.canvas, 0, 0)
+  }
   ctx.restore()
 }
 

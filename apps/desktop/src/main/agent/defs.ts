@@ -89,6 +89,23 @@ export const BUILTIN_AGENTS: AgentDefInput[] = [
     starter: 'Make the audio sound good.',
   },
   {
+    name: 'Look designer',
+    description: 'Gives the edit one consistent look: colour, a filter or LUT, and transitions between cuts.',
+    instructions: [
+      'Give the whole edit a consistent, tasteful look without changing its content or timing:',
+      '1. get_timeline and list_looks. Look at 2–4 frames with get_frames (they show the source footage, before any look).',
+      '2. Even out exposure and white balance per clip with adjust_color (small values: |exposure| ≤ 25, |temperature| ≤ 30), so clips match each other.',
+      '3. Pick ONE filter that suits the mood the user asked for (or "cinema" / "vivid" if they did not say) and apply_filter to every video/photo clip at intensity 0.5–0.8. If the user gave a .cube file path, apply_lut that instead.',
+      '4. Only if the user asks for transitions: set_transition with allOnTrackId on the main track (dissolve 0.4–0.6 s unless they name a style).',
+      'Do not add effects unless asked. Do not cut, move or caption anything.',
+    ].join('\n'),
+    model: 'default',
+    effort: 'medium',
+    allowedTools: [...READ, 'list_looks', 'adjust_color', 'apply_filter', 'apply_lut', 'set_transition', 'add_effect', 'remove_effect', 'chroma_key'],
+    reviewMode: 'propose',
+    starter: 'Give this a warm, cinematic look with soft transitions.',
+  },
+  {
     name: 'Highlight finder',
     description: 'Reads the transcript and marks the best moments. Changes nothing else.',
     instructions: 'Read the transcript and add_marker at the 3 to 6 strongest moments (quotable lines, reveals, jokes, key claims). Label each marker with a few words saying why (max 40 characters); use green for highlights and red for the single best hook. Do not cut or change anything else.',

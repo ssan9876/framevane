@@ -8,6 +8,7 @@ import type { Media } from '../media'
 import type { Projects } from '../projects'
 import type { AgentExternalTool, ToolRegistry } from '../tool-registry'
 import type { Tts } from '../tts'
+import type { Luts } from '../luts'
 import { toolByName, toolDefinitions, type ToolCtx } from './tools'
 import { toolAllowed, type AgentDefs } from './defs'
 import { fakeClient } from './fake-model'
@@ -76,6 +77,8 @@ export class AgentRunner {
   private waits = new Map<string, PermissionWait>()
   /** Text to speech for the text_to_speech tool (set after construction). */
   tts?: Tts
+  /** LUT import for apply_lut (set after construction). */
+  luts?: Luts
 
   constructor(
     private db: Db,
@@ -387,6 +390,7 @@ export class AgentRunner {
       analysis: this.analysis,
       media: this.media,
       tts: this.tts,
+      luts: this.luts,
       doc: () => run.fork,
       propose: (ops: OpInput[]) => {
         const parsedOps = ops.map((o) => Op.parse(o))

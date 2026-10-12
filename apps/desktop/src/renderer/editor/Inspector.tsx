@@ -12,6 +12,7 @@ import { useEditor } from './Editor'
 import { CaptionInspector, TextInspector } from './TextInspector'
 import { cleanUpAudio, duckUnderSpeech } from './actions-m3'
 import type { AudioPreset } from '../../shared/api'
+import { AdjustPanel, ChromaPanel, EffectsPanel } from './LookInspector'
 
 /** S14–S19 · Inspector: properties of the selection, or project details (with S02 Modify) when nothing is selected. */
 export function Inspector() {
@@ -107,7 +108,7 @@ function MediaInspector({ clip, doc, locked, main }: { clip: MediaClip; doc: Pro
     ...(!isAudio ? [{ value: 'video', label: 'Video' }] : []),
     { value: 'audio', label: 'Audio', disabled: !asset?.hasAudio || clip.freezeAtUs !== undefined },
     { value: 'speed', label: 'Speed', disabled: clip.kind === 'image' || clip.freezeAtUs !== undefined },
-    ...(!isAudio ? [{ value: 'animation', label: 'Animation' }, { value: 'adjust', label: 'Adjust' }] : []),
+    ...(!isAudio ? [{ value: 'adjust', label: 'Adjust' }, { value: 'effects', label: 'Effects' }, { value: 'animation', label: 'Animation' }] : []),
   ]
   const title = `${asset?.name ?? 'Clip'}${clip.freezeAtUs !== undefined ? ' · freeze frame' : ''}${clip.reversed ? ' · reversed' : ''}`
   return (
@@ -134,9 +135,13 @@ function MediaInspector({ clip, doc, locked, main }: { clip: MediaClip; doc: Pro
             </div>
           )}
           {sub === 'crop' && <CropTools clip={clip} />}
-          {(sub === 'bg' || sub === 'mask') && (
-            <EmptyState icon={<Construction />} title={sub === 'bg' ? 'Background removal comes in M5' : 'Masks come as a should-have'} body="It will run locally on your GPU, free." />
+          {sub === 'bg' && (
+            <div className="mt-2 flex flex-col gap-3">
+              <ChromaPanel clip={clip} />
+              <p className="border-t border-border pt-3 text-xs text-muted">Automatic background removal (no green screen) comes in M5, running locally on your GPU.</p>
+            </div>
           )}
+          {sub === 'mask' && <EmptyState icon={<Construction />} title="Masks come as a should-have" body="It will run locally on your GPU, free." />}
         </TabPanel>
         <TabPanel value="audio">
           <div className="flex flex-col gap-1.5">
@@ -154,7 +159,8 @@ function MediaInspector({ clip, doc, locked, main }: { clip: MediaClip; doc: Pro
           </div>
         </TabPanel>
         <TabPanel value="animation"><EmptyState icon={<Construction />} title="Animations come as a should-have" body="For now, key Position, Scale or Opacity on the Video tab." /></TabPanel>
-        <TabPanel value="adjust"><EmptyState icon={<Construction />} title="Color adjustments come in M4" /></TabPanel>
+        <TabPanel value="adjust"><AdjustPanel clip={clip} doc={doc} /></TabPanel>
+        <TabPanel value="effects"><EffectsPanel clip={clip} /></TabPanel>
       </div>
       </UnderlineTabs>
     </div>
