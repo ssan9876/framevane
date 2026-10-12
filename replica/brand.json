@@ -1,0 +1,10 @@
+{
+  "name": "Framevane",
+  "avoid": ["CapCut", "Cap Cut", "ByteDance", "Jianying", "EditPilot", "Dreamina", "Seedance", "Seedream"],
+  "domains": ["capcut.com", "capcut.net", "bytedance.com", "dreamina.capcut.com"],
+  "colors": ["#5b9bff", "#7aaeff", "#1b2a44"],
+  "_notes": {
+    "colors": "The old placeholder accent (blue) that the rebrand replaced. CapCut's own brand hex values were not verified from a primary source; add them here once confirmed (their identity is black/white with a bright cyan accent).",
+    "avoid": "The original, its maker, its Chinese edition and its named AI features. The sweep skips replica/, where these names belong."
+  }
+}

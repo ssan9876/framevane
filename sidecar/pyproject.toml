@@ -1,0 +1,24 @@
+[project]
+name = "framevane-sidecar"
+version = "0.1.0"
+description = "Local AI tools for framevane, served as an MCP server over stdio"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "mcp==2.3.0",
+  "faster-whisper==1.2.1",
+  "ctranslate2==4.8.2",
+  "av==14.2.0",
+  "nvidia-cublas-cu12==12.9.2.10; sys_platform == 'win32' or sys_platform == 'linux'",
+  "nvidia-cudnn-cu12==9.27.0.42; sys_platform == 'win32' or sys_platform == 'linux'",
+  "kokoro-onnx==0.4.7",
+  # GPU inference for the matting models on any Windows GPU (replaces the CPU-only onnxruntime kokoro-onnx pulls in)
+  "onnxruntime-directml==1.24.4; sys_platform == 'win32'",
+  "onnxruntime==1.24.4; sys_platform != 'win32'",
+  "numpy",
+  "pillow==11.3.0",
+]
+
+[tool.uv]
+package = false
+# onnxruntime and onnxruntime-directml install the same module; on Windows only the DirectML build may be present
+override-dependencies = ["onnxruntime==1.24.4; sys_platform != 'win32'"]

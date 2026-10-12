@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, type CSSProperties, type ReactNode } from 'react'
 import { Lock, Unlock, Eye, EyeOff, Volume2, VolumeX, Film, Music, Type, Sparkles, Captions, SlidersHorizontal, AlertTriangle, Image as ImageIcon, Sticker, Palette } from 'lucide-react'
 import { cn } from '../cn'
 import { IconToggle } from './Button'
@@ -32,7 +32,15 @@ export interface TimelineClipProps {
   waveformSeed?: number
   /** Thumbnail strip backgrounds for video clips. */
   thumbs?: string[]
+  /** One background for the whole clip body (e.g. a positioned filmstrip sprite). */
+  stripStyle?: CSSProperties
+  /** Real waveform peaks (0..1), already sliced to this clip's source range. Overrides waveformSeed. */
+  waveform?: ArrayLike<number>
   speedLabel?: string
+  /** Short tags shown on the clip and read out with it (e.g. "fx", "key"). */
+  tags?: string[]
+  /** Extra words for screen readers only (e.g. a transition drawn next to the clip). */
+  srNote?: string
   /** Proposed by an agent and not yet applied (S29 preview): dashed agent outline. */
   proposed?: boolean
 }
@@ -42,15 +50,18 @@ export interface TimelineClipProps {
  * a11y: the timeline is a role="grid" of tracks; each clip is a focusable gridcell announced as
  * "<label>, <kind>, <start>–<end>, selected". Arrow keys move between clips, Enter opens it in the inspector.
  */
-export function TimelineClip({ kind, label, width, height, selected, disabled, missing, processing, keyframes, waveformSeed, thumbs, speedLabel, proposed }: TimelineClipProps) {
-  const bars = useMemo(() => (kind === 'audio' || waveformSeed !== undefined ? waveform(Math.floor(width / 3), waveformSeed ?? 1) : null), [kind, width, waveformSeed])
+export function TimelineClip({ kind, label, width, height, selected, disabled, missing, processing, keyframes, waveformSeed, thumbs, stripStyle, waveform: peaks, speedLabel, tags, srNote, proposed }: TimelineClipProps) {
+  const bars = useMemo(() => {
+    if (peaks) return resample(peaks, Math.max(4, Math.floor(width / 3)))
+    return kind === 'audio' || waveformSeed !== undefined ? waveform(Math.floor(width / 3), waveformSeed ?? 1) : null
+  }, [kind, width, waveformSeed, peaks])
   const compact = height <= 28
   return (
     <div
       role="gridcell"
       tabIndex={0}
       aria-selected={selected}
-      aria-label={`${label}, ${kind}${disabled ? ', disabled' : ''}${missing ? ', media missing' : ''}`}
+      aria-label={`${label}, ${kind}${tags?.length ? `, ${tags.join(', ')}` : ''}${srNote ? `, ${srNote}` : ''}${disabled ? ', disabled' : ''}${missing ? ', media missing' : ''}`}
       style={{ width, height }}
       className={cn(
         'group relative shrink-0 overflow-hidden rounded-sm text-fg',
@@ -60,6 +71,7 @@ export function TimelineClip({ kind, label, width, height, selected, disabled, m
           : 'outline-1 outline-scrim/40 -outline-offset-1',
       )}
     >
+      {stripStyle && !compact && <div className="absolute inset-0 opacity-75" style={stripStyle} />}
       {thumbs && !compact && (
         <div className="absolute inset-0 flex opacity-70">
           {thumbs.map((t, i) => <div key={i} className="h-full flex-1 bg-cover bg-center" style={{ background: t }} />)}
@@ -73,10 +85,15 @@ export function TimelineClip({ kind, label, width, height, selected, disabled, m
       <div className={cn('relative flex items-center gap-1 px-1.5 [&_svg]:size-3 [&_svg]:shrink-0', compact ? 'h-full' : 'h-5 bg-gradient-to-b from-scrim/50 to-transparent')}>
         {clipIcon[kind]}
         <span className="truncate text-xs">{label}</span>
-        {speedLabel && <span className="ml-auto rounded-xs bg-scrim/50 px-1 text-[10px]">{speedLabel}</span>}
+        {(speedLabel || tags?.length) && (
+          <span className="ml-auto flex shrink-0 gap-0.5">
+            {tags?.map((t) => <span key={t} className="rounded-xs bg-scrim/50 px-1 text-[10px]">{t}</span>)}
+            {speedLabel && <span className="rounded-xs bg-scrim/50 px-1 text-[10px]">{speedLabel}</span>}
+          </span>
+        )}
       </div>
       {keyframes?.map((k, i) => (
-        <Diamond key={i} state={k.on ? 'on' : 'has'} size={9} className="absolute bottom-1 -translate-x-1/2" style={{ left: `${k.at * 100}%` }} />
+        <Diamond key={i} state={k.on ? 'on' : 'has'} size={12} className="absolute bottom-0.5 -translate-x-1/2 drop-shadow-[0_0_2px_rgba(0,0,0,0.95)]" style={{ left: `${Math.min(99, Math.max(1, k.at * 100))}%` }} />
       ))}
       {disabled && <div className="absolute inset-0 bg-[repeating-linear-gradient(135deg,rgba(0,0,0,.45)_0_4px,transparent_4px_8px)]" />}
       {missing && (
@@ -84,7 +101,7 @@ export function TimelineClip({ kind, label, width, height, selected, disabled, m
       )}
       {processing !== undefined && (
         <div className="absolute inset-x-0 bottom-0 h-0.5 bg-scrim/50">
-          <div className={cn('h-full bg-agent', processing === 'indeterminate' && 'w-1/3 animate-[reel-indeterminate_1.1s_linear_infinite]')} style={processing === 'indeterminate' ? undefined : { width: `${processing * 100}%` }} />
+          <div className={cn('h-full bg-agent', processing === 'indeterminate' && 'w-1/3 animate-[framevane-indeterminate_1.1s_linear_infinite]')} style={processing === 'indeterminate' ? undefined : { width: `${processing * 100}%` }} />
         </div>
       )}
       {/* trim handles (visible on hover/selection) */}
@@ -92,6 +109,17 @@ export function TimelineClip({ kind, label, width, height, selected, disabled, m
       <span className={cn('absolute inset-y-0 right-0 w-1.5 cursor-ew-resize bg-selection/0 group-hover:bg-selection/40', selected && 'bg-selection/70')} aria-hidden />
     </div>
   )
+}
+
+function resample(p: ArrayLike<number>, n: number) {
+  const out: number[] = []
+  const step = p.length / n
+  for (let i = 0; i < n; i++) {
+    let m = 0
+    for (let j = Math.floor(i * step); j < Math.min(p.length, Math.floor((i + 1) * step) || 1); j++) m = Math.max(m, p[j]!)
+    out.push(Math.max(0.04, Math.min(1, m)))
+  }
+  return out
 }
 
 function waveform(n: number, seed: number) {
@@ -114,7 +142,7 @@ export function TrackHeader({ name, kind, height, locked, hidden, muted, onLocke
   main?: boolean
 }) {
   return (
-    <div role="rowheader" style={{ height }} className="flex w-[var(--reel-track-header-w)] shrink-0 items-center gap-0.5 border-b border-border bg-surface px-1.5">
+    <div role="rowheader" style={{ height }} className="flex w-[var(--fv-track-header-w)] shrink-0 items-center gap-0.5 border-b border-border bg-surface px-1.5">
       <span className="mr-auto flex min-w-0 items-center gap-1 text-xs text-muted [&_svg]:size-3">
         {clipIcon[kind]}
         <span className="truncate">{name}</span>
@@ -149,7 +177,7 @@ export function Ruler({ width, pxPerSec, offsetSec = 0, markers = [], format = f
         </g>
       ))}
       {markers.map((m, i) => (
-        <path key={i} d={`M${(m.at - offsetSec) * pxPerSec - 4},14 h8 v5 l-4,4 l-4,-4z`} style={{ fill: `var(--reel-color-marker-${m.color})` }}>
+        <path key={i} d={`M${(m.at - offsetSec) * pxPerSec - 4},14 h8 v5 l-4,4 l-4,-4z`} style={{ fill: `var(--fv-color-marker-${m.color})` }}>
           {m.label && <title>{m.label}</title>}
         </path>
       ))}
@@ -160,7 +188,7 @@ export function Ruler({ width, pxPerSec, offsetSec = 0, markers = [], format = f
 /** Playhead line with grab handle. Positioned by the timeline; this is just the visual. */
 export function Playhead({ x, height }: { x: number; height: number }) {
   return (
-    <div aria-hidden className="pointer-events-none absolute top-0 z-[var(--reel-z-timeline-overlay)]" style={{ left: x, height }}>
+    <div aria-hidden className="pointer-events-none absolute top-0 z-[var(--fv-z-timeline-overlay)]" style={{ left: x, height }}>
       <svg width={12} height={12} className="absolute -left-[6px] top-0"><path d="M0 0h12v6l-6 6-6-6z" className="fill-playhead" /></svg>
       <div className="absolute left-[-0.5px] top-0 h-full w-px bg-playhead" />
     </div>

@@ -1,0 +1,201 @@
+import { Fragment, useEffect, useState } from 'react'
+import { Button, Dialog, Kbd, Segmented, Select, Switch, TextField, UnderlineTabs, TabPanel, Badge, useToast } from '@framevane/ui'
+import type { AgentSettings, CacheUsage, McpConnectInfo } from '../../shared/api'
+import { useApp } from '../app/store'
+import { SHORTCUTS } from '../editor/shortcuts'
+import { ToolServers } from './ToolServers'
+import { AiModels } from '../editor/AiPanels'
+
+/** S23 Settings · S24 Shortcuts · S28 Agents & tools (Claude Code connection, API key + model, MCP servers). */
+export function SettingsDialog() {
+  const arg = useApp((s) => s.dialogArg)
+  const dialog = useApp((s) => s.dialog)
+  const [tab, setTab] = useState(dialog === 'shortcuts' ? 'shortcuts' : arg ?? 'general')
+  const close = () => useApp.getState().openDialog(null)
+  return (
+    <Dialog open onOpenChange={(o) => !o && close()} title="Settings" width={680}>
+      <div className="-mx-5 -mt-4">
+        <UnderlineTabs value={tab} onValueChange={setTab} label="Settings sections" tabs={[{ value: 'general', label: 'General' }, { value: 'agents', label: 'Agents & AI' }, { value: 'models', label: 'AI models' }, { value: 'shortcuts', label: 'Shortcuts' }, { value: 'performance', label: 'Performance' }]}>
+          <div className="min-h-[360px] px-5 pt-4">
+            <TabPanel value="general"><General /></TabPanel>
+            <TabPanel value="agents"><Agents /></TabPanel>
+            <TabPanel value="models"><AiModels /></TabPanel>
+            <TabPanel value="shortcuts"><Shortcuts /></TabPanel>
+            <TabPanel value="performance"><Performance /></TabPanel>
+          </div>
+        </UnderlineTabs>
+      </div>
+    </Dialog>
+  )
+}
+
+function General() {
+  const [info, setInfo] = useState<Awaited<ReturnType<typeof window.framevane.app.info>> | null>(null)
+  useEffect(() => { void window.framevane.app.info().then(setInfo) }, [])
+  if (!info) return null
+  const rows: [string, string][] = [['Version', info.version], ['Projects folder', info.projectsDir], ['App data', info.userData], ['FFmpeg', info.ffmpeg ?? 'Not found'], ['Local AI', info.sidecar]]
+  return (
+    <dl className="grid grid-cols-[130px_1fr] gap-x-3 gap-y-2 text-sm">
+      {rows.map(([k, v]) => <Fragment key={k}><dt className="text-muted">{k}</dt><dd className="break-all [user-select:text]">{v}</dd></Fragment>)}
+    </dl>
+  )
+}
+
+function Agents() {
+  const [s, setS] = useState<AgentSettings | null>(null)
+  const [key, setKey] = useState('')
+  const toast = useToast()
+  useEffect(() => { void window.framevane.agent.settings().then(setS) }, [])
+  if (!s) return null
+  return (
+    <div className="flex flex-col gap-4">
+      <ConnectClaude />
+      <section className="flex flex-col gap-2">
+        <h3 className="text-base">Built-in agent panel (optional)</h3>
+        <p className="text-sm text-muted">
+          The agent panel inside Framevane needs an Anthropic API key and is billed by Anthropic per use. Not needed if you use Claude Code above. The key is encrypted with Windows DPAPI and never written to your project files.
+        </p>
+        <div className="flex items-center gap-2 text-sm">
+          Status: {s.credentialSource === 'app_key' ? <Badge tone="success">Key saved in Framevane</Badge> : s.credentialSource === 'environment' ? <Badge tone="accent">Using ANTHROPIC_API_KEY from the environment</Badge> : <Badge tone="warning">No key</Badge>}
+        </div>
+        <div className="flex items-end gap-2">
+          <div className="flex-1"><TextField label="Anthropic API key" type="password" placeholder="sk-ant-…" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" /></div>
+          <Button variant="primary" disabled={!key.trim().startsWith('sk-')} onClick={async () => { setS(await window.framevane.agent.setApiKey(key)); setKey(''); toast({ tone: 'success', title: 'API key saved' }) }}>Save key</Button>
+          {s.credentialSource === 'app_key' && <Button variant="ghost" onClick={async () => setS(await window.framevane.agent.setApiKey(null))}>Remove</Button>}
+        </div>
+        <div className="flex gap-4">
+          <Select label="Model" value={s.model} width={200} onValueChange={async (m) => setS(await window.framevane.agent.setModel(m, s.effort))}
+            options={[{ value: 'claude-opus-5-5', label: 'Claude Opus 5.5', hint: 'default' }, { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', hint: 'cheaper' }, { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', hint: 'cheapest' }, { value: 'claude-fable-5-1', label: 'Claude Fable 5.1', hint: 'most capable' }]} />
+          <Select label="Effort" value={s.effort} width={120} onValueChange={async (e) => setS(await window.framevane.agent.setModel(s.model, e as AgentSettings['effort']))}
+            options={['low', 'medium', 'high', 'xhigh', 'max'].map((v) => ({ value: v, label: v }))} />
+        </div>
+      </section>
+      <ToolServers />
+    </div>
+  )
+}
+
+/** S28 · Let Claude Code (or any MCP client) edit in Framevane with its own login: no API key needed here. */
+function ConnectClaude() {
+  const [info, setInfo] = useState<McpConnectInfo | null>(null)
+  const [busy, setBusy] = useState(false)
+  const toast = useToast()
+  useEffect(() => { void window.framevane.mcp.info().then(setInfo) }, [])
+  if (!info) return null
+  const copy = async () => { await navigator.clipboard.writeText(info.claudeCommand); toast({ tone: 'success', title: 'Command copied', description: 'Paste it in a terminal, then start a new Claude Code session.' }) }
+  return (
+    <section className="flex flex-col gap-2 rounded-md border border-agent/40 bg-agent-soft/40 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-base">Use Framevane from Claude Code</h3>
+        {info.listening ? <Badge tone="success">Ready on {info.url.replace('http://', '')}</Badge> : info.enabled ? <Badge tone="danger">Not listening</Badge> : <Badge>Off</Badge>}
+      </div>
+      <p className="text-sm text-muted">
+        Connect your Claude Code session and ask it to edit: “cut the silences in the open project and caption it”. It uses your Claude login, edits show up here live, and Ctrl+Z undoes each one. Only programs on this computer with the token below can connect.
+      </p>
+      {info.error && <p role="alert" className="text-sm text-danger">{info.error}</p>}
+      <div className="flex gap-2">
+        <Button variant="agent" loading={busy} disabled={!info.listening} onClick={async () => {
+          setBusy(true)
+          const r = await window.framevane.mcp.connectClaudeCode()
+          setBusy(false)
+          toast({ tone: r.ok ? 'success' : 'warning', title: r.ok ? 'Connected to Claude Code' : "Couldn't add it automatically", description: r.message })
+        }}>Add to Claude Code</Button>
+        <Button onClick={() => void copy()}>Copy command</Button>
+      </div>
+      <code className="block break-all rounded-sm bg-bg p-2 font-mono text-xs text-muted [user-select:text]">{info.claudeCommand}</code>
+      <div className="flex flex-wrap gap-3 text-sm">
+        <Switch label="Allow connected agents" checked={info.enabled} onCheckedChange={async (v) => setInfo(await window.framevane.mcp.setEnabled(v))} />
+        <Button size="sm" variant="ghost" onClick={async () => { setInfo(await window.framevane.mcp.resetToken()); toast({ tone: 'info', title: 'New token', description: 'Connected sessions must be added again with the new command.' }) }}>Reset token</Button>
+      </div>
+    </section>
+  )
+}
+
+function Performance() {
+  const useProxies = useApp((s) => s.useProxies)
+  const [usage, setUsage] = useState<CacheUsage[] | null>(null)
+  const [dir, setDir] = useState<string | null>(null)
+  const [device, setDevice] = useState<'auto' | 'cpu' | null>(null)
+  const [health, setHealth] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const toast = useToast()
+  useEffect(() => {
+    void window.framevane.storage.usage().then(setUsage)
+    void window.framevane.storage.projectsDir().then(setDir)
+    void window.framevane.storage.aiDevice().then(setDevice)
+    void window.framevane.storage.aiHealth().then((h) => setHealth(h.gpu ? 'Your graphics card is available to the local AI.' : 'No supported graphics card found: the local AI runs on the CPU.')).catch(() => setHealth(null))
+  }, [])
+  const err = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
+  const mb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(0)} MB` : b > 0 ? `${Math.ceil(b / 1e3)} KB` : 'Empty')
+  return (
+    <div className="flex flex-col gap-5">
+      <section className="flex flex-col gap-2">
+        <h3 className="text-base">Preview</h3>
+        <Switch label="Use proxies for big media" description="Media larger than 1080p gets a light 1280px copy for smooth preview. Exports always use the originals." checked={useProxies}
+          onCheckedChange={(v) => { useApp.setState({ useProxies: v }); try { localStorage.setItem('framevane.useProxies', String(v)) } catch { /* private storage off: setting lasts this session */ } }} />
+        <p className="text-sm text-muted">Decoding and export use your graphics card (hardware video).</p>
+      </section>
+      <section className="flex flex-col gap-2">
+        <h3 className="text-base">Local AI</h3>
+        {device && (
+          <Segmented label="Run the local AI on" value={device} onValueChange={async (v) => setDevice(await window.framevane.storage.setAiDevice(v as 'auto' | 'cpu'))}
+            options={[{ value: 'auto', label: 'Graphics card when possible' }, { value: 'cpu', label: 'CPU only' }]} />
+        )}
+        <p className="text-sm text-muted">{device === 'cpu' ? 'Slower, but leaves the graphics card free for other apps. ' : ''}{health ?? ''}</p>
+      </section>
+      <section className="flex flex-col gap-2">
+        <h3 className="text-base">New projects folder</h3>
+        <div className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-sm [user-select:text]" title={dir ?? ''}>{dir}</span>
+          <Button size="sm" onClick={async () => {
+            const picked = await window.framevane.app.pickFolder()
+            if (!picked) return
+            try { setDir(await window.framevane.storage.setProjectsDir(picked)); toast({ tone: 'success', title: 'New projects will be saved there', description: 'Existing projects stay where they are.' }) } catch (e) { toast({ tone: 'error', title: "That folder can't be used", description: err(e) }) }
+          }}>Change…</Button>
+        </div>
+      </section>
+      <section className="flex flex-col gap-2">
+        <h3 className="text-base">Storage</h3>
+        <ul aria-label="Caches" className="flex flex-col gap-1.5">
+          {usage?.map((u) => (
+            <li key={u.id} className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2 text-sm"><span>{u.label}</span><span className="text-muted">{mb(u.bytes)}</span></div>
+                <p className="text-xs text-muted">{u.note}</p>
+              </div>
+              {u.clearable && (
+                <Button size="sm" variant="ghost" aria-label={`Clear ${u.label}`} disabled={!u.bytes || !!busy} loading={busy === u.id} onClick={async () => {
+                  setBusy(u.id)
+                  try {
+                    setUsage(await window.framevane.storage.clear(u.id))
+                    if (u.id === 'mattes') useApp.setState({ mattes: {} })
+                  } catch (e) { toast({ tone: 'error', title: "It wasn't cleared", description: err(e) }) } finally { setBusy(null) }
+                }}>Clear</Button>
+              )}
+            </li>
+          ))}
+        </ul>
+        {usage && <p className="text-xs text-muted">Total {mb(usage.reduce((n, u) => n + u.bytes, 0))}. AI models are managed in AI models.</p>}
+      </section>
+    </div>
+  )
+}
+
+function Shortcuts() {
+  const groups = [...new Set(SHORTCUTS.map((s) => s.group))]
+  return (
+    <div className="flex flex-col gap-4">
+      {groups.map((g) => (
+        <section key={g}>
+          <h3 className="mb-1 text-sm text-muted">{g}</h3>
+          <dl className="grid grid-cols-[1fr_auto] gap-y-1 text-sm">
+            {SHORTCUTS.filter((s) => s.group === g).map((s) => (
+              <Fragment key={s.action}><dt>{s.action}</dt><dd className="flex gap-1">{s.keys.split(' / ').map((k) => <Kbd key={k}>{k}</Kbd>)}</dd></Fragment>
+            ))}
+          </dl>
+        </section>
+      ))}
+      <p className="text-xs text-muted">Rebinding arrives as a should-have.</p>
+    </div>
+  )
+}

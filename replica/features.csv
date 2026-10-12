@@ -1,112 +1,112 @@
 feature,area,priority,original,clone,notes
-Home screen with project grid (create open rename duplicate delete),projects,must,yes,no,S01
-Project settings: ratio resolution fps (incl. adapt to first clip),projects,must,yes,no,S02
-Autosave and crash recovery,projects,must,yes,no,draft autosave
-Relink missing media,projects,should,yes,no,
+Home screen with project grid (create open rename duplicate delete),projects,must,yes,yes,S01 | M0: S01; search; drop files to start
+Project settings: ratio resolution fps (incl. adapt to first clip),projects,must,yes,yes,S02 | M0: S02 Modify dialog; first video sets canvas
+Autosave and crash recovery,projects,must,yes,partial,draft autosave | M0: ops.jsonl journal + atomic snapshot every 2 s; replay on open written but no crash test yet
+Relink missing media,projects,should,yes,yes,M0: missing files detected and shown; relink dialog not built | M1: Locate… on missing cards; checks kind and length
 Copy media into project vs link originals,projects,could,yes,no,S02
-Import video audio images by picker and drag-drop,import,must,yes,no,S04
-Wide codec support incl. HEVC VFR phone footage,import,must,yes,no,FFmpeg decode
-Proxy mode for 4K footage,import,should,yes,no,
-Hardware-accelerated decode and encode,import,should,yes,no,NVENC/QSV/AMF
+Import video audio images by picker and drag-drop,import,must,yes,yes,"S04 | M0: media panel, home drop zone, drag to timeline"
+Wide codec support incl. HEVC VFR phone footage,import,must,yes,yes,"FFmpeg decode | M0: WebCodecs for H.264/HEVC/VP9/AV1 + mezzanine transcode (NVENC) for the rest; not yet tested with real phone/ProRes files | M1: e2e-verified HEVC 10-bit, MPEG-4 AVI (mezzanine), VFR, rotated portrait"
+Proxy mode for 4K footage,import,should,yes,yes,M1: 1280px NVENC proxies for >1080p; preview only; toggle in Settings → Performance
+Hardware-accelerated decode and encode,import,should,yes,yes,NVENC/QSV/AMF | M0: WebCodecs hardware decode/encode
 Smart search of media by content or speech,import,could,yes,no,local CLIP + transcript index
-Multi-track timeline (main track + overlay + audio + text tracks),timeline,must,yes,no,S20
-Split at playhead (Ctrl+B) and split all tracks,timeline,must,yes,no,
-Trim by dragging clip edges,timeline,must,yes,no,
-Ripple delete left/right of playhead (Q/W),timeline,must,yes,no,
-Main track magnet / ripple,timeline,must,yes,no,
-Auto snapping,timeline,must,yes,no,
-Audio-video linkage and detach audio,timeline,must,yes,no,CapCut: extract audio partly PRO
-Undo/redo for every edit,timeline,must,yes,no,shared op log with agents
-Copy/cut/paste/duplicate clips,timeline,must,yes,no,
-Timeline zoom and fit (Shift+Z),timeline,must,yes,no,
-Track lock hide mute,timeline,must,yes,no,
-Markers (M) with colors,timeline,should,yes,no,
-Enable/disable clip (V),timeline,should,yes,no,
-Group / ungroup clips,timeline,should,yes,no,
+Multi-track timeline (main track + overlay + audio + text tracks),timeline,must,yes,partial,"S20 | M0: main, overlay, audio and caption tracks; text tracks M3"
+Split at playhead (Ctrl+B) and split all tracks,timeline,must,yes,yes,"M0: selected clips, or everything under the playhead"
+Trim by dragging clip edges,timeline,must,yes,yes,M0: with snapping and ripple on the magnet track
+Ripple delete left/right of playhead (Q/W),timeline,must,yes,yes,
+Main track magnet / ripple,timeline,must,yes,yes,M0: P toggles; delete/trim/reorder ripple
+Auto snapping,timeline,must,yes,yes,M0: playhead and clip edges; Alt bypasses
+Audio-video linkage and detach audio,timeline,must,yes,yes,"CapCut: extract audio partly PRO | M1: Ctrl+Shift+S, linked clips select/move/delete together, linkage toggle (`)"
+Undo/redo for every edit,timeline,must,yes,yes,shared op log with agents | M0: shared op journal; agent edits undo the same way
+Copy/cut/paste/duplicate clips,timeline,must,yes,yes,"M1: paste inserts on the magnet track, else first free track"
+Timeline zoom and fit (Shift+Z),timeline,must,yes,yes,
+Track lock hide mute,timeline,must,yes,yes,
+Markers (M) with colors,timeline,should,yes,yes,"M0: rendered from the doc; no UI to add yet | M1: M, Shift+M / Alt+Shift+M, right-click delete"
+Enable/disable clip (V),timeline,should,yes,yes,
+Group / ungroup clips,timeline,should,yes,yes,M1: Ctrl+G / Ctrl+Shift+G; groups select and move together
 Compound clips,timeline,could,yes,no,
-Freeze frame,timeline,should,yes,no,
-Reverse clip,timeline,should,yes,no,
-Mirror rotate crop,timeline,must,yes,no,
+Freeze frame,timeline,should,yes,yes,"M1: 3 s still, pushes the track right"
+Reverse clip,timeline,should,yes,yes,"M1: chunked ffmpeg reverse (bounded memory), picture and sound"
+Mirror rotate crop,timeline,must,yes,yes,M0: mirror + rotation in inspector; crop not built | M1: crop per side without re-zoom
 Preview axis (hover scrub),timeline,could,yes,no,
-Speed 0.1x-100x with keep pitch,speed,must,yes,no,S16
+Speed 0.1x-100x with keep pitch,speed,must,yes,partial,S16 | M0: 0.1–10× in inspector (any value via ops); keep pitch not built
 Curve speed (presets + custom),speed,should,yes,no,
 Smooth slow-mo (optical flow / frame interpolation),speed,should,yes,no,RIFE local
-Real-time player preview with frame-accurate seek,player,must,yes,no,hard part #1
-On-canvas move scale rotate with snap guides,player,must,yes,no,
-Preview quality setting,player,should,yes,no,
-Fullscreen preview,player,should,yes,no,
-Keyframes on transform opacity volume and effect params,keyframes,must,yes,no,S14 diamonds
-Keyframe graph panel with easing curves,keyframes,should,yes,no,S21
-Blend modes and opacity,compositing,must,yes,no,
-Picture-in-picture / overlay tracks,compositing,must,yes,no,
-Canvas background (color blur image),compositing,must,yes,no,
+Real-time player preview with frame-accurate seek,player,must,yes,yes,hard part #1 | M0: WebCodecs + Canvas2D compositor; audio-clocked playback
+On-canvas move scale rotate with snap guides,player,must,yes,yes,"M1: centre-line snapping, Shift = 15° rotation steps, Alt = no snap"
+Preview quality setting,player,should,yes,yes,
+Fullscreen preview,player,should,yes,yes,
+Keyframes on transform opacity volume and effect params,keyframes,must,yes,partial,"S14 diamonds | M1: position, scale, rotation, opacity, volume with easing, continuous across split/trim/speed | M4: effect and colour params are static per clip (not keyframable yet)"
+Keyframe graph panel with easing curves,keyframes,should,yes,partial,"S21 | M1: easing presets (linear, ease in/out, smooth, hold); no curve graph yet"
+Blend modes and opacity,compositing,must,yes,yes,M1: 16 blend modes
+Picture-in-picture / overlay tracks,compositing,must,yes,yes,M0: overlay tracks + position/scale/opacity in inspector; no on-canvas handles | M1: on-canvas handles
+Canvas background (color blur image),compositing,must,yes,partial,M1: colour and blurred fill; image background not yet
 Masks (linear mirror circle rectangle heart star) with feather invert keyframes,compositing,should,yes,no,
-Chroma key with intensity shadow edge,compositing,must,yes,no,
+Chroma key with intensity shadow edge,compositing,must,yes,yes,"M4: key colour (swatches, hex or pick from screen), intensity, edge softness, keep shadows, spill removal; hue-based so darker/lighter screens still key; Remove BG tab and chroma_key tool"
 Video stabilization (3 levels),compositing,should,yes,no,CapCut: possibly PRO on Windows; ffmpeg vidstab
 Motion tracking (attach text/sticker to subject),compositing,could,yes,no,CapCut: conflicting gating
-Add text with font size color stroke shadow background spacing,text,must,yes,no,S19
-Import local / system fonts,text,must,yes,no,
-Text presets (our own),text,should,yes,no,CapCut: PRO styles
-Text animations in/out/loop,text,should,yes,no,
+Add text with font size color stroke shadow background spacing,text,must,yes,yes,"S19 | M3: text clips with font, weight, bold/italic/underline, size, colour, outline, shadow, box (colour/opacity/roundness), letter spacing, line height, alignment; position/scale/rotation/opacity with keyframes; on-canvas handles"
+Import local / system fonts,text,must,yes,yes,M3: every font installed in Windows by name; import .ttf/.otf/.woff/.woff2 (family read from the font file); 9 bundled OFL/Apache display fonts
+Text presets (our own),text,should,yes,yes,M3: 12 text presets (S06) with live compositor previews; 5 caption presets
+Text animations in/out/loop,text,should,yes,partial,"M3: in/out: fade, slide ×4, pop, zoom, typewriter, wipe, with lengths; no loop animations yet (key Position/Scale for motion)"
 Text templates (our own),text,could,yes,no,CapCut: PRO
-Text-to-speech with multiple voices,text,must,yes,no,CapCut: PRO/credits; Piper/Kokoro local or user API
-Auto captions from speech (multi-language),captions,must,yes,no,CapCut: PRO; Whisper local
-Caption styling with apply-to-all,captions,must,yes,no,
-Keyword highlight / word-by-word karaoke captions,captions,should,yes,no,
+Text-to-speech with multiple voices,text,must,yes,yes,"M3: 12 natural Kokoro voices (local, 120 MB one-time download, checksum-pinned) + the Windows voices; speed; lands on an audio track under the text"
+Auto captions from speech (multi-language),captions,must,yes,yes,"CapCut: PRO; Whisper local | M0: local faster-whisper large-v3-turbo on CUDA, word timings"
+Caption styling with apply-to-all,captions,must,yes,yes,"M0: size, height, outline, colors | M3: font, weight, box, shadow, spacing, highlight colour, one-word-at-a-time, presets"
+Keyword highlight / word-by-word karaoke captions,captions,should,yes,yes,"M3: spoken-word highlight with any colour (or off), and a one-word-at-a-time mode; no keyword-only emphasis"
 Bilingual / translated captions,captions,should,yes,no,LLM translate
-Import SRT,captions,should,yes,no,
-Export SRT / TXT captions,captions,must,yes,no,
-Transcript-based editing (delete words to cut),captions,should,yes,no,S30
-Remove filler words and silences,captions,should,yes,no,
-Add local music and audio files,audio,must,yes,no,
-Volume and volume keyframes,audio,must,yes,no,
-Fade in / fade out,audio,must,yes,no,
-Waveform display,audio,must,yes,no,
-Noise reduction,audio,must,yes,no,CapCut: PRO; RNNoise/DeepFilterNet
-Normalize loudness,audio,should,yes,no,CapCut: PRO; ffmpeg loudnorm
-Enhance voice,audio,should,yes,no,CapCut: PRO
+Import SRT,captions,should,yes,yes,"M3: .srt/.vtt import (tags stripped, overlaps trimmed) from the Captions tab and import_captions"
+Export SRT / TXT captions,captions,must,yes,yes,M3: Captions tab and export_captions
+Transcript-based editing (delete words to cut),captions,should,yes,yes,"S30 | M3: Captions tab transcript: click to jump, Shift/Ctrl select, Delete cuts; follows the playhead; one undo step"
+Remove filler words and silences,captions,should,yes,yes,"M0: silences via the agent | M3: ""Remove N fillers"" in the transcript, remove_filler_words tool, Filler-word remover agent"
+Add local music and audio files,audio,must,yes,yes,
+Volume and volume keyframes,audio,must,yes,yes,M0: volume yes; keyframes M1 | M1
+Fade in / fade out,audio,must,yes,yes,"M3: per clip, preview and export; split keeps the outer fades"
+Waveform display,audio,must,yes,yes,M0: real peaks from ffmpeg
+Noise reduction,audio,must,yes,yes,M3: local FFmpeg spectral denoise (light / normal / strong) to a new audio file; video clips get a linked cleaned audio clip. DeepFilterNet-quality ML denoise not built
+Normalize loudness,audio,should,yes,yes,M3: loudnorm to −14 LUFS
+Enhance voice,audio,should,yes,yes,"M3: rumble cut, denoise, presence EQ, compression, loudness (FFmpeg chain)"
 Vocal isolation / stem separation,audio,should,yes,no,Demucs local
 Voice changer effects,audio,should,yes,no,
 Beat detection and beat markers,audio,should,yes,no,
-Auto ducking music under voice,audio,should,no,no,CapCut lacks a toggle; easy win
-Voiceover recording,audio,should,yes,no,
+Auto ducking music under voice,audio,should,no,yes,"M3: ""Lower under speech"" writes a volume curve from the main-track transcript; duck_music tool; Sound fixer agent"
+Voiceover recording,audio,should,yes,yes,"M3: mic picker, record at the playhead while the timeline plays, saved with the project as AAC"
 Voice cloning / AI dubbing,audio,could,yes,no,CapCut: PRO/credits; via user API or local model
-Video effects (our authored shader presets),effects,must,yes,no,CapCut: PRO pack; write our own GLSL
-Transitions (our authored set) with duration and apply-to-all,effects,must,yes,no,CapCut: PRO pack
-Filters / looks with intensity,effects,must,yes,no,CapCut: PRO pack
-Import .cube LUTs,effects,must,yes,no,
+Video effects (our authored shader presets),effects,must,yes,yes,"S08 | M4: 22 own GLSL effects (blur, glow, VHS, old film, grain, scanlines, glitch, RGB split, wave, shake, zoom pulse, bulge, mirror, kaleidoscope, pixelate, halftone, sketch, posterize, duotone, invert, light leak, flash) with params, up to 8 per clip in order; per clip, not as separate timeline segments"
+Transitions (our authored set) with duration and apply-to-all,effects,must,yes,yes,"S09 | M4: 16 own transitions (dissolve, dips, 4 pushes, 3 wipes, circle, clock, zoom, blur, pixelate, glitch), 0.1–5 s, centred on the cut using the clips' handles, apply to all cuts"
+Filters / looks with intensity,effects,must,yes,yes,S10 | M4: 20 own filters in 6 groups with strength; previews drawn by the real pipeline
+Import .cube LUTs,effects,must,yes,yes,"M4: 3D .cube up to 65³ (DOMAIN_MIN/MAX), validated on import, stored once by content hash, strength; apply_lut tool"
 Stickers / emoji / shapes (import PNG GIF Lottie),effects,should,yes,no,use OpenMoji/Twemoji
 Clip in/out/combo animations,effects,should,yes,no,
 Body effects (person-segmented effects),effects,could,yes,no,
 Adjustment layers,color,should,yes,no,
-Basic color adjust (exposure contrast temp tint sat etc),color,must,yes,no,S18
+Basic color adjust (exposure contrast temp tint sat etc),color,must,yes,yes,"S18 | M4: exposure, brightness, contrast, highlights, shadows, saturation, vibrance, temperature, tint, fade, sharpen, vignette, grain; reset; not keyframable yet"
 HSL,color,should,yes,no,
 Curves,color,should,yes,no,
 Color wheels,color,could,yes,no,
 Auto adjust / AI color correction,color,should,yes,no,CapCut: PRO
 Save and apply color presets,color,should,yes,no,
-Remove background auto (people/objects),ai,must,yes,no,CapCut: credits; RVM/SAM2/rembg local
+Remove background auto (people/objects),ai,must,yes,yes,"S14 | M5: local, free. Video: Robust Video Matting on the GPU (DirectML), about 45 fps at 1024×576 and real time at 1080p; makes a matte video once per file, so the original is never changed. Photos: BiRefNet lite on the CPU (~7 s). Edge softness, keep-background-instead; remove_background tool"
 Custom background removal brush,ai,should,yes,no,SAM2 click prompts
-Auto reframe to 9:16 / 1:1 (subject tracking),ai,must,yes,no,CapCut: likely PRO
+Auto reframe to 9:16 / 1:1 (subject tracking),ai,must,yes,yes,"M5: 9:16, 1:1, 4:5, 16:9, 4:3; tracks the main person (highest head) with the matte model at 5 samples/s, dead-zone camera + zero-lag smoothing → editable x/y keyframes; ""keep centred"" option; auto_reframe tool, Reframer agent"
 Enhance quality / upscale video,ai,should,yes,no,Real-ESRGAN local
 Retouch (skin smooth face),ai,could,yes,no,CapCut: PRO
 Relight,ai,could,yes,no,
 Remove video flicker,ai,could,yes,no,
 Auto cut: scene detection and split scenes,ai,should,yes,no,PySceneDetect
 Auto cut: beat sync,ai,could,yes,no,
-Long video to shorts,ai,should,yes,no,agent recipe
+Long video to shorts,ai,should,yes,partial,"M2: Short-form maker agent (9:16, blurred fill, cut pauses, captions, hook marker); no clip picking yet"
 Script to video,ai,could,yes,no,agent recipe + user gen-AI keys
-AI image / video generation in media panel,ai,could,yes,no,via MCP (e.g. Higgsfield) on user's account
+AI image / video generation in media panel,ai,could,yes,partial,M2: reachable through a user-added MCP server (e.g. Higgsfield) + import_from_url / import_media; no media-panel UI
 AI avatars / presenter,ai,could,yes,no,via MCP provider only
-Export MP4/MOV H.264 HEVC up to 4K 60fps no watermark,export,must,yes,no,CapCut: 4K/60fps/no-watermark PRO
+Export MP4/MOV H.264 HEVC up to 4K 60fps no watermark,export,must,yes,yes,"CapCut: 4K/60fps/no-watermark PRO | M0: MP4 H.264/HEVC, 720p–4K, 24–60 fps, no watermark; verified 1080p30 | M6: MP4 (H.264/HEVC/AV1), MOV (H.264/HEVC), WebM (VP9/AV1 + Opus); codecs this PC cannot encode are shown as unavailable"
 Export resolution beyond 4K and high fps,export,could,no,no,
-Custom bitrate and quality presets,export,must,yes,no,
-Export audio only (MP3 WAV AAC),export,should,yes,no,
-Export GIF and WebM/ProRes,export,could,yes,no,
-Export selected range / in-out,export,should,yes,no,
-Export progress with cancel,export,must,yes,no,
+Custom bitrate and quality presets,export,must,yes,yes,M0: 3 quality presets | M6: custom Mbps; presets scale with codec efficiency (HEVC/AV1/VP9 need fewer bits)
+Export audio only (MP3 WAV AAC),export,should,yes,yes,"M6: WAV (16-bit 48 kHz), MP3 and M4A (AAC) 192 kbps; with a range"
+Export GIF and WebM/ProRes,export,could,yes,partial,"M6: animated GIF (two-pass palette, 360–720 px, 10–25 fps) and WebM; ProRes not built (WebCodecs has no ProRes encoder)"
+Export selected range / in-out,export,should,yes,yes,"M6: whole video, the span of the selected clips, or from–to seconds; MCP startSeconds/endSeconds"
+Export progress with cancel,export,must,yes,yes,
 Background export queue / batch export,export,could,no,no,
-Export frame as image,export,should,yes,no,
+Export frame as image,export,should,yes,yes,"M6: PNG or JPG of the frame at the playhead, at the export resolution"
 Photo editor: open image crop resize rotate,photo,must,yes,no,S25
 Photo editor: layers (image text sticker shape) reorder lock hide,photo,must,yes,no,
 Photo editor: adjust and filters,photo,must,yes,no,
@@ -117,22 +117,22 @@ Photo editor: upscale,photo,should,yes,no,Real-ESRGAN
 Photo editor: retouch,photo,could,yes,no,
 Photo editor: export PNG JPG WebP with transparency,photo,must,yes,no,
 Photo editor: batch apply to many photos,photo,should,no,no,agent recipe
-Keyboard shortcuts matching common CapCut keys,shortcuts,must,yes,no,S24
+Keyboard shortcuts matching common CapCut keys,shortcuts,must,yes,partial,S24 | M0: 16 shortcuts (S24 list); more with the features they belong to
 Rebind shortcuts,shortcuts,should,yes,no,
-Settings: performance cache project folder,settings,must,yes,no,S23
-Agent panel: chat with an agent about the open project,agents,must,no,no,S27; CapCut EditPilot is the nearest analog
-Typed edit-op API shared by UI undo/redo and agents,agents,must,no,no,foundation for all agent work
-Editor exposed as an MCP server (timeline read + edit ops + render frame),agents,must,no,no,lets Claude Code / any agent drive the editor
-MCP client: plug in external MCP servers as agent tools,agents,must,no,no,S28
-Claude API provider with model picker and user key,agents,must,no,no,
-Local AI tools registered as agent tools (Whisper rembg ESRGAN RIFE Demucs TTS),agents,must,no,no,
-Edit proposal review with accept/reject per op,agents,must,no,no,S29
-Per-tool permission (auto / ask / never),agents,must,no,no,
-Agent sees frames (send sampled frames to vision model),agents,should,no,no,
-Saved agents / recipes library with built-ins,agents,should,no,no,S31
-Batch run an agent across many clips or photos,agents,should,no,no,F14
-Conflict handling when user edits during an agent run,agents,should,no,no,
-Agent cost / token tracking per run,agents,could,no,no,
+Settings: performance cache project folder,settings,must,yes,yes,"S23 | M5: AI models manager | M6: proxies, GPU or CPU for the local AI (restarts the sidecar, survives restarts), new-projects folder, cache sizes with clearing for the ones that rebuild (previews, proxies, transcripts, mattes, tracking); generated media kept"
+Agent panel: chat with an agent about the open project,agents,must,no,yes,"S27; CapCut EditPilot is the nearest analog | M0: S27 streaming transcript, tool steps, progress notes, cost"
+Typed edit-op API shared by UI undo/redo and agents,agents,must,no,yes,"foundation for all agent work | M0: @framevane/doc ops, 20 unit tests"
+Editor exposed as an MCP server (timeline read + edit ops + render frame),agents,must,no,yes,"lets Claude Code / any agent drive the editor | M2 early: streamable HTTP on 127.0.0.1:47821, bearer token, 23 tools, live edits = one undo step each, one-click ""Add to Claude Code""; review-mode for external agents not built"
+MCP client: plug in external MCP servers as agent tools,agents,must,no,yes,S28 | M0: MCP client hub runs the local sidecar | M2: add stdio (command) or HTTP (URL + headers) servers in Settings; secrets encrypted with DPAPI; tools reach the agent as server__tool; OAuth sign-in servers not supported yet
+Claude API provider with model picker and user key,agents,must,no,yes,M0: Opus 5.5 default; key in DPAPI; not yet run against the live API (no key on this machine)
+Local AI tools registered as agent tools (Whisper rembg ESRGAN RIFE Demucs TTS),agents,must,no,partial,M0: Whisper transcription + silence detection; the rest per milestone
+Edit proposal review with accept/reject per op,agents,must,no,yes,"S29 | M0: S29 with live preview, include/exclude, apply, discard"
+Per-tool permission (auto / ask / never),agents,must,no,yes,"M2: read-only tools default to auto, others ask; prompt with Allow once / Always allow / Deny / Never; ""costs money"" tools always ask; batch runs refuse ask-tools"
+Agent sees frames (send sampled frames to vision model),agents,should,no,partial,M0: get_frames tool; MCP image results also pass to the model (M2); untested against the live API
+Saved agents / recipes library with built-ins,agents,should,no,yes,"S31 | M2: 6 built-ins (Editor, Silence cutter, Captioner, Short-form maker, Filler-word remover, Highlight finder) + custom agents with instructions, tool allow-list, model/effort, review or auto-apply; built-ins duplicate to edit; JSON import/export not built"
+Batch run an agent across many clips or photos,agents,should,no,partial,"F14 | M2: across projects from Home, sequential, auto-apply or leave proposals for review; photos wait for the photo editor (M7)"
+Conflict handling when user edits during an agent run,agents,should,no,yes,"M0: time-based edits blocked if the timeline changed | M2: ""Ask again"" reruns the same request on the current timeline"
+Agent cost / token tracking per run,agents,could,no,yes,M0: tokens and $ per run in the panel
 Plugin SDK (JS) for custom tools and effects,agents,could,no,no,
 CapCut music library,content,could,yes,skip,licensed platform material; use local files or free libraries (Pixabay/Freesound)
 CapCut sound effects library,content,could,yes,skip,licensed; use Freesound/CC0 packs

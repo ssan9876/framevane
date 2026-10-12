@@ -1,4 +1,4 @@
-# Components: reel (working name)
+# Components: framevane (working name)
 
 Source of truth for the UI primitives. Code: `packages/ui/src/components/*`. Live gallery: `pnpm gallery`
 (http://localhost:5199), with screenshot `replica/design/gallery.png`. Tokens: `tokens.json` → `node build-tokens.mjs`
@@ -324,7 +324,7 @@ AgentComposer
   used on   S27
 ```
 
-## Layout tokens (from tokens.json → `--reel-*`)
+## Layout tokens (from tokens.json → `--fv-*`)
 
 | token | value | note |
 | --- | --- | --- |
