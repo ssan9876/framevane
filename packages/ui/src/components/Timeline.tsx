@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, type CSSProperties, type ReactNode } from 'react'
 import { Lock, Unlock, Eye, EyeOff, Volume2, VolumeX, Film, Music, Type, Sparkles, Captions, SlidersHorizontal, AlertTriangle, Image as ImageIcon, Sticker, Palette } from 'lucide-react'
 import { cn } from '../cn'
 import { IconToggle } from './Button'
@@ -32,6 +32,10 @@ export interface TimelineClipProps {
   waveformSeed?: number
   /** Thumbnail strip backgrounds for video clips. */
   thumbs?: string[]
+  /** One background for the whole clip body (e.g. a positioned filmstrip sprite). */
+  stripStyle?: CSSProperties
+  /** Real waveform peaks (0..1), already sliced to this clip's source range. Overrides waveformSeed. */
+  waveform?: ArrayLike<number>
   speedLabel?: string
   /** Proposed by an agent and not yet applied (S29 preview): dashed agent outline. */
   proposed?: boolean
@@ -42,8 +46,11 @@ export interface TimelineClipProps {
  * a11y: the timeline is a role="grid" of tracks; each clip is a focusable gridcell announced as
  * "<label>, <kind>, <start>–<end>, selected". Arrow keys move between clips, Enter opens it in the inspector.
  */
-export function TimelineClip({ kind, label, width, height, selected, disabled, missing, processing, keyframes, waveformSeed, thumbs, speedLabel, proposed }: TimelineClipProps) {
-  const bars = useMemo(() => (kind === 'audio' || waveformSeed !== undefined ? waveform(Math.floor(width / 3), waveformSeed ?? 1) : null), [kind, width, waveformSeed])
+export function TimelineClip({ kind, label, width, height, selected, disabled, missing, processing, keyframes, waveformSeed, thumbs, stripStyle, waveform: peaks, speedLabel, proposed }: TimelineClipProps) {
+  const bars = useMemo(() => {
+    if (peaks) return resample(peaks, Math.max(4, Math.floor(width / 3)))
+    return kind === 'audio' || waveformSeed !== undefined ? waveform(Math.floor(width / 3), waveformSeed ?? 1) : null
+  }, [kind, width, waveformSeed, peaks])
   const compact = height <= 28
   return (
     <div
@@ -60,6 +67,7 @@ export function TimelineClip({ kind, label, width, height, selected, disabled, m
           : 'outline-1 outline-scrim/40 -outline-offset-1',
       )}
     >
+      {stripStyle && !compact && <div className="absolute inset-0 opacity-75" style={stripStyle} />}
       {thumbs && !compact && (
         <div className="absolute inset-0 flex opacity-70">
           {thumbs.map((t, i) => <div key={i} className="h-full flex-1 bg-cover bg-center" style={{ background: t }} />)}
@@ -92,6 +100,17 @@ export function TimelineClip({ kind, label, width, height, selected, disabled, m
       <span className={cn('absolute inset-y-0 right-0 w-1.5 cursor-ew-resize bg-selection/0 group-hover:bg-selection/40', selected && 'bg-selection/70')} aria-hidden />
     </div>
   )
+}
+
+function resample(p: ArrayLike<number>, n: number) {
+  const out: number[] = []
+  const step = p.length / n
+  for (let i = 0; i < n; i++) {
+    let m = 0
+    for (let j = Math.floor(i * step); j < Math.min(p.length, Math.floor((i + 1) * step) || 1); j++) m = Math.max(m, p[j]!)
+    out.push(Math.max(0.04, Math.min(1, m)))
+  }
+  return out
 }
 
 function waveform(n: number, seed: number) {

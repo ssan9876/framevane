@@ -5,3 +5,6 @@ out/
 *.log
 .env
 replica/screens/
+replica/seed-media/
+apps/desktop/test-results/
+*.tsbuildinfo

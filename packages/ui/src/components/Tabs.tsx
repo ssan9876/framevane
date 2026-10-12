@@ -11,13 +11,13 @@ export interface TabDef { value: string; label: string; icon?: ReactNode; badge?
 export function PanelTabs({ tabs, value, onValueChange, children, className }: { tabs: TabDef[]; value: string; onValueChange: (v: string) => void; children?: ReactNode; className?: string }) {
   return (
     <RTabs.Root value={value} onValueChange={onValueChange} className={cn('flex min-h-0 flex-col', className)}>
-      <RTabs.List aria-label="Asset library" className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-border px-1.5 pt-1.5">
+      <RTabs.List aria-label="Asset library" className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-1 pt-1.5 [scrollbar-width:none]">
         {tabs.map((t) => (
           <RTabs.Trigger
             key={t.value}
             value={t.value}
             disabled={t.disabled}
-            className="group relative flex h-12 min-w-12 flex-col items-center justify-center gap-0.5 rounded-t-sm px-2 text-xs text-muted hover:bg-surface-3 hover:text-fg data-[state=active]:text-accent [&_svg]:size-4"
+            className="group relative flex h-12 min-w-10 flex-col items-center justify-center gap-0.5 rounded-t-sm px-1.5 text-xs text-muted hover:bg-surface-3 hover:text-fg data-[state=active]:text-accent [&_svg]:size-4"
           >
             {t.icon}
             <span>{t.label}</span>

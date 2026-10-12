@@ -151,7 +151,8 @@ export function OpRow({ label, target, time, included, onIncludedChange, status 
 }
 
 /** Composer at the bottom of the agent panel. Enter sends, Shift+Enter new line. Context chips show what the agent will see. */
-export function AgentComposer({ value, onChange, onSend, onStop, running, chips, placeholder = 'Describe the edit… e.g. "cut the silences and add captions"' }: {
+export function AgentComposer({ id, value, onChange, onSend, onStop, running, chips, placeholder = 'Describe the edit… e.g. "cut the silences and add captions"' }: {
+  id?: string
   value: string
   onChange: (v: string) => void
   onSend: () => void
@@ -169,6 +170,7 @@ export function AgentComposer({ value, onChange, onSend, onStop, running, chips,
       )}
       <div className="flex items-end gap-1.5 rounded-md border border-border-input bg-surface-2 p-1.5 focus-within:border-focus">
         <textarea
+          id={id}
           aria-label="Message the agent"
           rows={2}
           value={value}
