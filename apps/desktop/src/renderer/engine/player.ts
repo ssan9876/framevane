@@ -27,10 +27,12 @@ export class Player {
   private disposed = false
   private pendingPrune: Set<string> | null = null
   private isReady: (assetId: string) => boolean = () => false // nothing decodes until the editor says what is ready
+  private hasMatte: (assetId: string) => boolean = () => false
 
   /** Media that is missing or still being prepared is not decoded (BUG-005). Call again when statuses change. */
-  setAvailability(isReady: (assetId: string) => boolean, useProxy: (assetId: string) => boolean = () => false) {
+  setAvailability(isReady: (assetId: string) => boolean, useProxy: (assetId: string) => boolean = () => false, hasMatte: (assetId: string) => boolean = () => false) {
     this.isReady = isReady
+    this.hasMatte = hasMatte
     this.pool.useProxy = useProxy
     this.audioReady = null
     if (!this.playing) this.seek(this.lastUs)
@@ -131,7 +133,7 @@ export class Player {
     try {
       const doc = this.doc
       await ensureLuts(doc)
-      const visuals = await fetchVisuals(doc, this.pool, tUs, this.isReady)
+      const visuals = await fetchVisuals(doc, this.pool, tUs, this.isReady, this.hasMatte)
       if (this.disposed || !this.c2d) return
       drawFrame(this.c2d, doc, tUs, visuals, this.canvas.width / doc.canvas.width)
     } finally {

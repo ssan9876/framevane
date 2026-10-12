@@ -4,12 +4,14 @@ import { extname } from 'node:path'
 import { Readable } from 'node:stream'
 import type { Fonts } from './fonts'
 import type { Media } from './media'
+import type { Ai } from './ai'
 
 /**
  * framevane-media:// serves ONLY registered assets (by id), never arbitrary paths:
  *   asset/<id>  the playable file (original or mezzanine), with HTTP Range support for WebCodecs demuxing
  *   thumb/<id>  poster jpg · strip/<id> filmstrip jpg · peaks/<id> waveform peaks (Uint8, 100/s)
  *   font/<file> a font the user imported (only files inside the app's fonts folder)
+ *   matte/<id> the background matte made for an asset (grayscale video or PNG; white = keep)
  */
 
 export const SCHEME = 'framevane-media'
@@ -28,11 +30,15 @@ const MIME: Record<string, string> = {
 
 const FONT_MIME: Record<string, string> = { '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff': 'font/woff', '.woff2': 'font/woff2' }
 
-export function handleMediaProtocol(media: Media, fonts?: Fonts) {
+export function handleMediaProtocol(media: Media, fonts?: Fonts, ai?: Ai) {
   protocol.handle(SCHEME, async (req) => {
     const url = new URL(req.url)
     const kind = url.host
     const id = decodeURIComponent(url.pathname.replace(/^\//, ''))
+    if (kind === 'matte') {
+      const file = ai?.matteFile(id)
+      return file ? serveFile(file, req.headers.get('range'), file.endsWith('.png') ? 'image/png' : 'video/mp4') : new Response('Not found', { status: 404 })
+    }
     if (kind === 'font') {
       const file = fonts?.path(id)
       return file ? serveFile(file, null, FONT_MIME[extname(file).toLowerCase()] ?? 'application/octet-stream') : new Response('Not found', { status: 404 })

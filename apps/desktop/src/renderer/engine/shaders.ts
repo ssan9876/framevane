@@ -55,6 +55,8 @@ uniform float uSpill;
 uniform sampler3D uLut;
 uniform float uLutSize;
 uniform float uLutMix;
+uniform sampler2D uMatte;
+uniform vec3 uCut; // on, invert, edge half-width
 
 vec3 grade(vec3 c, float p[12], vec3 sh, vec3 hi) {
   c *= exp2(p[0] * 2.0);
@@ -88,6 +90,10 @@ vec4 effect(vec2 uv) {
   vec4 s = tex(uv);
   vec3 c = s.rgb;
   float a = s.a;
+  if (uCut.x > 0.5) {
+    float m = smoothstep(0.5 - uCut.z, 0.5 + uCut.z, texture(uMatte, clamp(uv, 0.5 / uRes, 1.0 - 0.5 / uRes)).r);
+    a *= uCut.y > 0.5 ? 1.0 - m : m;
+  }
   if (uSharpen > 0.0) {
     vec2 px = 1.0 / uRes;
     vec3 b = (tex(uv + vec2(px.x, 0.0)).rgb + tex(uv - vec2(px.x, 0.0)).rgb + tex(uv + vec2(0.0, px.y)).rgb + tex(uv - vec2(0.0, px.y)).rgb) * 0.25;

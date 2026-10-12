@@ -44,6 +44,15 @@ const api = {
     saveRecording: inv('media:saveRecording') as ReelApi['media']['saveRecording'],
     onChange: on('media:change'),
   },
+  ai: {
+    models: inv('ai:models') as ReelApi['ai']['models'],
+    installModel: inv('ai:installModel') as ReelApi['ai']['installModel'],
+    removeModel: inv('ai:removeModel') as ReelApi['ai']['removeModel'],
+    mattes: inv('ai:mattes') as ReelApi['ai']['mattes'],
+    matte: inv('ai:matte') as ReelApi['ai']['matte'],
+    reframe: inv('ai:reframe') as ReelApi['ai']['reframe'],
+    onMatte: on<string>('ai:matte'),
+  },
   luts: {
     import: inv('luts:import') as ReelApi['luts']['import'],
     read: inv('luts:read') as ReelApi['luts']['read'],

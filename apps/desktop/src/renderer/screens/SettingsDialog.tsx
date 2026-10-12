@@ -4,6 +4,7 @@ import type { AgentSettings, McpConnectInfo } from '../../shared/api'
 import { useApp } from '../app/store'
 import { SHORTCUTS } from '../editor/shortcuts'
 import { ToolServers } from './ToolServers'
+import { AiModels } from '../editor/AiPanels'
 
 /** S23 Settings · S24 Shortcuts · S28 Agents & tools (Claude Code connection, API key + model, MCP servers). */
 export function SettingsDialog() {
@@ -14,10 +15,11 @@ export function SettingsDialog() {
   return (
     <Dialog open onOpenChange={(o) => !o && close()} title="Settings" width={680}>
       <div className="-mx-5 -mt-4">
-        <UnderlineTabs value={tab} onValueChange={setTab} label="Settings sections" tabs={[{ value: 'general', label: 'General' }, { value: 'agents', label: 'Agents & AI' }, { value: 'shortcuts', label: 'Shortcuts' }, { value: 'performance', label: 'Performance' }]}>
+        <UnderlineTabs value={tab} onValueChange={setTab} label="Settings sections" tabs={[{ value: 'general', label: 'General' }, { value: 'agents', label: 'Agents & AI' }, { value: 'models', label: 'AI models' }, { value: 'shortcuts', label: 'Shortcuts' }, { value: 'performance', label: 'Performance' }]}>
           <div className="min-h-[360px] px-5 pt-4">
             <TabPanel value="general"><General /></TabPanel>
             <TabPanel value="agents"><Agents /></TabPanel>
+            <TabPanel value="models"><AiModels /></TabPanel>
             <TabPanel value="shortcuts"><Shortcuts /></TabPanel>
             <TabPanel value="performance"><Performance /></TabPanel>
           </div>

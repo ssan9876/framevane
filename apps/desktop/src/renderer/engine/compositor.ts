@@ -15,7 +15,9 @@ import type { MediaPool } from './sources'
  */
 
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
-type Visual = { kind: 'video'; sample: VideoSample } | { kind: 'image'; bitmap: ImageBitmap }
+type Picture = { kind: 'video'; sample: VideoSample } | { kind: 'image'; bitmap: ImageBitmap }
+/** A clip's picture, plus its background matte when Remove BG is on and the matte is ready. */
+type Visual = Picture & { matte?: Picture }
 
 export interface FrameJob { clip: MediaClip; visual: Promise<Visual | null> }
 
@@ -45,16 +47,20 @@ function frameSeconds(clip: MediaClip, asset: AssetRef, tUs: number) {
 }
 
 /** Fetch every visual needed for time t in parallel (decoders run concurrently). */
-export async function fetchVisuals(doc: Project, pool: MediaPool, tUs: number, isReady: (assetId: string) => boolean = () => true): Promise<Map<string, Visual>> {
+export async function fetchVisuals(doc: Project, pool: MediaPool, tUs: number, isReady: (assetId: string) => boolean = () => true, hasMatte: (assetId: string) => boolean = () => false): Promise<Map<string, Visual>> {
   const clips = layersAt(doc, tUs).flatMap((l) => (l.transition ? [l.transition.from, l.transition.to] : [l.clip]))
   const jobs = clips.flatMap((clip) => {
     if (clip.kind !== 'video' && clip.kind !== 'image') return []
     const asset = doc.assets[clip.assetId]
     if (!asset || !isReady(asset.id)) return []
+    const t = frameSeconds(clip, asset, tUs)
     const p: Promise<Visual | null> = clip.kind === 'image'
       ? pool.image(asset).then((bitmap) => ({ kind: 'image' as const, bitmap })).catch(() => null)
-      : pool.frameAt(asset, clip.id, frameSeconds(clip, asset, tUs)).then((s) => (s ? { kind: 'video' as const, sample: s } : null)).catch((e) => { console.warn('[compositor] frame', e); return null })
-    return [p.then((v) => [clip.id, v] as const)]
+      : pool.frameAt(asset, clip.id, t).then((s) => (s ? { kind: 'video' as const, sample: s } : null)).catch((e) => { console.warn('[compositor] frame', e); return null })
+    const m: Promise<Picture | null> = !clip.cutout || !hasMatte(asset.id) ? Promise.resolve(null) : clip.kind === 'image'
+      ? pool.matteImage(asset).then((bitmap) => ({ kind: 'image' as const, bitmap })).catch(() => null)
+      : pool.matteFrameAt(asset, clip.id, t).then((s) => (s ? { kind: 'video' as const, sample: s } : null)).catch((e) => { console.warn('[compositor] matte', e); return null })
+    return [Promise.all([p, m]).then(([v, matte]) => [clip.id, v && matte ? { ...v, matte } : v] as const)]
   })
   const out = new Map<string, Visual>()
   for (const [id, v] of await Promise.all(jobs)) if (v) out.set(id, v)
@@ -138,6 +144,7 @@ export function mediaGeometry(clip: MediaClip, localUs: number, sw: number, sh: 
 }
 
 let scratch: OffscreenCanvasRenderingContext2D | null = null
+let matteScratch: OffscreenCanvasRenderingContext2D | null = null
 
 /**
  * A clip's picture with its look applied (crop, then the GPU passes), sized for where it lands on screen. Null when
@@ -156,7 +163,21 @@ function lookImage(doc: Project, clip: MediaClip, v: Visual, g: ReturnType<typeo
   if (v.kind === 'video') v.sample.draw(scratch, g.src.x, g.src.y, g.src.w, g.src.h, 0, 0, ow, oh)
   else scratch.drawImage(v.bitmap, g.src.x, g.src.y, g.src.w, g.src.h, 0, 0, ow, oh)
   const lut = clip.lut ? lutFor(doc, clip.lut.id) : null
-  return fx.look(scratch.canvas, ow, oh, clip, localUs / 1e6, lut?.lut ?? null, lut?.key ?? null)
+  let matte: OffscreenCanvas | null = null
+  if (clip.cutout && v.matte) {
+    // the matte covers the same picture, maybe at another size: map the visible (cropped) part across
+    const m = v.matte
+    const mw = m.kind === 'video' ? m.sample.displayWidth : m.bitmap.width
+    const mh = m.kind === 'video' ? m.sample.displayHeight : m.bitmap.height
+    const [kx, ky] = [mw / (g.src.w / (1 - g.crop.left - g.crop.right)), mh / (g.src.h / (1 - g.crop.top - g.crop.bottom))]
+    matteScratch ??= new OffscreenCanvas(ow, oh).getContext('2d')!
+    if (matteScratch.canvas.width !== ow || matteScratch.canvas.height !== oh) { matteScratch.canvas.width = ow; matteScratch.canvas.height = oh }
+    const r = [g.src.x * kx, g.src.y * ky, g.src.w * kx, g.src.h * ky] as const
+    if (m.kind === 'video') m.sample.draw(matteScratch, ...r, 0, 0, ow, oh)
+    else matteScratch.drawImage(m.bitmap, ...r, 0, 0, ow, oh)
+    matte = matteScratch.canvas
+  }
+  return fx.look(scratch.canvas, ow, oh, clip, localUs / 1e6, lut?.lut ?? null, lut?.key ?? null, matte)
 }
 
 function drawMedia(ctx: Ctx2D, doc: Project, clip: MediaClip, v: Visual, W: number, H: number, scale: number, localUs: number) {

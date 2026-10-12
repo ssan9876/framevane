@@ -9,6 +9,7 @@ import type { Projects } from '../projects'
 import type { AgentExternalTool, ToolRegistry } from '../tool-registry'
 import type { Tts } from '../tts'
 import type { Luts } from '../luts'
+import type { Ai } from '../ai'
 import { toolByName, toolDefinitions, type ToolCtx } from './tools'
 import { toolAllowed, type AgentDefs } from './defs'
 import { fakeClient } from './fake-model'
@@ -79,6 +80,8 @@ export class AgentRunner {
   tts?: Tts
   /** LUT import for apply_lut (set after construction). */
   luts?: Luts
+  /** Local vision AI for remove_background and auto_reframe (set after construction). */
+  ai?: Ai
 
   constructor(
     private db: Db,
@@ -391,6 +394,7 @@ export class AgentRunner {
       media: this.media,
       tts: this.tts,
       luts: this.luts,
+      ai: this.ai,
       doc: () => run.fork,
       propose: (ops: OpInput[]) => {
         const parsedOps = ops.map((o) => Op.parse(o))

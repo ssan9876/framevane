@@ -13,9 +13,12 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from mcp.server.mcpserver import Context, MCPServer
+
+from .models import Catalog
+from . import vision
 
 
 def log(*a: Any) -> None:
@@ -47,6 +50,39 @@ mcp = MCPServer(
 
 _models: dict[tuple[str, str, str], Any] = {}
 _gpu_lock = threading.Lock()  # one GPU model runs at a time (8 GB card)
+catalog = Catalog(MODELS_DIR)
+
+
+async def _threaded(ctx: Context, work: Callable[[Callable[[float], None], Callable[[], bool]], Any], message: str) -> Any:
+    """Run blocking work on a thread, reporting progress; a cancelled request stops the work at its next check."""
+    state: dict[str, Any] = {"progress": 0.0, "done": False, "error": None, "result": None, "cancel": False}
+
+    def run() -> None:
+        try:
+            state["result"] = work(lambda p: state.__setitem__("progress", p), lambda: state["cancel"])
+        except Exception as e:
+            state["error"] = e
+        finally:
+            state["done"] = True
+
+    threading.Thread(target=run, daemon=True).start()
+    started = time.monotonic()
+    try:
+        while not state["done"]:
+            await asyncio.sleep(0.4)
+            await ctx.report_progress(state["progress"], 1.0, f"{message} ({int(time.monotonic() - started)} s)")
+    except BaseException:
+        state["cancel"] = True
+        raise
+    if state["error"] is not None:
+        raise state["error"]
+    return state["result"]
+
+
+def _need(model_id: str) -> Path:
+    if not catalog.ready(model_id):
+        raise RuntimeError(f"MODEL_MISSING:{model_id}: the {catalog.spec(model_id)['name']} model isn't downloaded yet")
+    return catalog.file(model_id)
 
 
 def _whisper(model: str):
@@ -80,6 +116,12 @@ def health() -> dict:
         info["ctranslate2"] = ctranslate2.__version__
     except Exception as e:
         info["cuda_error"] = str(e)
+    try:
+        import onnxruntime
+
+        info["onnx_providers"] = onnxruntime.get_available_providers()
+    except Exception as e:
+        info["onnx_error"] = str(e)
     return info
 
 
@@ -136,18 +178,12 @@ async def transcribe(path: str, ctx: Context, language: str | None = None, model
 # ───────────────────────── text to speech (Kokoro v1.0, Apache-2.0) ─────────────────────────
 
 KOKORO_DIR = Path(MODELS_DIR) / "kokoro"
-KOKORO_BASE = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
-# int8 model: ~90 MB, runs faster than real time on a CPU; checksums pinned so a tampered download is refused
-KOKORO_FILES = {
-    "kokoro-v1.0.int8.onnx": "6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb",
-    "voices-v1.0.bin": "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d",
-}
 _kokoro: Any = None
 _kokoro_lock = threading.Lock()
 
 
 def _kokoro_ready() -> bool:
-    return all((KOKORO_DIR / f).is_file() for f in KOKORO_FILES)
+    return catalog.ready("kokoro")
 
 
 @mcp.tool()
@@ -159,45 +195,7 @@ def tts_status() -> dict:
 @mcp.tool()
 async def tts_install(ctx: Context) -> dict:
     """Download the Kokoro voice model (~120 MB) into the models folder. Safe to call again."""
-    import hashlib
-    import urllib.request
-
-    KOKORO_DIR.mkdir(parents=True, exist_ok=True)
-    state = {"progress": 0.0, "done": False, "error": None}
-
-    def work() -> None:
-        try:
-            total_files = len(KOKORO_FILES)
-            for i, (name, sha) in enumerate(KOKORO_FILES.items()):
-                dest = KOKORO_DIR / name
-                if dest.is_file():
-                    continue
-                tmp = dest.with_suffix(dest.suffix + ".part")
-                h = hashlib.sha256()
-                with urllib.request.urlopen(KOKORO_BASE + name, timeout=60) as r, open(tmp, "wb") as f:
-                    size = int(r.headers.get("Content-Length") or 0)
-                    got = 0
-                    while chunk := r.read(1 << 20):
-                        f.write(chunk)
-                        h.update(chunk)
-                        got += len(chunk)
-                        if size:
-                            state["progress"] = (i + got / size) / total_files
-                if h.hexdigest() != sha:
-                    tmp.unlink(missing_ok=True)
-                    raise RuntimeError(f"{name} failed its checksum check; the download was discarded")
-                tmp.replace(dest)
-        except Exception as e:
-            state["error"] = e
-        finally:
-            state["done"] = True
-
-    threading.Thread(target=work, daemon=True).start()
-    while not state["done"]:
-        await asyncio.sleep(0.5)
-        await ctx.report_progress(state["progress"], 1.0, "Downloading natural voices")
-    if state["error"] is not None:
-        raise state["error"]  # type: ignore[misc]
+    await _threaded(ctx, lambda progress, cancelled: catalog.install("kokoro", progress, cancelled), "Downloading natural voices")
     return {"ready": _kokoro_ready()}
 
 
@@ -247,6 +245,63 @@ async def tts(text: str, voice: str, out: str, ctx: Context, speed: float = 1.0)
     if state["error"] is not None:
         raise state["error"]  # type: ignore[misc]
     return {"path": out, "seconds": state["seconds"]}
+
+
+# ───────────────────────── models, background removal, subject tracking ─────────────────────────
+
+
+@mcp.tool()
+def models_status() -> list[dict]:
+    """Every local model: what it is for, licence, download size, whether it is on this computer."""
+    return [catalog.status(m) for m in ("whisper", "kokoro", "rvm", "birefnet")]
+
+
+@mcp.tool()
+async def model_install(model_id: str, ctx: Context) -> dict:
+    """Download a model (checksum-verified). Safe to call again."""
+    await _threaded(ctx, lambda progress, cancelled: catalog.install(model_id, progress, cancelled), f"Downloading {catalog.spec(model_id)['name']}")
+    return catalog.status(model_id)
+
+
+@mcp.tool()
+def model_remove(model_id: str) -> dict:
+    """Delete a downloaded model to free disk space (it downloads again when needed)."""
+    vision._sessions.clear()
+    catalog.remove(model_id)
+    return catalog.status(model_id)
+
+
+@mcp.tool()
+async def matte_video(path: str, out: str, ctx: Context) -> dict:
+    """Separate people from the background in a video. Writes a grayscale matte video (white = keep) with the
+    source's timestamps to `out` (.mp4)."""
+    model = _need("rvm")
+
+    def work(progress: Callable[[float], None], cancelled: Callable[[], bool]) -> dict:
+        with _gpu_lock:
+            return vision.matte_video(model, path, out, progress, cancelled)
+
+    return await _threaded(ctx, work, "Removing background")
+
+
+@mcp.tool()
+async def matte_image(path: str, out: str, ctx: Context) -> dict:
+    """Separate the subject from the background in a photo. Writes a grayscale matte PNG (white = keep) to `out`."""
+    model = _need("birefnet")
+    return await _threaded(ctx, lambda progress, cancelled: vision.matte_image(model, path, out), "Removing background")
+
+
+@mcp.tool()
+async def track_subject(path: str, ctx: Context, start: float = 0.0, end: float = 1e9, fps: float = 5.0) -> dict:
+    """Where the person is in a video over time: samples {t, x, y, area} (source seconds; x/y 0..1, null when nobody
+    is in frame), for reframing."""
+    model = _need("rvm")
+
+    def work(progress: Callable[[float], None], cancelled: Callable[[], bool]) -> dict:
+        with _gpu_lock:
+            return vision.track_subject(model, path, start, end, fps, progress, cancelled)
+
+    return await _threaded(ctx, work, "Finding the subject")
 
 
 def main() -> None:

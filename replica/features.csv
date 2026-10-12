@@ -85,9 +85,9 @@ Curves,color,should,yes,no,
 Color wheels,color,could,yes,no,
 Auto adjust / AI color correction,color,should,yes,no,CapCut: PRO
 Save and apply color presets,color,should,yes,no,
-Remove background auto (people/objects),ai,must,yes,no,CapCut: credits; RVM/SAM2/rembg local
+Remove background auto (people/objects),ai,must,yes,yes,"S14 | M5: local, free. Video: Robust Video Matting on the GPU (DirectML), about 45 fps at 1024×576 and real time at 1080p; makes a matte video once per file, so the original is never changed. Photos: BiRefNet lite on the CPU (~7 s). Edge softness, keep-background-instead; remove_background tool"
 Custom background removal brush,ai,should,yes,no,SAM2 click prompts
-Auto reframe to 9:16 / 1:1 (subject tracking),ai,must,yes,no,CapCut: likely PRO
+Auto reframe to 9:16 / 1:1 (subject tracking),ai,must,yes,yes,"M5: 9:16, 1:1, 4:5, 16:9, 4:3; tracks the main person (highest head) with the matte model at 5 samples/s, dead-zone camera + zero-lag smoothing → editable x/y keyframes; ""keep centred"" option; auto_reframe tool, Reframer agent"
 Enhance quality / upscale video,ai,should,yes,no,Real-ESRGAN local
 Retouch (skin smooth face),ai,could,yes,no,CapCut: PRO
 Relight,ai,could,yes,no,
@@ -119,7 +119,7 @@ Photo editor: export PNG JPG WebP with transparency,photo,must,yes,no,
 Photo editor: batch apply to many photos,photo,should,no,no,agent recipe
 Keyboard shortcuts matching common CapCut keys,shortcuts,must,yes,partial,S24 | M0: 16 shortcuts (S24 list); more with the features they belong to
 Rebind shortcuts,shortcuts,should,yes,no,
-Settings: performance cache project folder,settings,must,yes,partial,S23 | M0: S23 shows paths/status; cache and proxy controls M6
+Settings: performance cache project folder,settings,must,yes,partial,"S23 | M0: S23 shows paths/status | M5: AI models manager (download, remove, sizes, licences); cache and proxy controls M6"
 Agent panel: chat with an agent about the open project,agents,must,no,yes,"S27; CapCut EditPilot is the nearest analog | M0: S27 streaming transcript, tool steps, progress notes, cost"
 Typed edit-op API shared by UI undo/redo and agents,agents,must,no,yes,"foundation for all agent work | M0: @framevane/doc ops, 20 unit tests"
 Editor exposed as an MCP server (timeline read + edit ops + render frame),agents,must,no,yes,"lets Claude Code / any agent drive the editor | M2 early: streamable HTTP on 127.0.0.1:47821, bearer token, 23 tools, live edits = one undo step each, one-click ""Add to Claude Code""; review-mode for external agents not built"

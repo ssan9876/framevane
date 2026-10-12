@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import {
-  AnimProp, AssetRef, BlendMode, Keyframe, CaptionClip, Canvas, ChromaKey, Clip, ColorAdjust, Easing, Effect, FilterUse, Id, LutRef, LutUse, MediaClip, Marker, Transition, patchOf, PositiveUs, Project, TextAnimKind, TextStyle, Track, Transform, Us,
+  AnimProp, AssetRef, BlendMode, Keyframe, CaptionClip, Canvas, ChromaKey, Clip, Cutout, ColorAdjust, Easing, Effect, FilterUse, Id, LutRef, LutUse, MediaClip, Marker, Transition, patchOf, PositiveUs, Project, TextAnimKind, TextStyle, Track, Transform, Us,
   type Clip as ClipT, type Project as ProjectT, type TextClip, type Track as TrackT,
 } from './schema'
 import { removeKeyframeAt, scaleKeyframes, sliceKeyframes, upsertKeyframe, type AnimatableClip } from './keyframes'
@@ -79,6 +79,7 @@ export const Op = z.discriminatedUnion('type', [
     filter: FilterUse.nullable().optional(),
     lut: LutUse.nullable().optional(),
     chroma: patchOf(ChromaKey).nullable().optional(),
+    cutout: patchOf(Cutout).nullable().optional(),
     effects: z.array(Effect).max(8).optional(),
     transition: Transition.nullable().optional(),
   }),
@@ -371,6 +372,7 @@ function applyOne(doc: ProjectT, op: Op): ProjectT {
         ...(op.filter !== undefined ? { filter: op.filter } : {}),
         ...(op.lut !== undefined ? { lut: op.lut } : {}),
         ...(op.chroma !== undefined ? { chroma: op.chroma === null ? null : ChromaKey.parse({ ...(c.chroma ?? {}), ...defined(op.chroma) }) } : {}),
+        ...(op.cutout !== undefined ? { cutout: op.cutout === null ? null : Cutout.parse({ ...(c.cutout ?? {}), ...defined(op.cutout) }) } : {}),
         ...(op.effects ? { effects: op.effects } : {}),
         ...(op.transition !== undefined ? { transition: op.transition } : {}),
       }
@@ -648,7 +650,7 @@ export function describeOp(doc: ProjectT, raw: OpInput): string {
     case 'set_caption_text': return `Edit caption → "${op.text.slice(0, 32)}"`
     case 'set_look': {
       const what = [op.color && 'colour', op.filter !== undefined && (op.filter ? `filter ${op.filter.id}` : 'no filter'), op.lut !== undefined && (op.lut ? 'LUT' : 'no LUT'),
-        op.chroma !== undefined && (op.chroma ? 'chroma key' : 'no chroma key'), op.effects && `${op.effects.length} effect${op.effects.length === 1 ? '' : 's'}`,
+        op.chroma !== undefined && (op.chroma ? 'chroma key' : 'no chroma key'), op.cutout !== undefined && (op.cutout ? 'background removed' : 'background back'), op.effects && `${op.effects.length} effect${op.effects.length === 1 ? '' : 's'}`,
         op.transition !== undefined && (op.transition ? `${op.transition.kind} transition` : 'no transition')].filter(Boolean)
       return `Look of ${clipName(op.clipId)}: ${what.join(', ') || 'unchanged'}`
     }

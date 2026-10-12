@@ -17,6 +17,8 @@ import { appPaths } from './paths'
 import { Projects } from './projects'
 import { Fonts } from './fonts'
 import { Luts } from './luts'
+import { Ai } from './ai'
+import type { Follow, ReframeRatio } from '@framevane/doc'
 import { Tts } from './tts'
 import { handleMediaProtocol, registerSchemePrivileges } from './protocol'
 
@@ -56,8 +58,9 @@ async function main() {
   void registry.connectAll()
   const fonts = new Fonts(join(paths.userData, 'fonts'))
   const luts = new Luts(paths.userData)
+  const ai = new Ai(hub, media, jobs, paths, (assetId: string) => broadcast('ai:matte', assetId))
   const tts = new Tts(paths.cacheDir, hub)
-  handleMediaProtocol(media, fonts)
+  handleMediaProtocol(media, fonts, ai)
 
   /* ── Framevane as an MCP server (Claude Code connects here) ── */
   let ui: UiState = { projectId: null, playheadUs: 0, selection: [] }
@@ -76,8 +79,9 @@ async function main() {
   })
   agent.tts = tts
   agent.luts = luts
+  agent.ai = ai
   const editorMcp = new EditorMcp({
-    db, projects, media, analysis, tts, luts,
+    db, projects, media, analysis, tts, luts, ai,
     emitActivity: (a: ExternalActivity) => broadcast('mcp:activity', a),
     ui: () => ui,
     openInUi: async (projectId) => {
@@ -185,6 +189,15 @@ async function main() {
   ipcMain.handle('media:relink', (_e, projectId: string, assetId: string, newPath: string) => media.relink(projectId, assetId, newPath))
   ipcMain.handle('media:processAudio', (_e, projectId: string, assetId: string, preset: AudioPreset) => media.processAudio(projectId, assetId, preset))
   ipcMain.handle('media:saveRecording', (_e, projectId: string, data: Uint8Array) => media.saveRecording(projectId, data, projects.dirOf(projectId)))
+  ipcMain.handle('ai:models', () => ai.models())
+  ipcMain.handle('ai:installModel', (_e, id: string) => ai.installModel(id))
+  ipcMain.handle('ai:removeModel', (_e, id: string) => ai.removeModel(id))
+  ipcMain.handle('ai:mattes', () => ai.readyMattes())
+  ipcMain.handle('ai:matte', async (_e, projectId: string, assetId: string) => { await ai.matte(projectId, assetId) })
+  ipcMain.handle('ai:reframe', async (_e, projectId: string, opts: { ratio: ReframeRatio; follow: Follow; clipIds?: string[] }) => {
+    const r = await ai.reframe(projects.get(projectId), opts)
+    return { ops: r.ops, clips: r.clips, followed: r.followed }
+  })
   ipcMain.handle('luts:import', (_e, paths: string[]) => luts.import(paths))
   ipcMain.handle('luts:read', (_e, file: string) => luts.read(file))
   ipcMain.handle('fonts:system', () => fonts.systemFamilies())

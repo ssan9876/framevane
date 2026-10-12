@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -25,7 +25,12 @@ export const files = {
   greenscreen: join(EDGE, 'greenscreen.mp4'),
   lut: join(EDGE, 'Swap RB.cube'),
   lut1d: join(EDGE, 'one-dimensional.cube'),
+  /** 10 s of a real person (C-SPAN floor speech, public domain in the US), for background removal and reframe. */
+  person: join(SEED, 'person.mp4'),
+  personStill: join(SEED, 'person.png'),
 }
+
+const PERSON_URL = 'https://upload.wikimedia.org/wikipedia/commons/7/77/Bill_Posey_speaking%2C_2021-10-21.webm'
 
 /** A 3D LUT that swaps red and blue (easy to check in pixels). */
 function swapLut(n: number) {
@@ -57,6 +62,16 @@ export default function globalSetup() {
   if (!existsSync(files.uhd)) ff(['-f', 'lavfi', '-i', 'testsrc2=size=3840x2160:rate=30:duration=3', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', files.uhd])
   if (!existsSync(files.greenscreen)) ff(['-f', 'lavfi', '-i', 'color=c=0x10c040:s=640x360:r=25:d=4', '-f', 'lavfi', '-i', 'testsrc=size=240x180:rate=25:duration=4', '-filter_complex', '[0][1]overlay=200:90,format=yuv420p', '-c:v', 'libx264', '-preset', 'veryfast', files.greenscreen])
   if (!existsSync(files.lut)) writeFileSync(files.lut, swapLut(9))
+  if (!existsSync(files.person)) {
+    // downloaded once; tests that need a person skip if this isn't possible (offline)
+    const raw = join(EDGE, '_person-source.webm')
+    const r = spawnSync('curl', ['-sSL', '-A', 'FramevaneTest/0.1 (local test fixture)', '-o', raw, PERSON_URL], { encoding: 'utf8' })
+    if (r.status === 0 && existsSync(raw)) {
+      ff(['-ss', '20', '-t', '10', '-i', raw, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'aac', files.person])
+      rmSync(raw, { force: true })
+    }
+  }
+  if (existsSync(files.person) && !existsSync(files.personStill)) ff(['-ss', '3', '-i', files.person, '-frames:v', '1', files.personStill])
   if (!existsSync(files.lut1d)) writeFileSync(files.lut1d, ['LUT_1D_SIZE 2', '0 0 0', '1 1 1', ''].join('\n'))
   if (!existsSync(files.fake)) writeFileSync(files.fake, 'This is a text file wearing an .mp4 name.\n')
   // a copy we can delete to test missing media

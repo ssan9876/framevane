@@ -44,7 +44,7 @@ export function ExportDialog() {
     abort.current = new AbortController()
     setProgress({ phase: 'audio', progress: 0, frame: 0, frames: 0, fps: 0, etaSeconds: null })
     try {
-      const r = await exportProject(doc, { projectId: doc.id, outputPath, width: W, height: H, fps: Number(fps), bitrate, codec }, setProgress, abort.current.signal)
+      const r = await exportProject(doc, { projectId: doc.id, outputPath, width: W, height: H, fps: Number(fps), bitrate, codec }, setProgress, abort.current.signal, (id) => !!useApp.getState().mattes[id])
       setProgress(null)
       useApp.getState().openDialog(null)
       toast({ tone: 'success', title: 'Your video is ready', description: `${r.path.split(/[\\/]/).pop()} · ${(r.bytes / 1e6).toFixed(1)} MB`, action: { label: 'Show file', onClick: () => void window.framevane.app.showItemInFolder(r.path) } })

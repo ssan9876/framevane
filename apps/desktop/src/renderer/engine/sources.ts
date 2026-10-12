@@ -8,6 +8,7 @@ import type { AssetRef } from '@framevane/doc'
  */
 
 export const mediaUrl = (assetId: string, proxy = false) => `framevane-media://asset/${encodeURIComponent(assetId)}${proxy ? '?proxy=1' : ''}`
+export const matteUrl = (assetId: string) => `framevane-media://matte/${encodeURIComponent(assetId)}`
 
 class Lock {
   private p: Promise<unknown> = Promise.resolve()
@@ -89,7 +90,20 @@ export class MediaPool {
 
   /** A reader dedicated to one clip (two clips of the same asset decode independently). */
   async frameAt(asset: AssetRef, clipId: string, sourceSeconds: number): Promise<VideoSample | null> {
-    const e = await this.entry(asset)
+    return this.read(await this.entry(asset), clipId, sourceSeconds)
+  }
+
+  /** The background matte frame of a video asset at a source time (its own reader per clip). */
+  async matteFrameAt(asset: AssetRef, clipId: string, sourceSeconds: number): Promise<VideoSample | null> {
+    return this.read(await this.entryFor(`${asset.id}|matte`, matteUrl(asset.id)), `${clipId}#matte`, sourceSeconds)
+  }
+
+  /** The background matte of a photo. */
+  matteImage(asset: AssetRef): Promise<ImageBitmap> {
+    return this.bitmap(`${asset.id}|matte`, matteUrl(asset.id), `Matte of ${asset.name}`)
+  }
+
+  private async read(e: AssetEntry, clipId: string, sourceSeconds: number): Promise<VideoSample | null> {
     if (!e.sink) return null
     let r = e.readers.get(clipId)
     if (!r) { r = new SequentialReader(e.sink); e.readers.set(clipId, r) }
@@ -97,11 +111,15 @@ export class MediaPool {
   }
 
   image(asset: AssetRef): Promise<ImageBitmap> {
-    let p = this.images.get(asset.id)
+    return this.bitmap(asset.id, mediaUrl(asset.id), `Image ${asset.name}`)
+  }
+
+  private bitmap(key: string, url: string, what: string): Promise<ImageBitmap> {
+    let p = this.images.get(key)
     if (!p) {
-      p = fetch(mediaUrl(asset.id)).then((r) => { if (!r.ok) throw new Error(`Image ${asset.name}: HTTP ${r.status}`); return r.blob() }).then((b) => createImageBitmap(b))
-      this.images.set(asset.id, p)
-      p.catch(() => this.images.delete(asset.id))
+      p = fetch(url).then((r) => { if (!r.ok) throw new Error(`${what}: HTTP ${r.status}`); return r.blob() }).then((b) => createImageBitmap(b))
+      this.images.set(key, p)
+      p.catch(() => this.images.delete(key))
     }
     return p
   }
@@ -122,7 +140,7 @@ export class MediaPool {
     for (const p of this.assets.values()) {
       const e = await p.catch(() => null)
       if (!e) continue
-      for (const [id, r] of e.readers) if (!liveClipIds.has(id)) { e.readers.delete(id); void r.close() }
+      for (const [id, r] of e.readers) if (!liveClipIds.has(id.split('#')[0]!)) { e.readers.delete(id); void r.close() }
     }
   }
 
@@ -141,15 +159,18 @@ export class MediaPool {
 
   private entry(asset: AssetRef): Promise<AssetEntry> {
     const proxy = this.useProxy(asset.id)
-    const key = `${asset.id}|${proxy ? 'proxy' : 'full'}`
+    return this.entryFor(`${asset.id}|${proxy ? 'proxy' : 'full'}`, mediaUrl(asset.id, proxy), asset.name)
+  }
+
+  private entryFor(key: string, url: string, name = key): Promise<AssetEntry> {
     let p = this.assets.get(key)
     if (!p) {
       p = (async () => {
-        const input = new Input({ source: new UrlSource(mediaUrl(asset.id, proxy)), formats: ALL_FORMATS })
+        const input = new Input({ source: new UrlSource(url), formats: ALL_FORMATS })
         const video = await input.getPrimaryVideoTrack()
         let sink: VideoSampleSink | null = null
         if (video && (await video.canDecode())) sink = new VideoSampleSink(video)
-        else if (video) console.warn(`[media] cannot decode video of ${asset.name} (${video.codec})`)
+        else if (video) console.warn(`[media] cannot decode video of ${name} (${video.codec})`)
         return { input, video, sink, readers: new Map() }
       })()
       this.assets.set(key, p)

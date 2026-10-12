@@ -1,3 +1,4 @@
+import { matteJob } from './actions-m5'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent as RPointerEvent } from 'react'
 import { ArrowLeftRight, Magnet, MousePointer2, Scissors, Trash2, ChevronsLeft, ChevronsRight, Maximize2, ZoomIn, ZoomOut, Link2, Snowflake, Undo2 as Rewind, FlipHorizontal, Bookmark, Copy, ClipboardPaste, CopyPlus, AudioLines, EyeOff, Group, Ungroup } from 'lucide-react'
 import { ContextMenu, IconButton, IconToggle, Ruler, SnapGuide, TimelineClip, TrackHeader, Playhead as PlayheadMark, type ClipKind } from '@framevane/ui'
@@ -365,7 +366,9 @@ function ClipView({ doc, clip, track, start, dur, pxPerUs, selected, peaks, medi
     waveform = Array.from(p.subarray(a, Math.max(a + 1, b)), (v) => v / 255)
   }
   const visual = clip.kind === 'video' || clip.kind === 'image'
+  const matting = useApp((s) => (media && media.cutout ? matteJob(s.jobs, media.assetId) : undefined))
   const tags = media && visual ? [
+    ...(media.cutout ? ['cutout'] : []),
     ...(media.chroma ? ['key'] : []),
     ...(media.filter || media.lut || !isNeutralColor(media.color) ? ['colour'] : []),
     ...(media.effects.length ? ['fx'] : []),
@@ -403,7 +406,8 @@ function ClipView({ doc, clip, track, start, dur, pxPerUs, selected, peaks, medi
           speedLabel={media && media.speed !== 1 ? `${+media.speed.toFixed(2)}×` : media?.linkId ? '🔗' : undefined}
           keyframes={keyframes.length ? keyframes : undefined}
           tags={tags.length ? tags : undefined}
-          srNote={tr ? `${tr} transition into the next clip` : undefined}
+          srNote={[tr ? `${tr} transition into the next clip` : '', matting ? 'removing background' : ''].filter(Boolean).join(', ') || undefined}
+          processing={matting ? matting.progress : undefined}
         />
         {tr && (
           <span aria-hidden title={`${tr} transition`} className="pointer-events-none absolute -right-2 top-1/2 z-10 size-4 -translate-y-1/2 rotate-45 rounded-xs border border-accent bg-accent-soft" />

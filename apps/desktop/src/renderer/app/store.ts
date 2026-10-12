@@ -43,6 +43,8 @@ interface State {
   /** The media list for the open project has arrived (until then, readiness is unknown). */
   mediaLoaded: boolean
   jobs: Record<string, JobEvent>
+  /** Assets whose background matte (M5 remove BG) is ready. */
+  mattes: Record<string, true>
   playheadUs: number
   playing: boolean
   selection: string[]
@@ -54,7 +56,7 @@ interface State {
   /** Preview decodes 1280px proxies of big media (saved per computer). */
   useProxies: boolean
   clipboard: { items: { trackId: string; trackKind: TrackKind; clip: Clip }[]; originUs: number } | null
-  dialog: null | 'export' | 'settings' | 'project-settings' | 'review' | 'shortcuts' | 'agents'
+  dialog: null | 'export' | 'settings' | 'project-settings' | 'review' | 'shortcuts' | 'agents' | 'reframe'
   dialogArg: string | null
   agentRuns: AgentRunView[]
   /** Saved agents (S31) and the one the panel sends to (null = Editor). */
@@ -92,6 +94,7 @@ export const useApp = create<State>((set, get) => ({
   media: [],
   mediaLoaded: false,
   jobs: {},
+  mattes: {},
   playheadUs: 0,
   playing: false,
   selection: [],
@@ -242,6 +245,8 @@ export function connectEvents() {
       })
     }),
     window.framevane.agent.onEvent((e) => useApp.getState().agentEvent(e)),
+    window.framevane.ai.onMatte((assetId) => useApp.setState((s) => ({ mattes: { ...s.mattes, [assetId]: true } }))),
   ]
+  void window.framevane.ai.mattes().then((ids) => useApp.setState((s) => ({ mattes: { ...Object.fromEntries(ids.map((id) => [id, true as const])), ...s.mattes } }))).catch(() => {})
   return () => offs.forEach((f) => f())
 }

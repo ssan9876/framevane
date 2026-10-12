@@ -13,6 +13,7 @@ import { CaptionInspector, TextInspector } from './TextInspector'
 import { cleanUpAudio, duckUnderSpeech } from './actions-m3'
 import type { AudioPreset } from '../../shared/api'
 import { AdjustPanel, ChromaPanel, EffectsPanel } from './LookInspector'
+import { CutoutPanel } from './AiPanels'
 
 /** S14–S19 · Inspector: properties of the selection, or project details (with S02 Modify) when nothing is selected. */
 export function Inspector() {
@@ -50,7 +51,10 @@ function ProjectDetails({ doc }: { doc: Project }) {
       <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-2 p-3 text-sm">
         {rows.map(([k, v]) => <Fragment key={k}><dt className="text-muted">{k}</dt><dd className="truncate" title={v}>{v}</dd></Fragment>)}
       </dl>
-      <div className="px-3"><Button size="sm" onClick={() => useApp.getState().openDialog('project-settings')}>Modify canvas…</Button></div>
+      <div className="flex gap-2 px-3">
+        <Button size="sm" onClick={() => useApp.getState().openDialog('project-settings')}>Modify canvas…</Button>
+        <Button size="sm" onClick={() => useApp.getState().openDialog('reframe')}>Auto reframe…</Button>
+      </div>
       <BackgroundTools doc={doc} />
       <p className="px-3 pt-4 text-sm text-muted">Select a clip on the timeline to change it.</p>
     </>
@@ -132,13 +136,14 @@ function MediaInspector({ clip, doc, locked, main }: { clip: MediaClip; doc: Pro
                 <Switch label="Mirror" checked={clip.transform.flipH} onCheckedChange={(v) => apply({ transform: { flipH: v } })} />
               </div>
               <KeyframeTools clip={clip} keysHere={keysHere} animated={animated} local={local} />
+              <div className="pt-1"><Button size="sm" variant="ghost" onClick={() => useApp.getState().openDialog('reframe')}>Auto reframe…</Button></div>
             </div>
           )}
           {sub === 'crop' && <CropTools clip={clip} />}
           {sub === 'bg' && (
             <div className="mt-2 flex flex-col gap-3">
-              <ChromaPanel clip={clip} />
-              <p className="border-t border-border pt-3 text-xs text-muted">Automatic background removal (no green screen) comes in M5, running locally on your GPU.</p>
+              <CutoutPanel clip={clip} />
+              <div className="border-t border-border pt-3"><ChromaPanel clip={clip} /></div>
             </div>
           )}
           {sub === 'mask' && <EmptyState icon={<Construction />} title="Masks come as a should-have" body="It will run locally on your GPU, free." />}

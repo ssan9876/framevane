@@ -106,6 +106,16 @@ export const BUILTIN_AGENTS: AgentDefInput[] = [
     starter: 'Give this a warm, cinematic look with soft transitions.',
   },
   {
+    name: 'Reframer',
+    description: 'Turns a landscape video vertical (or square) and keeps the speaker in frame, no blurred bars.',
+    instructions: 'Call auto_reframe with the ratio the user asks for (9:16 if they say vertical, Shorts, Reels or TikTok; 1:1 for square; 4:5 for a portrait feed) and follow "subject". Report how many clips follow a person and which stayed centred (get_frames shows the source footage, so it cannot confirm the framing). Do not cut, caption or restyle anything.',
+    model: 'default',
+    effort: 'low',
+    allowedTools: ['get_project_summary', 'get_timeline', 'auto_reframe'],
+    reviewMode: 'propose',
+    starter: 'Make this vertical and keep me in frame.',
+  },
+  {
     name: 'Highlight finder',
     description: 'Reads the transcript and marks the best moments. Changes nothing else.',
     instructions: 'Read the transcript and add_marker at the 3 to 6 strongest moments (quotable lines, reveals, jokes, key claims). Label each marker with a few words saying why (max 40 characters); use green for highlights and red for the single best hook. Do not cut or change anything else.',

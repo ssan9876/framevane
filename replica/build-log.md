@@ -67,6 +67,8 @@ Count: 31 screens. 12 done, 9 partial, 10 stub. Every screen is reachable.
 ## Deviations from architecture.md
 
 - **Compositor is Canvas 2D for M0, not WebGPU.** It is the same single renderer for preview and export, so parity holds.
+- **Local vision models run on ONNX Runtime with DirectML, not PyTorch/CUDA (M5).** One small wheel works on any Windows GPU (NVIDIA, AMD, Intel) with no CUDA install. The sidecar swaps kokoro-onnx's CPU onnxruntime for `onnxruntime-directml` with a uv override. Kokoro still runs on the CPU.
+- **Auto reframe tracks people with the matting model, not YOLO or a face tracker (M5).** The model is already there, and its matte gives the person's extent. Non-person subjects (products, pets) aren't followed; those clips are centred.
 - **Looks run on WebGL2 (GLSL ES 3.0), not WebGPU (WGSL) (M4).** WebGL2 calls are synchronous, so the shader passes run inside the one `drawFrame` that preview and export share. WebGPU would have made that path async. WebGL2 also works on every Windows GPU driver, and in software for tests. Masks and AI cut-outs (M5) can reuse the same pipeline.
 - **The agent loop is the documented streaming manual loop, not the beta Tool Runner.** That gives direct control of streaming, cancellation and mixed Zod/MCP tool schemas.
 - **SQLite runs on Electron's built-in `node:sqlite` (Node 24.21), not better-sqlite3.** No native rebuild is needed; the SQL is the same.
@@ -161,6 +163,22 @@ Harder than expected:
 - Picking the GPU API: WebGPU submits work asynchronously, which would have split the one synchronous draw function that preview and export share. WebGL2 (GLSL ES 3.0) runs inside it (see Deviations).
 - Transitions mix premultiplied layers; with straight alpha a cross-fade over the background came out too dark.
 
+## M5 AI (2026-10-12)
+
+| area | status | notes |
+| --- | --- | --- |
+| Remove BG, video (S14) | done | Robust Video Matting (ONNX) in the sidecar, on the GPU through DirectML, falling back to the CPU. It writes a grayscale matte video once per media file, with the source's own timestamps (VFR-safe) and phone rotation applied, cached in `cache/mattes`. The compositor decodes it next to the clip and uses it as alpha in the look pipeline, so the original stays untouched and preview equals export. Edge softness; "keep the background instead". A progress bar shows on the clip while it runs; export refuses to start until mattes are ready. |
+| Remove BG, photo | done | BiRefNet lite (MIT) on the CPU, about 7 s per photo; matte PNG at the photo's size. |
+| Auto reframe | done | Pick 9:16 / 1:1 / 4:5 / 16:9 and follow the person or keep centred. The sidecar samples the clip 5 times a second with the matte model and reports the main person: the one whose head is highest, so a speaker beats people beside them. A dead-zone camera with two-way smoothing (no lag, no jitter) becomes x/y keyframes on a clip scaled to fill the frame, simplified to the fewest points (Ramer–Douglas–Peucker). One undo step. Pure maths in `packages/doc/src/reframe.ts`. |
+| Model manager (S23) | done | Settings → AI models: Whisper, Kokoro, RVM and BiRefNet, each with its purpose, size, licence and status, plus download (SHA-256-checked) and remove. A model also downloads on first use inside the job that needs it. |
+| Agent tools | done | remove_background (waits for the matte), auto_reframe; new built-in agent "Reframer". Both also go to Claude Code over MCP. |
+| SAM 2 click-to-select brush, upscale, scene detection | not built | should-haves |
+
+Harder than expected:
+- **BiRefNet hangs DirectML** ("the GPU will not respond") on this driver, with any optimisation level, so photos run on the CPU (~7 s). RVM is fine on DirectML.
+- **BUG-014:** reframe first centred on everyone in the shot, so with two people it framed the gap between them. It now follows the person whose head is highest.
+- **Test footage:** the seed media has no people. A 10 s public-domain clip (US House floor speech via C-SPAN, Wikimedia Commons) is downloaded once by the e2e setup into the git-ignored seed folder. Tests that need it skip when offline. No frames of it are in committed screenshots.
+
 ## Next (architecture build order)
 
 - **Still open from M1/M2:**
@@ -169,7 +187,6 @@ Harder than expected:
   - run F12 and `get_frames` against the live Claude API (needs a key)
   - OAuth MCP servers
   - agent import/export
-- **M5 AI:**
-  - Remove BG (RVM for video, BiRefNet for photos), local on the GPU
-  - auto reframe (subject tracking → keyframes)
-  - a model download manager in settings (S23)
+- **M6 export + settings:**
+  - S22 complete: H.264/HEVC/AV1 up to 4K60, bitrate presets, progress/cancel (most exist; AV1 and presets to add)
+  - S23 performance and cache settings (cache size and clearing, proxies, AI device)

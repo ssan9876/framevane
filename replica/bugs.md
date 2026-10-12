@@ -13,6 +13,7 @@ Only reproduced bugs are listed. Each one has a test that failed before the fix 
 | BUG-006 | S3 | Tabs in Settings and the inspector point aria-controls at panels that don't exist | fixed in 16aa598 |
 | BUG-007 | S3 | Inspector slider thumbs have no accessible name | fixed in 16aa598 |
 | BUG-008 | S4 | Home requests project covers before their thumbnails exist (404) | fixed in 16aa598 |
+| BUG-014 | S3 | Auto reframe frames the gap between two people instead of the speaker | fixed in M5 (before release) |
 | BUG-013 | S2 | Chroma key leaves a real green screen in place at the default settings | fixed in M4 (before release) |
 | BUG-012 | S3 | Agent library tool checkboxes are too small and too close together to hit reliably (WCAG 2.5.8) | fixed in M3 |
 | BUG-011 | S2 | Audio clean-up fails on media whose sound is shorter than its picture | fixed in M3 (before release) |
@@ -186,6 +187,22 @@ Evidence: found while building M1. The on-canvas drag sends x then y, and x came
 Suspected cause: zod's `.partial()` keeps field defaults, so a patch `{y: 100}` parsed to `{x: 0, y: 100, scale: 1, …}`.
 Fix: `patchOf()` builds patch schemas without defaults. It's used for transform and caption-style patches, and covered by two regression tests.
 Status: fixed in b26aae5
+
+---
+
+### BUG-014: Auto reframe frames the gap between two people instead of the speaker
+- Severity: S3 (it works, but the shot is wrong whenever someone else is in frame; the x keyframes can be fixed by hand)
+- Build: M5 work in progress, never shipped
+
+Steps
+1. Import person.mp4 (a speaker with a seated person beside him), Auto reframe → 9:16 → Follow the person.
+
+Expected: the speaker's face is in the middle of the vertical frame.
+Actual: the frame sits between the two people (the pixel at the centre, upper third, is the dark wall).
+Evidence: m5-ai.spec.ts › following a person.
+Cause: the tracker used the centroid of the whole person matte, and the two people touch in the matte, so splitting by columns didn't separate them either.
+Fix: follow the person whose head is highest in frame (nearest the camera, usually the speaker): the run of columns whose top edge is near the highest one.
+Status: fixed before release (M5 commit)
 
 ---
 

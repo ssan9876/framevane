@@ -49,7 +49,7 @@ export function connectMcpBridge(onActivity: (a: ExternalActivity) => void) {
     const height = even(portrait ? req.height / ar : req.height)
     try {
       onActivity({ id: req.requestId, client: 'Connected agent', tool: 'export_video', summary: `${width}×${height} · rendering`, status: 'running', mutates: false })
-      const r = await exportProject(doc, { projectId: doc.id, outputPath: req.outputPath, width, height, fps: req.fps, bitrate: Math.round(width * height * req.fps * 0.12), codec: req.codec }, () => {}, new AbortController().signal)
+      const r = await exportProject(doc, { projectId: doc.id, outputPath: req.outputPath, width, height, fps: req.fps, bitrate: Math.round(width * height * req.fps * 0.12), codec: req.codec }, () => {}, new AbortController().signal, (id) => !!useApp.getState().mattes[id])
       window.framevane.mcp.replyExport(req.requestId, { ok: true, path: r.path, bytes: r.bytes })
     } catch (e) {
       window.framevane.mcp.replyExport(req.requestId, { ok: false, error: e instanceof Error ? e.message : String(e) })

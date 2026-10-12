@@ -111,7 +111,7 @@ function MiniPreview({ doc }: { doc: Project }) {
     const ready = new Set(media.filter((m) => m.status === 'ready').map((m) => m.asset.id))
     const proxied = new Set(media.filter((m) => m.hasProxy).map((m) => m.asset.id))
     const useProxies = useApp.getState().useProxies
-    player.setAvailability((id) => mediaLoaded && ready.has(id), (id) => useProxies && proxied.has(id))
+    player.setAvailability((id) => mediaLoaded && ready.has(id), (id) => useProxies && proxied.has(id), (id) => !!useApp.getState().mattes[id])
   }, [media, mediaLoaded, player])
   useEffect(() => { player.attach(canvas.current); return () => { void player.dispose() } }, [player])
   const dur = projectDurationUs(doc)

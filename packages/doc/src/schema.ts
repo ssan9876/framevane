@@ -141,6 +141,13 @@ export const ChromaKey = z.object({
 })
 export type ChromaKey = z.infer<typeof ChromaKey>
 
+/**
+ * Background removal (S14): the clip's alpha comes from a matte the local AI made for its media (white = keep).
+ * edge: 0 soft … 1 hard; invert keeps the background instead.
+ */
+export const Cutout = z.object({ invert: z.boolean().default(false), edge: z.number().min(0).max(1).default(0.3) })
+export type Cutout = z.infer<typeof Cutout>
+
 /** One effect on a clip (kinds and their params: looks.ts). Effects run in list order. */
 export const Effect = z.object({ id: Id, kind: z.string().min(1).max(40), params: z.record(z.string().max(40), z.number()).default({}) })
 export type Effect = z.infer<typeof Effect>
@@ -180,7 +187,8 @@ export const MediaClip = z.object({
   /** Audio fade in / out lengths (timeline µs), on top of volume and its keyframes. */
   fadeInUs: Us.min(0).default(0),
   fadeOutUs: Us.min(0).default(0),
-  /** Picture look, applied in this order: chroma key, filter, LUT, colour, effects. Ignored on audio clips. */
+  /** Picture look, applied in this order: cutout, chroma key, filter, LUT, colour, effects. Ignored on audio clips. */
+  cutout: Cutout.nullable().default(null),
   chroma: ChromaKey.nullable().default(null),
   filter: FilterUse.nullable().default(null),
   lut: LutUse.nullable().default(null),
@@ -190,7 +198,7 @@ export const MediaClip = z.object({
 })
 export type MediaClip = z.infer<typeof MediaClip>
 /** The look fields of a clip with no look (for building audio clips from video ones). */
-export const NO_LOOK = { chroma: null, filter: null, lut: null, color: NO_COLOR, effects: [], transition: null } satisfies Partial<MediaClip>
+export const NO_LOOK = { cutout: null, chroma: null, filter: null, lut: null, color: NO_COLOR, effects: [], transition: null } satisfies Partial<MediaClip>
 
 export const Word = z.object({ text: z.string(), startUs: Us.min(0), endUs: Us.min(0) }) // relative to clip start
 export type Word = z.infer<typeof Word>

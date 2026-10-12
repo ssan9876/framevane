@@ -40,6 +40,7 @@ export class LookRenderer {
   private quad: WebGLBuffer
   private srcTex: WebGLTexture
   private srcTex2: WebGLTexture
+  private matteTex: WebGLTexture
   private targets: [Target | null, Target | null] = [null, null]
   private luts = new Map<string, { tex: WebGLTexture; size: number; data: Float32Array }>()
   private blankLut: WebGLTexture
@@ -64,6 +65,7 @@ export class LookRenderer {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW)
     this.srcTex = this.texture()
     this.srcTex2 = this.texture()
+    this.matteTex = this.texture()
     this.blankLut = gl.createTexture()!
     gl.bindTexture(gl.TEXTURE_3D, this.blankLut)
     gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4))
@@ -75,7 +77,7 @@ export class LookRenderer {
    * Run a clip's look over its picture (already cropped and sized to w×h on `source`). Returns the region of
    * this.canvas holding the result; valid until the next call.
    */
-  look(source: TexImageSource, w: number, h: number, clip: MediaClip, localSec: number, lut: LutTexture | null, lutKey: string | null) {
+  look(source: TexImageSource, w: number, h: number, clip: MediaClip, localSec: number, lut: LutTexture | null, lutKey: string | null, matte: TexImageSource | null = null) {
     const gl = this.gl
     this.ensureCanvas(w, h)
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
@@ -83,11 +85,17 @@ export class LookRenderer {
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.srcTex)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source)
+    if (matte) {
+      gl.activeTexture(gl.TEXTURE3)
+      gl.bindTexture(gl.TEXTURE_2D, this.matteTex)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, matte)
+      gl.activeTexture(gl.TEXTURE0)
+    }
 
     const effects = clip.effects.filter((e) => EFFECT_GLSL[e.kind])
     const passes: { prog: Prog; set: (p: Prog) => void }[] = []
     const grade = this.prog('grade', GRADE_GLSL)
-    if (grade) passes.push({ prog: grade, set: (p) => this.setGrade(p, clip, lut, lutKey) })
+    if (grade) passes.push({ prog: grade, set: (p) => this.setGrade(p, clip, lut, lutKey, !!matte) })
     for (const e of effects) {
       const prog = this.prog(`fx:${e.kind}`, EFFECT_GLSL[e.kind]!)
       if (!prog) continue
@@ -147,8 +155,11 @@ export class LookRenderer {
 
   /* ───────────── internals ───────────── */
 
-  private setGrade(p: Prog, clip: MediaClip, lut: LutTexture | null, lutKey: string | null) {
+  private setGrade(p: Prog, clip: MediaClip, lut: LutTexture | null, lutKey: string | null, hasMatte: boolean) {
     const gl = this.gl
+    const cut = clip.cutout
+    gl.uniform1i(p.u.get('uMatte')!, 3)
+    gl.uniform3f(p.u.get('uCut')!, cut && hasMatte ? 1 : 0, cut?.invert ? 1 : 0, cut ? 0.5 - cut.edge * 0.47 : 0.5)
     const f = clip.filter ? filterDef(clip.filter.id) : undefined
     const fmix = f && clip.filter ? clip.filter.intensity : 0
     gl.uniform1fv(p.u.get('uF')!, new Float32Array(gradeVector(f?.color ?? {}, f?.mono, f?.split?.amount ?? 0)))
@@ -265,7 +276,7 @@ export class LookRenderer {
       gl.linkProgram(p)
       if (gl.getProgramParameter(p, gl.LINK_STATUS)) {
         const u = new Map<string, WebGLUniformLocation | null>()
-        for (const name of ['uTex', 'uTexB', 'uInScale', 'uRes', 'uTime', 'uToCanvas', 'uPremulIn', 'uP', 'uProg', 'uF', 'uFS', 'uFH', 'uFMix', 'uA', 'uSharpen', 'uVig', 'uGrain', 'uChroma', 'uKey', 'uSpill', 'uLut', 'uLutSize', 'uLutMix']) {
+        for (const name of ['uTex', 'uTexB', 'uInScale', 'uRes', 'uTime', 'uToCanvas', 'uPremulIn', 'uP', 'uProg', 'uF', 'uFS', 'uFH', 'uFMix', 'uA', 'uSharpen', 'uVig', 'uGrain', 'uChroma', 'uKey', 'uSpill', 'uLut', 'uLutSize', 'uLutMix', 'uMatte', 'uCut']) {
           u.set(name, gl.getUniformLocation(p, name))
         }
         out = { p, u }

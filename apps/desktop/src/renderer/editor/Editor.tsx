@@ -11,6 +11,7 @@ import { Timeline } from './Timeline'
 import { AgentPanel } from './AgentPanel'
 import { ExportDialog } from './ExportDialog'
 import { ReviewDialog } from './ReviewDialog'
+import { ReframeDialog } from './AiPanels'
 import { ProjectSettingsDialog } from './ProjectSettingsDialog'
 import { useEditorShortcuts } from './shortcuts'
 
@@ -55,13 +56,14 @@ function EditorLoaded({ doc }: { doc: Project }) {
   const media = useApp((s) => s.media)
   const mediaLoaded = useApp((s) => s.mediaLoaded)
   const useProxiesPref = useApp((s) => s.useProxies)
+  const mattes = useApp((s) => s.mattes)
   useEffect(() => {
     // decode only media known to be ready: not missing, not still being transcoded (BUG-005)
     const ready = new Set(media.filter((m) => m.status === 'ready').map((m) => m.asset.id))
     const proxied = new Set(media.filter((m) => m.hasProxy).map((m) => m.asset.id))
     const useProxies = useProxiesPref
-    player.setAvailability((id) => mediaLoaded && ready.has(id), (id) => useProxies && proxied.has(id))
-  }, [media, mediaLoaded, useProxiesPref, player])
+    player.setAvailability((id) => mediaLoaded && ready.has(id), (id) => useProxies && proxied.has(id), (id) => !!mattes[id])
+  }, [media, mediaLoaded, useProxiesPref, player, mattes])
   useEffect(() => () => { void player.dispose() }, [player])
 
   const seek = useCallback((us: number) => {
@@ -104,6 +106,7 @@ function EditorLoaded({ doc }: { doc: Project }) {
       {dialog === 'export' && <ExportDialog />}
       {dialog === 'review' && <ReviewDialog />}
       {dialog === 'project-settings' && <ProjectSettingsDialog />}
+      {dialog === 'reframe' && <ReframeDialog />}
     </Ctx.Provider>
   )
 }

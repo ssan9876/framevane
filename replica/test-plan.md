@@ -49,7 +49,7 @@ Legend for `auto`: e2e = Playwright spec · unit = vitest · manual · n/b = fea
 | F02-N1 | negative: overlap on overlay track | drag an overlay clip onto another | rejected with a clear message, no change | manual | not run (manual) |
 | — | ops engine | 20 unit tests: split/ripple/undo/atomicity/locks/source bounds/captions | | unit | pass |
 
-## F08 remove BG · F11 photo (F06 transitions, F09 colour: see M4; F03 text, F05 fades, F15 transcript: see M3; F13, F14: see M2)
+## F11 photo (F08 remove BG: see M5; F06 transitions, F09 colour: see M4; F03 text, F05 fades, F15 transcript: see M3; F13, F14: see M2)
 Not built in M0 (n/b). The screens exist as stubs; cases are written when each is built. Partial checks today:
 | case | type | steps | expected | auto | result |
 | --- | --- | --- | --- | --- | --- |
@@ -170,6 +170,20 @@ Not built in M0 (n/b). The screens exist as stubs; cases are written when each i
 | M4-U | unit | set_look patching, LUT registration + undo, effect ids/params, split keeps looks, transition window/length, catalogue, .cube parsing | 14 new unit tests | unit | pass |
 | M4-M1 | manual | every effect and transition at several strengths and lengths, in motion | looks good, no seams or flicker | manual | partial: screenshots checked by eye (M4-looks, M4-transition, M4-chroma, M4-filters-tab); not every effect in motion |
 | M4-M2 | manual | 4K timeline with effects on several tracks | real-time preview | manual | not run |
+
+## M5 AI
+| case | type | steps | expected | auto | result |
+| --- | --- | --- | --- | --- | --- |
+| M5-H1 | happy | colour bars (nobody) → Remove BG on; Keep the background instead; off; Ctrl+Z | picture removed (black); back when inverted; tag goes and returns | e2e | pass |
+| M5-H2 | happy | person.mp4 → Remove BG | the room corner turns black, his face stays | e2e | pass (skips offline) |
+| M5-H3 | happy | person.png → Remove BG (BiRefNet) | same on the photo | e2e | pass (skips offline) |
+| M5-H4 | happy | Auto reframe 9:16, Keep centred; Ctrl+Z | canvas 1080×1920, Scale 316 %; undo back to 100 % | e2e | pass |
+| M5-H5 | happy | person.mp4 → Auto reframe 9:16 on the selected clip | "The clip follows the person", keyframes on the clip, face in the middle of the vertical frame | e2e | pass (BUG-014 regression; skips offline) |
+| M5-H6 | happy | Settings → AI models with an empty models folder: download RVM, remove it | 4 models listed; Not downloaded → On this computer → Not downloaded; file appears and goes | e2e | pass (needs network) |
+| M5-H7 | happy | MCP remove_background, auto_reframe 1:1 | cutout tag and black preview; canvas 1080×1080, 0 clips following (nobody there) | e2e | pass |
+| M5-U | unit | cutout op, ratio canvas, gap fill, dead-zone camera, simplify, reframe geometry, reframeOps | 9 new unit tests | unit | pass |
+| M5-M1 | manual | real footage: hair, motion blur, busy backgrounds, several people walking | clean edges, follows the right person | manual | partial: one C-SPAN clip checked by eye (clean, includes the on-screen banner as "foreground") |
+| M5-M2 | manual | a 10-minute 4K clip | matte job finishes, preview stays smooth | manual | not run |
 
 ## Cross-cutting
 | case | type | steps | expected | auto | result |

@@ -15,11 +15,14 @@ import { MediaPool } from './sources'
 
 export interface ExportProgress { phase: 'audio' | 'video' | 'finalizing'; progress: number; frame: number; frames: number; fps: number; etaSeconds: number | null }
 
-export async function exportProject(doc: Project, s: ExportSettings, onProgress: (p: ExportProgress) => void, signal: AbortSignal): Promise<{ path: string; bytes: number; audioCodec: string | null }> {
+export async function exportProject(doc: Project, s: ExportSettings, onProgress: (p: ExportProgress) => void, signal: AbortSignal, hasMatte: (assetId: string) => boolean = () => false): Promise<{ path: string; bytes: number; audioCodec: string | null }> {
   const W = even(s.width)
   const H = even(s.height)
   const durationUs = projectDurationUs(doc)
   if (durationUs <= 0) throw new Error('The timeline is empty.')
+  // a clip whose background removal hasn't finished would export with its background: say so instead
+  const waiting = new Set(doc.tracks.flatMap((t) => t.clips).flatMap((c) => ((c.kind === 'video' || c.kind === 'image') && c.enabled && c.cutout && !hasMatte(c.assetId) ? [c.assetId] : [])))
+  if (waiting.size) throw new Error(`Background removal is still running for ${waiting.size} file${waiting.size === 1 ? '' : 's'}. Export again when it finishes.`)
   if (!(await canEncodeVideo(s.codec, { width: W, height: H, bitrate: s.bitrate }))) {
     throw new Error(`This system can't encode ${s.codec === 'hevc' ? 'HEVC' : 'H.264'} at ${W}×${H}. Try H.264 or a lower resolution.`)
   }
@@ -67,7 +70,7 @@ export async function exportProject(doc: Project, s: ExportSettings, onProgress:
       if (signal.aborted) throw new DOMException('Export cancelled', 'AbortError')
       const tUs = Math.round((i / s.fps) * 1e6)
       await feedAudio(i / s.fps + 1)
-      const visuals = await fetchVisuals(doc, pool, tUs)
+      const visuals = await fetchVisuals(doc, pool, tUs, undefined, hasMatte)
       drawFrame(ctx, doc, tUs, visuals, W / doc.canvas.width)
       await video.add(i / s.fps, 1 / s.fps)
       if (i % 5 === 0 || i === frames - 1) {

@@ -1,4 +1,4 @@
-import type { AssetRef, LutRef, OpInput, Project } from '@framevane/doc'
+import type { AssetRef, Follow, LutRef, OpInput, Project, ReframeRatio } from '@framevane/doc'
 
 /** The typed bridge between renderer and main (exposed as window.framevane by the preload). */
 
@@ -26,6 +26,9 @@ export interface MediaInfo {
   /** Present while a background job prepares the asset (mezzanine transcode, thumbnails, waveform). */
   jobId?: string
 }
+
+/** A local AI model (S23 model manager). */
+export interface AiModel { id: string; name: string; purpose: string; license: string; sizeBytes: number; ready: boolean; onDiskBytes: number }
 
 export interface JobEvent {
   id: string
@@ -166,6 +169,18 @@ export interface ReelApi {
     /** A voiceover recorded in the window (WebM/Opus bytes), saved with the project and imported. */
     saveRecording(projectId: string, data: Uint8Array): Promise<MediaInfo>
     onChange(cb: (m: MediaInfo) => void): () => void
+  }
+  ai: {
+    models(): Promise<AiModel[]>
+    installModel(id: string): Promise<AiModel>
+    removeModel(id: string): Promise<AiModel>
+    /** Asset ids whose background matte is ready. */
+    mattes(): Promise<string[]>
+    /** Start (or reuse) background removal for an asset; resolves when the matte is ready. */
+    matte(projectId: string, assetId: string): Promise<void>
+    /** Ops that switch the project to a ratio and reframe its clips (apply them as one undo step). */
+    reframe(projectId: string, opts: { ratio: ReframeRatio; follow: Follow; clipIds?: string[] }): Promise<{ ops: OpInput[]; clips: number; followed: number }>
+    onMatte(cb: (assetId: string) => void): () => void
   }
   luts: {
     /** Copy .cube files into the app (validated); returns refs to add to a project with add_lut. */

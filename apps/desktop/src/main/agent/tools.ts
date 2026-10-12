@@ -12,6 +12,7 @@ import type { Analysis } from '../analysis'
 import type { Media } from '../media'
 import type { Tts } from '../tts'
 import type { Luts } from '../luts'
+import type { Ai } from '../ai'
 
 /**
  * The editor's agent tools. Read tools look at the run's working copy of the project ("fork"); write tools change only
@@ -31,6 +32,8 @@ export interface ToolCtx {
   tts?: Tts
   /** Imported .cube LUTs (absent where files can't be imported). */
   luts?: Luts
+  /** Local vision AI: background mattes, subject tracking (absent where unavailable). */
+  ai?: Ai
   /** The run's working copy. */
   doc(): Project
   /** Apply ops to the working copy and record them as proposed edits. Throws OpError if invalid. */
@@ -840,6 +843,41 @@ export const TOOLS: AgentTool[] = [
       const { enabled, clipId: _c, ...patch } = i
       ctx.propose([{ type: 'set_look', clipId: clipId!, chroma: enabled ? Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) : null }])
       return { summary: enabled ? `key ${i.color ?? 'green'}` : 'off', content: 'ok' }
+    },
+  }),
+
+  tool({
+    name: 'remove_background',
+    provider: 'editor',
+    description: 'Remove the background behind people (video) or the main subject (photo) on clips, locally on this computer, so tracks below show through. Waits until the matte is made (about real time for video; ~7 s per photo; first use downloads the model). enabled: false brings the background back. invert keeps the background and removes the subject; edge 0 (soft) … 1 (hard).',
+    schema: z.object({ clipIds: z.array(z.string()).min(1).max(50), enabled: z.boolean().default(true), invert: z.boolean().optional(), edge: z.number().min(0).max(1).optional() }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const ids = visualClips(ctx, i.clipIds)
+      if (!i.enabled) { ctx.propose(ids.map((clipId) => ({ type: 'set_look', clipId, cutout: null }))); return { summary: 'background back', content: 'ok' } }
+      if (!ctx.ai) throw new Error('Background removal is not available here')
+      const doc = ctx.doc()
+      const assets = [...new Set(ids.map((id) => (findClip(doc, id)!.clip as MediaClip).assetId))]
+      for (const a of assets) await ctx.ai.matte(ctx.projectId, a, ctx.agentRunId)
+      const patch = Object.fromEntries(Object.entries({ invert: i.invert, edge: i.edge }).filter(([, v]) => v !== undefined))
+      ctx.propose(ids.map((clipId) => ({ type: 'set_look', clipId, cutout: patch })))
+      return { summary: `${ids.length} clip${ids.length === 1 ? '' : 's'}`, content: JSON.stringify({ clips: ids.length, mattesMade: assets.length }) }
+    },
+  }),
+
+  tool({
+    name: 'auto_reframe',
+    provider: 'editor',
+    description: 'Change the project to a new aspect ratio (9:16, 1:1, 4:5, 16:9, 4:3; the short side keeps its size) and refit clips so they fill the frame. follow "subject" tracks the person in each video locally and pans with x/y keyframes to keep them in frame; "center" just centres. clipIds limits which clips are refit (default: every video/photo clip).',
+    schema: z.object({ ratio: z.enum(['9:16', '1:1', '4:5', '16:9', '4:3']), follow: z.enum(['subject', 'center']).default('subject'), clipIds: z.array(z.string()).max(500).optional() }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      if (!ctx.ai) throw new Error('Auto reframe is not available here')
+      const r = await ctx.ai.reframe(ctx.doc(), { ratio: i.ratio, follow: i.follow, clipIds: i.clipIds, agentRunId: ctx.agentRunId })
+      ctx.propose(r.ops)
+      return { summary: `${i.ratio} · ${r.followed}/${r.clips} following`, content: JSON.stringify({ canvas: r.canvas, clips: r.clips, followingSubject: r.followed }) }
     },
   }),
 ]

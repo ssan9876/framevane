@@ -121,7 +121,7 @@ export const isNeutralColor = (c: ColorAdjust) => (Object.keys(NO_COLOR) as (key
 /** Does this clip need the GPU look pipeline at all? (Plain clips take the fast path.) */
 export function hasLook(c: MediaClip): boolean {
   if (c.kind === 'audio') return false
-  return !!(c.chroma || (c.filter && c.filter.intensity > 0 && filterDef(c.filter.id)) || (c.lut && c.lut.intensity > 0) || c.effects.length || !isNeutralColor(c.color))
+  return !!(c.cutout || c.chroma || (c.filter && c.filter.intensity > 0 && filterDef(c.filter.id)) || (c.lut && c.lut.intensity > 0) || c.effects.length || !isNeutralColor(c.color))
 }
 
 /* ───────────────────────── transitions on the timeline ───────────────────────── */
