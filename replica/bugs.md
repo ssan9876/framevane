@@ -13,7 +13,7 @@ Only reproduced bugs are listed. Each one has a test that failed before the fix 
 | BUG-006 | S3 | Tabs in Settings and the inspector point aria-controls at panels that don't exist | fixed in 16aa598 |
 | BUG-007 | S3 | Inspector slider thumbs have no accessible name | fixed in 16aa598 |
 | BUG-008 | S4 | Home requests project covers before their thumbnails exist (404) | fixed in 16aa598 |
-| BUG-009 | S3 | Review dialog preview is black (only captions draw) | fixed in {{FIX2}} |
+| BUG-009 | S3 | Review dialog preview is black (only captions draw) | fixed in ea4a22f |
 
 Open: none. No S1 bugs found. BUG-009 was a regression from the BUG-005 fix, caught by eye on the rebranded screenshots and then by a new pixel assertion.
 
@@ -164,7 +164,7 @@ Actual: black frame; only the caption text is drawn.
 Evidence: replica/clone-screens/S29-review.png (rebrand run); F12-H1 pixel assertion "Expected > 30, Received 0".
 Suspected cause: the BUG-005 fix made players decode only media marked ready. The review dialog's own player was never told what is ready, so it decoded nothing.
 Fix: the review player gets the same availability as the main player.
-Status: fixed in {{FIX2}}
+Status: fixed in ea4a22f
 
 ---
 
