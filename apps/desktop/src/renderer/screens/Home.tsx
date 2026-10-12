@@ -1,3 +1,4 @@
+import { newPhotoFromFile } from '../editor/actions-m7'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Bot, Clapperboard, Copy, Film, ImageIcon, Library, MoreHorizontal, Pencil, Plus, Search, Settings, Sparkles, Trash2, AlertTriangle } from 'lucide-react'
 import { Badge, Button, Checkbox, Dialog, DropdownMenu, DropZone, EmptyState, IconButton, TextField, useToast } from '@framevane/ui'
@@ -67,7 +68,7 @@ export function Home() {
                 <span className="text-lg">New project</span>
                 <span className="text-sm opacity-80">A blank 1080p timeline</span>
               </button>
-              <QuickCard icon={<ImageIcon />} title="Photo editor" body="Edit a single image" onClick={() => go({ name: 'photo' })} />
+              <QuickCard icon={<ImageIcon />} title="Photo editor" body="Open an image to edit" onClick={() => void newPhotoFromFile()} />
               <QuickCard icon={<Sparkles />} title="Script to video" body="Rough cut from a script" onClick={() => go({ name: 'ai-maker' })} />
             </div>
             <DropZone

@@ -10,6 +10,7 @@ import { now, uuid7, type Db } from './db'
 import type { Analysis } from './analysis'
 import type { Media } from './media'
 import type { Projects } from './projects'
+import { createPhotoProject } from './photo'
 import type { Tts } from './tts'
 import type { Luts } from './luts'
 import type { Ai } from './ai'
@@ -234,7 +235,14 @@ export class EditorMcp {
       return { summary: d.projects.get(projectId).name, content: `Opened "${d.projects.get(projectId).name}".` }
     })
 
-    wrap('create_project', 'Create a project (optionally from media files laid end to end) and open it in Framevane.', z.object({ name: z.string().min(1).max(200), files: z.array(z.string()).max(50).default([]).describe('Absolute paths of media to put on the timeline in order') }), true, async ({ name, files }) => {
+    wrap('create_project', 'Create a project and open it in Framevane. kind "video" (default): media files laid end to end on the timeline. kind "photo": a photo to edit; the canvas takes the first image\'s size and each image is a layer (then use add_text, add_shape, adjust_color, remove_background, crop_photo… and export_video to .png/.jpg/.webp).', z.object({
+      name: z.string().min(1).max(200), files: z.array(z.string()).max(50).default([]).describe('Absolute paths of media (photo: images) in order'), kind: z.enum(['video', 'photo']).default('video'),
+    }), true, async ({ name, files, kind }) => {
+      if (kind === 'photo') {
+        const projectId = await createPhotoProject(d.projects, d.media, name, files)
+        await d.openInUi(projectId)
+        return { summary: `${name} (photo)`, content: JSON.stringify({ projectId, kind, opened: true }) }
+      }
       const projectId = d.projects.create(name)
       if (files.length) {
         const infos = await d.media.import(projectId, files)
@@ -260,9 +268,9 @@ export class EditorMcp {
     wrap('undo', 'Undo the last edit in the open project (yours or the user\'s).', z.object({}), true, async () => { const id = target(); d.projects.undo(id); return { summary: 'undone', content: 'Undid the last edit.' } })
     wrap('redo', 'Redo the last undone edit.', z.object({}), true, async () => { const id = target(); d.projects.redo(id); return { summary: 'redone', content: 'Redid the last undone edit.' } })
 
-    wrap('export_video', 'Render the open project (no watermark, on the GPU): video as .mp4/.mov/.webm, an animated .gif, sound only as .wav/.mp3/.m4a, or one frame as .png/.jpg. The format comes from outputPath\'s extension. Optional time range. Video takes roughly real time / 3 at 1080p.', z.object({
+    wrap('export_video', 'Render the open project (no watermark, on the GPU): video as .mp4/.mov/.webm, an animated .gif, sound only as .wav/.mp3/.m4a, or one frame (or a photo) as .png/.jpg/.webp. The format comes from outputPath\'s extension. Optional time range. Video takes roughly real time / 3 at 1080p.', z.object({
       outputPath: z.string().describe('Absolute path; the extension picks the format'),
-      height: z.union([z.literal(360), z.literal(480), z.literal(720), z.literal(1080), z.literal(1440), z.literal(2160)]).default(1080).describe('Short side in pixels (GIF: width, max 1080)'),
+      height: z.union([z.literal(360), z.literal(480), z.literal(720), z.literal(1080), z.literal(1440), z.literal(2160)]).optional().describe('Short side in pixels, default 1080 (GIF: width, max 1080). Photos export at their own size unless this is set.'),
       fps: z.number().int().min(5).max(120).default(30).describe('GIF: 10–20 is typical'),
       codec: z.enum(['h264', 'hevc', 'av1', 'vp9']).optional().describe('Default: H.264 (MP4/MOV), VP9 (WebM)'),
       quality: z.enum(['low', 'recommended', 'high']).default('recommended'),
@@ -272,13 +280,14 @@ export class EditorMcp {
       atSeconds: z.number().min(0).optional().describe('Frame time for .png/.jpg'),
     }), false, async (i) => {
       const projectId = target()
-      const ext = /\.(mp4|mov|webm|gif|wav|mp3|m4a|png|jpe?g)$/i.exec(i.outputPath)?.[1]?.toLowerCase()
-      if (!ext) throw new Error('outputPath must end in .mp4, .mov, .webm, .gif, .wav, .mp3, .m4a, .png or .jpg')
+      const ext = /\.(mp4|mov|webm|gif|wav|mp3|m4a|png|jpe?g|webp)$/i.exec(i.outputPath)?.[1]?.toLowerCase()
+      if (!ext) throw new Error('outputPath must end in .mp4, .mov, .webm, .gif, .wav, .mp3, .m4a, .png, .jpg or .webp')
       const codec = i.codec === 'h264' ? 'avc' : i.codec
       const us = (s: number) => Math.round(s * 1e6)
       await d.openInUi(projectId)
       const r = await d.exportInUi(projectId, {
-        outputPath: i.outputPath, format: (ext === 'jpeg' ? 'jpg' : ext) as ExportFormat, height: i.height, fps: i.fps, quality: i.quality,
+        outputPath: i.outputPath, format: (ext === 'jpeg' ? 'jpg' : ext) as ExportFormat, height: i.height ?? 1080, fps: i.fps, quality: i.quality,
+        ...(i.height === undefined && /^(png|jpe?g|webp)$/.test(ext) && d.projects.get(projectId).kind === 'photo' ? { width: d.projects.get(projectId).canvas.width } : {}),
         ...(codec ? { codec } : {}), ...(i.bitrateMbps ? { bitrateMbps: i.bitrateMbps } : {}),
         ...(i.startSeconds !== undefined || i.endSeconds !== undefined ? { range: { startUs: us(i.startSeconds ?? 0), endUs: i.endSeconds !== undefined ? us(i.endSeconds) : Number.MAX_SAFE_INTEGER } } : {}),
         ...(i.atSeconds !== undefined ? { atUs: us(i.atSeconds) } : {}),

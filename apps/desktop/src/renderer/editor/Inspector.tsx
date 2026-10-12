@@ -14,6 +14,7 @@ import { cleanUpAudio, duckUnderSpeech } from './actions-m3'
 import type { AudioPreset } from '../../shared/api'
 import { AdjustPanel, ChromaPanel, EffectsPanel } from './LookInspector'
 import { CutoutPanel } from './AiPanels'
+import { ShapeInspector } from './PhotoPanels'
 
 /** S14–S19 · Inspector: properties of the selection, or project details (with S02 Modify) when nothing is selected. */
 export function Inspector() {
@@ -33,6 +34,7 @@ export function Inspector() {
   const { clip, track } = found
   if (clip.kind === 'caption') return <CaptionInspector key={clip.id} clip={clip} track={track} />
   if (clip.kind === 'text') return <TextInspector key={clip.id} clip={clip} track={track} />
+  if (clip.kind === 'shape') return <ShapeInspector key={clip.id} clip={clip} track={track} />
   return <MediaInspector key={clip.id} clip={clip as MediaClip} doc={doc} locked={track.locked} main={track.main} />
 }
 
@@ -53,7 +55,7 @@ function ProjectDetails({ doc }: { doc: Project }) {
       </dl>
       <div className="flex gap-2 px-3">
         <Button size="sm" onClick={() => useApp.getState().openDialog('project-settings')}>Modify canvas…</Button>
-        <Button size="sm" onClick={() => useApp.getState().openDialog('reframe')}>Auto reframe…</Button>
+        {doc.kind !== 'photo' && <Button size="sm" onClick={() => useApp.getState().openDialog('reframe')}>Auto reframe…</Button>}
       </div>
       <BackgroundTools doc={doc} />
       <p className="px-3 pt-4 text-sm text-muted">Select a clip on the timeline to change it.</p>
@@ -62,7 +64,7 @@ function ProjectDetails({ doc }: { doc: Project }) {
 }
 
 /** Canvas background: a colour, or a blurred fill of the main video (for vertical edits of landscape footage). */
-function BackgroundTools({ doc }: { doc: Project }) {
+export function BackgroundTools({ doc }: { doc: Project }) {
   const bg = doc.canvas.background
   const set = (b: Project['canvas']['background']) => void useApp.getState().apply([{ type: 'set_canvas', canvas: { background: b } }])
   const [amount, setAmount] = useCommitted(Math.round((bg.kind === 'blur' ? bg.amount : 0.5) * 100), (v) => set({ kind: 'blur', amount: v / 100 }))
@@ -70,11 +72,11 @@ function BackgroundTools({ doc }: { doc: Project }) {
   return (
     <div className="flex flex-col gap-2 px-3 pt-4">
       <h3 className="text-sm text-muted">Background</h3>
-      <Segmented label="Background" value={bg.kind} onValueChange={(k) => set(k === 'blur' ? { kind: 'blur', amount: amount / 100 } : { kind: 'color', color })}
-        options={[{ value: 'color', label: 'Colour' }, { value: 'blur', label: 'Blur' }]} />
-      {bg.kind === 'color'
-        ? <ColorPicker label="Background colour" value={color} onChange={setColor} />
-        : <SliderField label="Blur" value={amount} onChange={setAmount} min={0} max={100} unit="%" defaultValue={50} />}
+      <Segmented label="Background" value={bg.kind} onValueChange={(k) => set(k === 'blur' ? { kind: 'blur', amount: amount / 100 } : k === 'transparent' ? { kind: 'transparent' } : { kind: 'color', color })}
+        options={[...(doc.kind === 'photo' ? [{ value: 'transparent', label: 'None' }] : []), { value: 'color', label: 'Colour' }, { value: 'blur', label: 'Blur' }]} />
+      {bg.kind === 'color' && <ColorPicker label="Background colour" value={color} onChange={setColor} />}
+      {bg.kind === 'blur' && <SliderField label="Blur" value={amount} onChange={setAmount} min={0} max={100} unit="%" defaultValue={50} />}
+      {bg.kind === 'transparent' && <p className="text-xs text-muted">See-through where nothing covers it: PNG and WebP keep it, JPG gets white.</p>}
     </div>
   )
 }
@@ -108,7 +110,8 @@ function MediaInspector({ clip, doc, locked, main }: { clip: MediaClip; doc: Pro
     .flatMap(([prop, kfs]) => (kfs ?? []).filter((k) => Math.abs(k.tUs - local) <= 16_666).map((k) => ({ prop, ...k })))
   const animated = Object.values(clip.keyframes).some((k) => k?.length)
 
-  const tabs = [
+  const photo = doc.kind === 'photo'
+  const tabs = photo ? [{ value: 'video', label: 'Image' }, { value: 'adjust', label: 'Adjust' }, { value: 'effects', label: 'Effects' }] : [
     ...(!isAudio ? [{ value: 'video', label: 'Video' }] : []),
     { value: 'audio', label: 'Audio', disabled: !asset?.hasAudio || clip.freezeAtUs !== undefined },
     { value: 'speed', label: 'Speed', disabled: clip.kind === 'image' || clip.freezeAtUs !== undefined },
@@ -135,8 +138,8 @@ function MediaInspector({ clip, doc, locked, main }: { clip: MediaClip; doc: Pro
                   options={BLEND_MODES.map((b) => ({ value: b, label: b === 'normal' ? 'Normal' : b.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase()) }))} />
                 <Switch label="Mirror" checked={clip.transform.flipH} onCheckedChange={(v) => apply({ transform: { flipH: v } })} />
               </div>
-              <KeyframeTools clip={clip} keysHere={keysHere} animated={animated} local={local} />
-              <div className="pt-1"><Button size="sm" variant="ghost" onClick={() => useApp.getState().openDialog('reframe')}>Auto reframe…</Button></div>
+              {!photo && <KeyframeTools clip={clip} keysHere={keysHere} animated={animated} local={local} />}
+              {!photo && <div className="pt-1"><Button size="sm" variant="ghost" onClick={() => useApp.getState().openDialog('reframe')}>Auto reframe…</Button></div>}
             </div>
           )}
           {sub === 'crop' && <CropTools clip={clip} />}
@@ -178,6 +181,7 @@ export function AnimSlider({ clip, prop, label, toUi = (v) => Math.round(v), fro
   toUi?: (v: number) => number; fromUi?: (v: number) => number
 }) {
   const playheadUs = useApp((s) => s.playheadUs)
+  const photo = useApp((s) => s.doc?.kind === 'photo')
   const { seek } = useEditor()
   const local = localPlayhead(clip, playheadUs)
   const shown = toUi(valueAt(clip, prop, local))
@@ -189,7 +193,7 @@ export function AnimSlider({ clip, prop, label, toUi = (v) => Math.round(v), fro
   const next = kfs.find((k) => k.tUs > local + 16_666)
   return (
     <SliderField label={label} value={v} onChange={setV} {...rest}
-      keyframe={{
+      keyframe={photo ? undefined : {
         state,
         onToggle: () => void useApp.getState().apply([here
           ? { type: 'remove_keyframe', clipId: clip.id, prop, tUs: here.tUs }

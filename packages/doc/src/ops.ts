@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import {
-  AnimProp, AssetRef, BlendMode, Keyframe, CaptionClip, Canvas, ChromaKey, Clip, Cutout, ColorAdjust, Easing, Effect, FilterUse, Id, LutRef, LutUse, MediaClip, Marker, Transition, patchOf, PositiveUs, Project, TextAnimKind, TextStyle, Track, Transform, Us,
+  AnimProp, AssetRef, BlendMode, Keyframe, CaptionClip, Canvas, ChromaKey, Clip, Cutout, ColorAdjust, Easing, Effect, FilterUse, Id, LutRef, LutUse, MediaClip, Marker, ShapeProps, Transition, patchOf, PositiveUs, Project, TextAnimKind, TextStyle, Track, Transform, Us,
   type Clip as ClipT, type Project as ProjectT, type TextClip, type Track as TrackT,
 } from './schema'
 import { removeKeyframeAt, scaleKeyframes, sliceKeyframes, upsertKeyframe, type AnimatableClip } from './keyframes'
@@ -15,6 +15,8 @@ export const Op = z.discriminatedUnion('type', [
   z.object({ type: z.literal('add_asset'), asset: AssetRef }),
   z.object({ type: z.literal('add_track'), track: Track, index: z.number().int().min(0).optional() }),
   z.object({ type: z.literal('remove_track'), trackId: Id }),
+  /** Move a track to a new position in the stack (0 = bottom). Photo layers reorder with this. */
+  z.object({ type: z.literal('move_track'), trackId: Id, index: z.number().int().min(0) }),
   z.object({
     type: z.literal('set_track_flags'), trackId: Id,
     locked: z.boolean().optional(), hidden: z.boolean().optional(), muted: z.boolean().optional(), name: z.string().min(1).max(80).optional(),
@@ -59,6 +61,8 @@ export const Op = z.discriminatedUnion('type', [
     groupId: Id.nullable().optional(), linkId: Id.nullable().optional(),
     fadeInUs: Us.min(0).optional(), fadeOutUs: Us.min(0).optional(),
   }),
+  /** Shape clips: kind, size, colours (a patch). */
+  z.object({ type: z.literal('set_shape'), clipId: Id, shape: patchOf(ShapeProps) }),
   /** Text clips: content, style (a patch) and in/out animation. */
   z.object({
     type: z.literal('set_text'), clipId: Id,
@@ -149,7 +153,7 @@ export function clipsAt(doc: ProjectT, tUs: number): { track: TrackT; clip: Clip
 const allowed: Record<TrackT['kind'], ClipT['kind'][]> = {
   video: ['video', 'image'],
   audio: ['audio'],
-  text: ['text'],
+  text: ['text', 'shape'],
   caption: ['caption'],
 }
 
@@ -333,7 +337,7 @@ function applyOne(doc: ProjectT, op: Op): ProjectT {
           if (c.id !== op.clipId) return c
           let next: ClipT = op.enabled === undefined ? c : { ...c, enabled: op.enabled }
           if (op.groupId !== undefined) next = { ...next, groupId: op.groupId ?? undefined }
-          if (next.kind === 'text' && op.transform && op.volumeDb === undefined && op.speed === undefined && !op.blend && op.audioEnabled === undefined && op.linkId === undefined && op.fadeInUs === undefined && op.fadeOutUs === undefined) {
+          if ((next.kind === 'text' || next.kind === 'shape') && op.transform && op.volumeDb === undefined && op.speed === undefined && !op.blend && op.audioEnabled === undefined && op.linkId === undefined && op.fadeInUs === undefined && op.fadeOutUs === undefined) {
             return { ...next, transform: { ...next.transform, ...defined(op.transform) } }
           }
           if (op.transform || op.fadeInUs !== undefined || op.fadeOutUs !== undefined || op.volumeDb !== undefined || op.speed !== undefined || op.blend || op.audioEnabled !== undefined || op.linkId !== undefined) {
@@ -382,6 +386,20 @@ function applyOne(doc: ProjectT, op: Op): ProjectT {
     case 'add_lut':
       return { ...doc, luts: { ...doc.luts, [op.lut.id]: op.lut } }
 
+    case 'set_shape': {
+      const f = needClip(doc, op.clipId)
+      if (f.clip.kind !== 'shape') throw new OpError('kind_mismatch', 'Not a shape')
+      const next = { ...f.clip, ...ShapeProps.parse({ ...pickShape(f.clip), ...defined(op.shape) }) }
+      return mapTrack(doc, f.track.id, (t) => ({ ...t, clips: t.clips.map((x) => (x.id === op.clipId ? next : x)) }))
+    }
+
+    case 'move_track': {
+      const t = needTrack(doc, op.trackId)
+      const rest = doc.tracks.filter((x) => x.id !== op.trackId)
+      const at = Math.min(op.index, rest.length)
+      return { ...doc, tracks: [...rest.slice(0, at), t, ...rest.slice(at)] }
+    }
+
     case 'set_text': {
       const f = needClip(doc, op.clipId)
       if (f.clip.kind !== 'text') throw new OpError('kind_mismatch', 'Not a text clip')
@@ -398,7 +416,7 @@ function applyOne(doc: ProjectT, op: Op): ProjectT {
     case 'set_keyframes': {
       const f = needClip(doc, op.clipId)
       if (!isAnimatable(f.clip)) throw new OpError('kind_mismatch', 'Only media and text clips have keyframes')
-      if (f.clip.kind === 'text' && op.prop === 'volumeDb') throw new OpError('kind_mismatch', 'Text has no volume')
+      if ((f.clip.kind === 'text' || f.clip.kind === 'shape') && op.prop === 'volumeDb') throw new OpError('kind_mismatch', 'Text and shapes have no volume')
       const c = f.clip
       if (op.keyframes.some((k) => k.tUs > c.durationUs)) throw new OpError('out_of_range', 'Keyframe time is outside the clip')
       const keyframes = { ...c.keyframes }
@@ -413,7 +431,7 @@ function applyOne(doc: ProjectT, op: Op): ProjectT {
       const f = needClip(doc, op.clipId)
       if (!isAnimatable(f.clip)) throw new OpError('kind_mismatch', 'Only media and text clips have keyframes')
       const clip = f.clip
-      if (clip.kind === 'text' && op.type !== 'clear_keyframes' && op.prop === 'volumeDb') throw new OpError('kind_mismatch', 'Text has no volume')
+      if ((clip.kind === 'text' || clip.kind === 'shape') && op.type !== 'clear_keyframes' && op.prop === 'volumeDb') throw new OpError('kind_mismatch', 'Text and shapes have no volume')
       if (op.type !== 'clear_keyframes' && (op.tUs < 0 || op.tUs > clip.durationUs)) throw new OpError('out_of_range', 'Keyframe time is outside the clip')
       let keyframes = { ...clip.keyframes }
       let next: AnimatableClip = clip
@@ -430,7 +448,7 @@ function applyOne(doc: ProjectT, op: Op): ProjectT {
           const kfs = keyframes[prop]
           if (!kfs?.length) continue
           const v = sampleKeys(kfs, op.atUs)
-          next = prop === 'volumeDb' ? (next.kind === 'text' ? next : { ...next, volumeDb: clampVolume(v) }) : { ...next, transform: { ...next.transform, [prop]: v } } as AnimatableClip
+          next = prop === 'volumeDb' ? (next.kind === 'text' || next.kind === 'shape' ? next : { ...next, volumeDb: clampVolume(v) }) : { ...next, transform: { ...next.transform, [prop]: v } } as AnimatableClip
           delete keyframes[prop]
         }
       }
@@ -543,7 +561,8 @@ export function validateDoc(doc: ProjectT) {
 /* ───────────────────────── helpers ───────────────────────── */
 
 const isMedia = (c: ClipT): c is MediaClip => c.kind === 'video' || c.kind === 'image' || c.kind === 'audio'
-const isAnimatable = (c: ClipT): c is AnimatableClip => isMedia(c) || c.kind === 'text'
+const isAnimatable = (c: ClipT): c is AnimatableClip => isMedia(c) || c.kind === 'text' || c.kind === 'shape'
+const pickShape = (c: z.infer<typeof ShapeProps>) => ({ shape: c.shape, width: c.width, height: c.height, fill: c.fill, stroke: c.stroke, strokeWidth: c.strokeWidth, radius: c.radius })
 const sortClips = (clips: ClipT[]) => clips.slice().sort((a, b) => a.startUs - b.startUs)
 const defined = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
 
@@ -585,6 +604,7 @@ function trimRight(c: ClipT, atUs: number): ClipT {
   const durationUs = atUs - c.startUs
   if (isMedia(c)) return { ...c, durationUs, fadeOutUs: 0, transition: null, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, 0, durationUs) } : {}) }
   if (c.kind === 'text') return { ...c, durationUs, anim: { ...c.anim, out: { ...c.anim.out, kind: 'none' } }, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, 0, durationUs) } : {}) }
+  if (c.kind === 'shape') return { ...c, durationUs, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, 0, durationUs) } : {}) }
   if (c.kind === 'caption') return { ...c, durationUs, words: c.words.filter((w) => w.startUs < durationUs).map((w) => ({ ...w, endUs: Math.min(w.endUs, durationUs) })) }
   return c
 }
@@ -600,6 +620,7 @@ function trimLeft(c: ClipT, atUs: number): ClipT {
   if (c.kind === 'text') {
     return { ...c, startUs: atUs, durationUs, anim: { ...c.anim, in: { ...c.anim.in, kind: 'none' } }, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, cut, c.durationUs) } : {}) }
   }
+  if (c.kind === 'shape') return { ...c, startUs: atUs, durationUs, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, cut, c.durationUs) } : {}) }
   if (c.kind === 'caption') {
     return { ...c, startUs: atUs, durationUs, words: c.words.filter((w) => w.endUs > cut).map((w) => ({ ...w, startUs: Math.max(0, w.startUs - cut), endUs: w.endUs - cut })) }
   }
@@ -629,6 +650,7 @@ export function describeOp(doc: ProjectT, raw: OpInput): string {
     const f = findClip(doc, id)
     if (!f) return id
     if (f.clip.kind === 'caption' || f.clip.kind === 'text') return `"${f.clip.text.slice(0, 24)}"`
+    if (f.clip.kind === 'shape') return `${f.clip.shape}`
     return doc.assets[(f.clip as MediaClip).assetId]?.name ?? id
   }
   switch (op.type) {
@@ -636,7 +658,7 @@ export function describeOp(doc: ProjectT, raw: OpInput): string {
     case 'split_clip': return `Split ${clipName(op.clipId)} at ${formatUs(op.atUs)}`
     case 'remove_clips': return `${op.ripple ? 'Ripple delete' : 'Delete'} ${op.clipIds.length === 1 ? clipName(op.clipIds[0]!) : `${op.clipIds.length} clips`}`
     case 'add_captions': return `${op.replace ? 'Replace' : 'Add'} ${op.clips.length} caption${op.clips.length === 1 ? '' : 's'}`
-    case 'add_clip': return `Add ${op.clip.kind === 'caption' || op.clip.kind === 'text' ? `text "${op.clip.text.slice(0, 24)}"` : doc.assets[(op.clip as MediaClip).assetId]?.name ?? 'clip'} at ${formatUs(op.clip.startUs)}`
+    case 'add_clip': return `Add ${op.clip.kind === 'caption' || op.clip.kind === 'text' ? `text "${op.clip.text.slice(0, 24)}"` : op.clip.kind === 'shape' ? `${op.clip.shape ?? 'rect'} shape` : doc.assets[(op.clip as MediaClip).assetId]?.name ?? 'clip'} at ${formatUs(op.clip.startUs)}`
     case 'move_clip': return `Move ${clipName(op.clipId)} to ${formatUs(op.startUs)}`
     case 'set_clip_timing': return `Trim ${clipName(op.clipId)}`
     case 'pack_track': return 'Reorder clips'
@@ -655,6 +677,8 @@ export function describeOp(doc: ProjectT, raw: OpInput): string {
       return `Look of ${clipName(op.clipId)}: ${what.join(', ') || 'unchanged'}`
     }
     case 'add_lut': return `Import LUT ${op.lut.name}`
+    case 'set_shape': return `Change ${clipName(op.clipId)} shape`
+    case 'move_track': return 'Reorder layers'
     case 'set_text': return op.text !== undefined ? `Edit text → "${op.text.slice(0, 32)}"` : op.anim ? `Animate ${clipName(op.clipId)}` : `Restyle ${clipName(op.clipId)}`
     case 'set_clip_props': return `Change ${clipName(op.clipId)} (${Object.keys(op).filter((k) => !['type', 'clipId'].includes(k)).join(', ')})`
     case 'set_track_style': return 'Restyle captions'

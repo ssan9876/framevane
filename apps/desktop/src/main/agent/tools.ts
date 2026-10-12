@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type Anthropic from '@anthropic-ai/sdk'
 import {
-  applyOps, BLEND_MODES, EFFECTS, effectDef, effectParams, FILTERS, filterDef, nextAdjacent, NO_COLOR, TRANSITIONS, transitionDef, buildCaptionClips, captionLines, clipEnd, DEFAULT_CAPTION_STYLE, duckingKeyframes, findClip, formatUs, isFiller, mergeRanges, NO_TEXT_ANIM,
+  applyOps, BLEND_MODES, cropCanvasOps, flipCanvasOps, IDENTITY_TRANSFORM, PHOTO_DURATION_US, resizeCanvasOps, rotateCanvasOps, SHAPES, EFFECTS, effectDef, effectParams, FILTERS, filterDef, nextAdjacent, NO_COLOR, TRANSITIONS, transitionDef, buildCaptionClips, captionLines, clipEnd, DEFAULT_CAPTION_STYLE, duckingKeyframes, findClip, formatUs, isFiller, mergeRanges, NO_TEXT_ANIM,
   parseSrt, projectDurationUs, sourceTimeAt, speechRanges, TEXT_ANIMS, TextStyle, timelineSilences, timelineWords, toPlainText, toSrt, wordCutRanges,
   type MediaClip, type OpInput, type Project, type SourceWord, type TextClip,
 } from '@framevane/doc'
@@ -111,7 +111,9 @@ export const TOOLS: AgentTool[] = [
       const d = ctx.doc()
       const summary = {
         name: d.name,
-        canvas: { width: d.canvas.width, height: d.canvas.height, fps: d.canvas.fps.num / d.canvas.fps.den },
+        kind: d.kind,
+        ...(d.kind === 'photo' ? { note: 'A photo: each track is a layer (bottom first) with one clip at 0 s. Export with export_video to .png/.jpg/.webp.' } : {}),
+        canvas: { width: d.canvas.width, height: d.canvas.height, fps: d.canvas.fps.num / d.canvas.fps.den, background: d.canvas.background },
         durationSeconds: sec(projectDurationUs(d)),
         tracks: d.tracks.map((t) => ({ id: t.id, kind: t.kind, name: t.name, main: t.main, locked: t.locked, clips: t.clips.length })),
         media: Object.values(d.assets).map((a) => ({ id: a.id, name: a.name, kind: a.kind, durationSeconds: a.durationUs === undefined ? null : sec(a.durationUs), hasAudio: a.hasAudio })),
@@ -352,12 +354,12 @@ export const TOOLS: AgentTool[] = [
   tool({
     name: 'set_background',
     provider: 'editor',
-    description: 'What shows where the video does not cover the canvas: a colour, or a blurred fill of the main video (good for vertical edits of landscape footage).',
-    schema: z.object({ kind: z.enum(['color', 'blur']), color: z.string().regex(/^#[0-9a-f]{6}$/i).optional(), amount: z.number().min(0).max(1).optional() }),
+    description: 'What shows where the video does not cover the canvas: a colour, a blurred fill of the main video (good for vertical edits of landscape footage), or nothing (transparent: photos exported as PNG/WebP stay see-through).',
+    schema: z.object({ kind: z.enum(['color', 'blur', 'transparent']), color: z.string().regex(/^#[0-9a-f]{6}$/i).optional(), amount: z.number().min(0).max(1).optional() }),
     permission: 'auto',
     mutates: true,
     async run(i, ctx) {
-      ctx.propose([{ type: 'set_canvas', canvas: { background: i.kind === 'blur' ? { kind: 'blur', amount: i.amount ?? 0.5 } : { kind: 'color', color: i.color ?? '#000000' } } }])
+      ctx.propose([{ type: 'set_canvas', canvas: { background: i.kind === 'blur' ? { kind: 'blur', amount: i.amount ?? 0.5 } : i.kind === 'transparent' ? { kind: 'transparent' } : { kind: 'color', color: i.color ?? '#000000' } } }])
       return { summary: i.kind, content: 'ok' }
     },
   }),
@@ -477,7 +479,7 @@ export const TOOLS: AgentTool[] = [
     description: 'Add a title / text overlay at a TIMELINE time. Use a preset for a ready-made look, then override style fields if needed. position: where the text block sits (y is a fraction of the height for its centre).',
     schema: z.object({
       text: z.string().min(1).max(2000),
-      atSeconds: z.number().min(0),
+      atSeconds: z.number().min(0).default(0).describe('Timeline start (ignored for photos)'),
       durationSeconds: z.number().min(0.2).max(3600).default(3),
       position: z.enum(['center', 'top', 'upper-third', 'lower-third', 'bottom']).default('center'),
       style: TEXT_STYLE_INPUT.optional(),
@@ -492,13 +494,16 @@ export const TOOLS: AgentTool[] = [
       const dur = us(i.durationSeconds)
       const y = { center: 0.5, top: 0.12, 'upper-third': 0.3, 'lower-third': 0.78, bottom: 0.9 }[i.position]
       const style = TextStyle.parse({ ...DEFAULT_CAPTION_STYLE, fontSize: 96, strokeWidth: 0, shadow: { color: '#000000', blur: 16, x: 0, y: 4 }, y, ...textStyleFrom(i.style ?? {}) })
+      const photo = doc.kind === 'photo'
       const clip: TextClip = {
-        id: `text-${uuid7().slice(-12)}`, kind: 'text', startUs, durationUs: dur, enabled: true, text: i.text, style,
+        id: `text-${uuid7().slice(-12)}`, kind: 'text', startUs: photo ? 0 : startUs, durationUs: photo ? PHOTO_DURATION_US : dur, enabled: true, text: i.text, style,
         transform: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, flipH: false, flipV: false, crop: { left: 0, top: 0, right: 0, bottom: 0 } },
         keyframes: {}, anim: { in: { ...NO_TEXT_ANIM.in, kind: i.animIn }, out: { ...NO_TEXT_ANIM.out, kind: i.animOut } },
       }
-      const free = doc.tracks.find((t) => t.kind === 'text' && !t.locked && !t.clips.some((c) => c.startUs < startUs + dur && startUs < clipEnd(c)))
-      if (free) ctx.propose([{ type: 'add_clip', trackId: free.id, clip }])
+      // in a photo every text is its own layer, on top
+      const free = photo ? undefined : doc.tracks.find((t) => t.kind === 'text' && !t.locked && !t.clips.some((c) => c.startUs < startUs + dur && startUs < clipEnd(c)))
+      if (photo) ctx.propose(layerOps(doc, 'text', 'Text', clip))
+      else if (free) ctx.propose([{ type: 'add_clip', trackId: free.id, clip }])
       else {
         const tid = `track-text-${uuid7().slice(-8)}`
         ctx.propose([{ type: 'add_track', track: { id: tid, kind: 'text', name: `Text ${doc.tracks.filter((t) => t.kind === 'text').length + 1}`, main: false, locked: false, hidden: false, muted: false, clips: [] } }, { type: 'add_clip', trackId: tid, clip }])
@@ -880,7 +885,120 @@ export const TOOLS: AgentTool[] = [
       return { summary: `${i.ratio} · ${r.followed}/${r.clips} following`, content: JSON.stringify({ canvas: r.canvas, clips: r.clips, followingSubject: r.followed }) }
     },
   }),
+
+  tool({
+    name: 'add_shape',
+    provider: 'editor',
+    description: 'Add a shape layer: rect, ellipse, triangle, star, line or arrow. Size in px at canvas resolution, position as x/y px from the centre. Colours #rrggbb or #rrggbbaa; fill null for outline only. In a photo it becomes the top layer; in a video it sits on a text track from atSeconds.',
+    schema: z.object({
+      shape: z.enum(SHAPES).default('rect'), width: z.number().min(1).max(8192).default(400), height: z.number().min(1).max(8192).default(400),
+      fill: z.string().regex(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i).nullable().default('#ff7a3d'), stroke: z.string().regex(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i).default('#ffffff'),
+      strokeWidth: z.number().min(0).max(200).default(0), radius: z.number().min(0).max(0.5).default(0).describe('Rectangle corners, fraction of the shorter side'),
+      x: z.number().default(0), y: z.number().default(0), rotation: z.number().min(-360).max(360).default(0), opacity: z.number().min(0).max(1).default(1),
+      atSeconds: z.number().min(0).default(0), durationSeconds: z.number().min(0.1).max(3600).default(3),
+    }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const doc = ctx.doc()
+      const photo = doc.kind === 'photo'
+      const { atSeconds, durationSeconds, x, y, rotation, opacity, ...look } = i
+      const clip = {
+        id: `shape-${uuid7().slice(-12)}`, kind: 'shape' as const, ...look, startUs: photo ? 0 : us(atSeconds), durationUs: photo ? PHOTO_DURATION_US : us(durationSeconds),
+        transform: { ...IDENTITY_TRANSFORM, x, y, rotation, opacity },
+      }
+      ctx.propose(layerOps(doc, 'text', 'Shape', clip))
+      return { summary: `${i.shape}`, content: JSON.stringify({ clipId: clip.id }) }
+    },
+  }),
+
+  tool({
+    name: 'edit_shape',
+    provider: 'editor',
+    description: 'Change a shape layer: kind, size, fill (null = none), outline colour and width, corner radius. Move/scale/rotate it with set_clip.',
+    schema: z.object({
+      clipId: z.string(), shape: z.enum(SHAPES).optional(), width: z.number().min(1).max(8192).optional(), height: z.number().min(1).max(8192).optional(),
+      fill: z.string().regex(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i).nullable().optional(), stroke: z.string().regex(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i).optional(),
+      strokeWidth: z.number().min(0).max(200).optional(), radius: z.number().min(0).max(0.5).optional(),
+    }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const { clipId, ...shape } = i
+      ctx.propose([{ type: 'set_shape', clipId, shape: Object.fromEntries(Object.entries(shape).filter(([, v]) => v !== undefined)) }])
+      return { summary: Object.keys(shape).join(', ') || 'no change', content: 'ok' }
+    },
+  }),
+
+  tool({
+    name: 'move_layer',
+    provider: 'editor',
+    description: 'Restack a layer (the track holding a clip): to the top, to the bottom, or one step up or down. Higher layers cover lower ones.',
+    schema: z.object({ clipId: z.string(), to: z.enum(['top', 'bottom', 'up', 'down']) }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const doc = ctx.doc()
+      const f = findClip(doc, i.clipId)
+      if (!f) throw new Error(`Clip ${i.clipId} not found`)
+      const last = doc.tracks.length - 1
+      const index = i.to === 'top' ? last : i.to === 'bottom' ? 0 : Math.max(0, Math.min(last, f.trackIndex + (i.to === 'up' ? 1 : -1)))
+      ctx.propose([{ type: 'move_track', trackId: f.track.id, index }])
+      return { summary: `${i.to}`, content: JSON.stringify({ layerIndex: index, layers: doc.tracks.length }) }
+    },
+  }),
+
+  tool({
+    name: 'crop_photo',
+    provider: 'editor',
+    description: 'Crop the whole picture to a rectangle in canvas px (x, y = top-left). Every layer keeps its place in the picture.',
+    schema: z.object({ x: z.number().min(0), y: z.number().min(0), width: z.number().min(2), height: z.number().min(2) }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      ctx.propose(cropCanvasOps(ctx.doc(), i))
+      return { summary: `${Math.round(i.width)}×${Math.round(i.height)}`, content: 'ok' }
+    },
+  }),
+
+  tool({
+    name: 'resize_photo',
+    provider: 'editor',
+    description: 'Change the picture size in px. scaleContent true (default) scales everything with it; false changes the canvas around the layers (they keep their pixel size).',
+    schema: z.object({ width: z.number().int().min(16).max(8192), height: z.number().int().min(16).max(8192), scaleContent: z.boolean().default(true) }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      ctx.propose(resizeCanvasOps(ctx.doc(), i.width, i.height, i.scaleContent))
+      return { summary: `${i.width}×${i.height}`, content: 'ok' }
+    },
+  }),
+
+  tool({
+    name: 'rotate_photo',
+    provider: 'editor',
+    description: 'Turn the whole picture a quarter turn (the canvas swaps width and height), or mirror it (flip: horizontal or vertical). Text is never mirrored, only moved.',
+    schema: z.object({ turn: z.enum(['left', 'right']).optional(), flip: z.enum(['horizontal', 'vertical']).optional() }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      if (!i.turn && !i.flip) throw new Error('Pass turn or flip')
+      let doc = ctx.doc()
+      if (i.turn) { const ops = rotateCanvasOps(doc, i.turn === 'right'); ctx.propose(ops); doc = ctx.doc() }
+      if (i.flip) ctx.propose(flipCanvasOps(doc, i.flip))
+      return { summary: [i.turn, i.flip].filter(Boolean).join(' + '), content: JSON.stringify({ canvas: ctx.doc().canvas }) }
+    },
+  }),
 ]
+
+/** Ops that put a clip on a new layer (track) at the top of the stack. */
+function layerOps(doc: Project, kind: 'video' | 'text', name: string, clip: Record<string, unknown> & { id: string }): OpInput[] {
+  const trackId = `track-layer-${uuid7().slice(-8)}`
+  return [
+    { type: 'add_track', track: { id: trackId, kind, name, main: false, locked: false, hidden: false, muted: false, clips: [] } },
+    { type: 'add_clip', trackId, clip: clip as never },
+  ]
+}
 
 /** Clip ids that are video/photo clips in the working copy (throws naming the first that isn't). */
 function visualClips(ctx: ToolCtx, ids: string[]): string[] {
@@ -918,6 +1036,7 @@ async function importInto(ctx: ToolCtx, paths: string[]): Promise<ToolResult> {
 /** Ops that place an asset: append to the main track, or at a time on the first free track (new track if none). */
 export function placeOps(doc: Project, assetId: string, kind: 'video' | 'audio' | 'image', dur: number, at: number | undefined, track?: 'main' | 'overlay' | 'audio'): OpInput[] {
   const id = () => `clip-${uuid7().slice(-12)}`
+  if (doc.kind === 'photo' && kind === 'image') return layerOps(doc, 'video', doc.assets[assetId]?.name ?? 'Image', { id: id(), kind: 'image', assetId, startUs: 0, durationUs: PHOTO_DURATION_US })
   const free = (clips: { startUs: number; durationUs: number }[], s: number) => !clips.some((c) => c.startUs < s + dur && s < clipEnd(c))
   if (kind === 'audio' || track === 'audio') {
     const s = at ?? 0

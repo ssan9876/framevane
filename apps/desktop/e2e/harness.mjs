@@ -21,7 +21,7 @@ export async function launch({ pickFiles = [], saveDir, env = {} } = {}) {
     },
   })
   // the temp profile goes when the script ends (FRAMEVANE_KEEP_TEST_DIRS=1 keeps it)
-  app.on('close', () => { if (!process.env.FRAMEVANE_KEEP_TEST_DIRS) setTimeout(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }), 300) })
+  app.on('close', () => { if (!process.env.FRAMEVANE_KEEP_TEST_DIRS) setTimeout(() => { try { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }) } catch { /* the next test run sweeps it */ } }, 800) })
   const page = await app.firstWindow()
   const errors = []
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })

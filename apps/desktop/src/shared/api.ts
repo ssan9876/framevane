@@ -93,7 +93,7 @@ export interface AgentSettings { hasApiKey: boolean; credentialSource: 'app_key'
 export interface ExternalActivity { id: string; client: string; tool: string; summary: string; status: 'running' | 'done' | 'error'; mutates: boolean; durationMs?: number }
 export interface McpConnectInfo { enabled: boolean; listening: boolean; url: string; token: string; error: string | null; claudeCommand: string }
 /** What to export (S22): one shape for the export dialog and the MCP export tool. */
-export type ExportFormat = 'mp4' | 'mov' | 'webm' | 'gif' | 'wav' | 'mp3' | 'm4a' | 'png' | 'jpg'
+export type ExportFormat = 'mp4' | 'mov' | 'webm' | 'gif' | 'wav' | 'mp3' | 'm4a' | 'png' | 'jpg' | 'webp'
 export interface ExportRequest {
   outputPath: string
   format: ExportFormat
@@ -106,8 +106,12 @@ export interface ExportRequest {
   bitrateMbps?: number
   /** Timeline range (µs); default the whole video. */
   range?: { startUs: number; endUs: number }
-  /** For png/jpg: which frame (µs). */
+  /** For png/jpg/webp: which frame (µs). */
   atUs?: number
+  /** Images: exact output width in px (overrides height; keeps the shape). */
+  width?: number
+  /** JPG/WebP quality 0–1. */
+  imageQuality?: number
 }
 export interface McpExportRequest extends ExportRequest { requestId: string; projectId: string }
 
@@ -175,7 +179,7 @@ export interface ReelApi {
   }
   projects: {
     list(): Promise<ProjectSummary[]>
-    create(opts: { name: string; width?: number; height?: number; fps?: number; files?: string[] }): Promise<{ projectId: string }>
+    create(opts: { name: string; width?: number; height?: number; fps?: number; files?: string[]; kind?: 'video' | 'photo' }): Promise<{ projectId: string }>
     open(projectId: string): Promise<DocEvent>
     close(projectId: string): Promise<void>
     rename(projectId: string, name: string): Promise<void>

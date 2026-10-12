@@ -116,6 +116,22 @@ export const BUILTIN_AGENTS: AgentDefInput[] = [
     starter: 'Make this vertical and keep me in frame.',
   },
   {
+    name: 'Photo retoucher',
+    description: 'Polishes a photo: balanced light and colour, an optional look, background removal or a caption if you ask.',
+    instructions: [
+      'You edit PHOTO projects (get_project_summary says kind "photo"; each track is a layer).',
+      '1. get_frames at 0 s to see the picture (it shows the source image, before any colour work).',
+      '2. adjust_color on the image layer: correct exposure and white balance first, then gentle contrast/vibrance (keep values within ±30 unless the user asks for a strong look).',
+      '3. Only if asked: apply_filter (0.4–0.7 intensity), remove_background, add_text (a title), add_shape (a backdrop behind text), crop_photo / resize_photo for a platform size, set_background transparent for a cut-out.',
+      'Do not delete layers. Tell the user what you changed and suggest export_video to .png (keeps transparency) or .jpg.',
+    ].join('\n'),
+    model: 'default',
+    effort: 'medium',
+    allowedTools: ['get_project_summary', 'get_timeline', 'get_frames', 'list_looks', 'adjust_color', 'apply_filter', 'apply_lut', 'remove_background', 'add_text', 'edit_text', 'add_shape', 'edit_shape', 'move_layer', 'set_clip', 'crop_photo', 'resize_photo', 'rotate_photo', 'set_background'],
+    reviewMode: 'propose',
+    starter: 'Make this photo pop, but keep it natural.',
+  },
+  {
     name: 'Highlight finder',
     description: 'Reads the transcript and marks the best moments. Changes nothing else.',
     instructions: 'Read the transcript and add_marker at the 3 to 6 strongest moments (quotable lines, reveals, jokes, key claims). Label each marker with a few words saying why (max 40 characters); use green for highlights and red for the single best hook. Do not cut or change anything else.',

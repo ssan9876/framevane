@@ -68,6 +68,7 @@ Count: 31 screens. 12 done, 9 partial, 10 stub. Every screen is reachable.
 
 - **Compositor is Canvas 2D for M0, not WebGPU.** It is the same single renderer for preview and export, so parity holds.
 - **Local vision models run on ONNX Runtime with DirectML, not PyTorch/CUDA (M5).** One small wheel works on any Windows GPU (NVIDIA, AMD, Intel) with no CUDA install. The sidecar swaps kokoro-onnx's CPU onnxruntime for `onnxruntime-directml` with a uv override. Kokoro still runs on the CPU.
+- **Photos are projects, not a separate document type (M7).** The plan sketched a PhotoDoc with its own layer schema and `photo.*` ops. A photo is instead a project with `kind: "photo"` whose tracks are its layers, so the op model, undo, looks, AI and agent tools are shared. Only canvas maths (`photo.ts`), shapes and `move_track` are new.
 - **Auto reframe tracks people with the matting model, not YOLO or a face tracker (M5).** The model is already there, and its matte gives the person's extent. Non-person subjects (products, pets) aren't followed; those clips are centred.
 - **Looks run on WebGL2 (GLSL ES 3.0), not WebGPU (WGSL) (M4).** WebGL2 calls are synchronous, so the shader passes run inside the one `drawFrame` that preview and export share. WebGPU would have made that path async. WebGL2 also works on every Windows GPU driver, and in software for tests. Masks and AI cut-outs (M5) can reuse the same pipeline.
 - **The agent loop is the documented streaming manual loop, not the beta Tool Runner.** That gives direct control of streaming, cancellation and mixed Zod/MCP tool schemas.
@@ -193,6 +194,19 @@ Harder than expected:
 | Settings → Performance (S23) | done | Proxies; local AI on the graphics card or CPU only (the sidecar restarts on its next use, and the choice survives restarts); where new projects go (folder picker, checked for write access); storage per cache with sizes and Clear for the caches that rebuild themselves. Converted and generated media (reversed clips, cleaned audio, speech) is shown but never cleared, because projects use it. Cleared previews are made again when a project's media is listed; cleared mattes are made again when the editor shows a clip that uses them. |
 | ProRes, a background export queue, beyond-4K | not built | ProRes has no WebCodecs encoder; the queue and beyond-4K are could-haves. |
 
+## M7 photo editor (2026-10-12)
+
+| area | status | notes |
+| --- | --- | --- |
+| Photo projects (S25) | done | A photo is a project with `kind: "photo"`. Its layers are tracks, each holding one clip at 0 (`PHOTO_DURATION_US`), so the op model, undo, autosave, the inspector, the look pipeline, background removal and every agent tool work unchanged. Home → Photo editor opens an image; the canvas takes its size and the background starts see-through. |
+| Layers | done | Panel listing layers top first: select, hide, lock, move up/down, delete. New op `move_track` restacks; undo restores the order. |
+| Layer kinds | done | Image (from a file), text (with presets), emoji stickers (text layers in Segoe UI Emoji), and a new `shape` clip kind: rect, ellipse, triangle, star, line, arrow, with fill (or none), outline, corner radius, transform. Shapes also work on video timelines (they sit on text tracks). |
+| Canvas tools | done | Crop (ratio presets, draggable box with corners), resize (scale the picture, or change the canvas around it), quarter turns, mirror and upside down. They live in `packages/doc/src/photo.ts` as op batches that remap every layer: media keeps its pixel size, and text anchored by `style.y` stays put. |
+| Looks and cutout | done | Filters, colour, LUTs, effects (M4) and Remove BG (M5) on image layers; transparent background. |
+| Export | done | PNG and WebP with alpha, JPG on white; full, half, quarter or double size; quality setting. |
+| Agent tools | done | `add_shape`, `edit_shape`, `move_layer`, `crop_photo`, `resize_photo`, `rotate_photo`; `create_project` takes `kind: "photo"`. `add_text` and `add_to_timeline` make layers in photos. `set_background` can be transparent. `export_video` writes .png/.jpg/.webp, a photo at full size. New built-in agent "Photo retoucher". |
+| AI expand, inpaint, upscale, retouch, adjustment layers | not built | should- and could-haves |
+
 ## Next (architecture build order)
 
 - **Still open from M1/M2:**
@@ -201,6 +215,5 @@ Harder than expected:
   - run F12 and `get_frames` against the live Claude API (needs a key)
   - OAuth MCP servers
   - agent import/export
-- **M7 photo editor (the last must-have milestone):**
-  - S25 layers, crop/resize, adjust/filters (reuse the M4 look pipeline), cutout (BiRefNet from M5)
-  - PNG/JPG/WebP export with alpha; the same op/agent model (`photo.*` ops)
+- **Every must-have milestone is built (M0–M7).** Left on the must-have list (partial): keep-pitch speed, keyframed effect parameters, an image as the canvas background, a crash-recovery test, more shortcuts, more local AI tools.
+- **Should-haves next**, in the architecture's order: agent recipes (ad-cut maker, colour matcher), the S21 keyframe graph and curve speed, masks, stabilize, upscale, stems and beats, HSL and curves, clip animations, AI expand/inpaint/upscale in the photo editor.

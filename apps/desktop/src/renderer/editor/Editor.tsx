@@ -12,6 +12,7 @@ import { AgentPanel } from './AgentPanel'
 import { ExportDialog } from './ExportDialog'
 import { ReviewDialog } from './ReviewDialog'
 import { ReframeDialog } from './AiPanels'
+import { PhotoExportDialog, PhotoSidebar } from './PhotoPanels'
 import { ProjectSettingsDialog } from './ProjectSettingsDialog'
 import { useEditorShortcuts } from './shortcuts'
 
@@ -89,6 +90,35 @@ function EditorLoaded({ doc }: { doc: Project }) {
   const ctx = useMemo(() => ({ player, seek, togglePlay }), [player, seek, togglePlay])
 
   useEditorShortcuts(ctx)
+
+  if (doc.kind === 'photo') {
+    // S25 · photo editor: layers and tools | picture | properties (+ agent); no timeline
+    return (
+      <Ctx.Provider value={ctx}>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <TopBar doc={doc} agentOpen={agentOpen} onToggleAgent={() => setAgentOpen(!agentOpen)} />
+          <div className="flex min-h-0 flex-1">
+            <section aria-label="Layers and tools" className="flex w-[var(--fv-asset-panel-w-default)] min-w-[var(--fv-asset-panel-w-min)] shrink-0 flex-col border-r border-border bg-surface">
+              <PhotoSidebar />
+            </section>
+            <section aria-label="Preview" className="flex min-w-0 flex-1 flex-col bg-bg">
+              <Viewer photo />
+            </section>
+            <section aria-label="Properties" className="scroll-y flex min-h-0 w-[var(--fv-inspector-w-default)] shrink-0 flex-col border-l border-border bg-surface">
+              <Inspector />
+            </section>
+            {agentOpen && (
+              <section aria-label="Agent" className="flex w-[var(--fv-agent-dock-w-default)] shrink-0 flex-col border-l border-border bg-surface">
+                <AgentPanel />
+              </section>
+            )}
+          </div>
+        </div>
+        {dialog === 'export' && <PhotoExportDialog />}
+        {dialog === 'review' && <ReviewDialog />}
+      </Ctx.Provider>
+    )
+  }
 
   return (
     <Ctx.Provider value={ctx}>

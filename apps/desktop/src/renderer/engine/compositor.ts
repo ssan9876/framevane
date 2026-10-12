@@ -1,6 +1,6 @@
 import {
   clipEnd, DEFAULT_CAPTION_STYLE, hasLook, resolveAt, sourceTimeAt, transitionAt,
-  type ActiveTransition, type AssetRef, type CaptionClip, type Clip, type MediaClip, type Project, type TextClip, type TextStyle,
+  type ActiveTransition, type AssetRef, type CaptionClip, type Clip, type MediaClip, type Project, type ShapeClip, type TextClip, type TextStyle,
 } from '@framevane/doc'
 import type { VideoSample } from 'mediabunny'
 import { loadCustomFonts } from './fonts'
@@ -78,8 +78,11 @@ export function drawFrame(ctx: Ctx2D, doc: Project, tUs: number, visuals: Map<st
   ctx.globalAlpha = 1
   const layers = layersAt(doc, tUs)
   const bg = doc.canvas.background
-  ctx.fillStyle = bg.kind === 'color' ? bg.color : '#000000'
-  ctx.fillRect(0, 0, W, H)
+  if (bg.kind === 'transparent') ctx.clearRect(0, 0, W, H) // black on opaque canvases (video export), see-through on photos
+  else {
+    ctx.fillStyle = bg.kind === 'color' ? bg.color : '#000000'
+    ctx.fillRect(0, 0, W, H)
+  }
   if (bg.kind === 'blur') {
     // blurred, darkened "cover" fill from the bottom-most picture (classic vertical-video background)
     const base = layers.find((l) => (l.clip.kind === 'video' || l.clip.kind === 'image') && visuals.has(l.clip.id))
@@ -116,7 +119,67 @@ export function drawFrame(ctx: Ctx2D, doc: Project, tUs: number, visuals: Map<st
       drawText(ctx, clip, trackStyle ?? DEFAULT_CAPTION_STYLE, tUs - clip.startUs, W, H)
     } else if (clip.kind === 'text') {
       drawText(ctx, clip, clip.style, tUs - clip.startUs, W, H)
+    } else if (clip.kind === 'shape') {
+      drawShape(ctx, clip, tUs - clip.startUs, W, H)
     }
+  }
+  ctx.restore()
+}
+
+/* ───────────────────────── shapes ───────────────────────── */
+
+/** Where a shape sits on the canvas at clip-local time t (centre, scaled size, rotation). */
+export function shapeGeometry(clip: ShapeClip, localUs: number, W: number, H: number) {
+  const t = resolveAt(clip, localUs)
+  return { cx: W / 2 + t.x, cy: H / 2 + t.y, w: clip.width * t.scale, h: clip.height * t.scale, rotation: t.rotation, opacity: t.opacity, scale: t.scale }
+}
+
+function shapePath(ctx: Ctx2D, c: ShapeClip) {
+  const w = c.width
+  const h = c.height
+  ctx.beginPath()
+  switch (c.shape) {
+    case 'rect': ctx.roundRect(-w / 2, -h / 2, w, h, c.radius * Math.min(w, h)); break
+    case 'ellipse': ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2); break
+    case 'triangle': ctx.moveTo(0, -h / 2); ctx.lineTo(w / 2, h / 2); ctx.lineTo(-w / 2, h / 2); ctx.closePath(); break
+    case 'star':
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 ? 0.42 : 1
+        const a = -Math.PI / 2 + (i * Math.PI) / 5
+        ctx.lineTo((Math.cos(a) * r * w) / 2, (Math.sin(a) * r * h) / 2)
+      }
+      ctx.closePath()
+      break
+    case 'arrow': {
+      const head = Math.min(w * 0.4, h * 1.2)
+      const shaft = h * 0.36
+      ctx.moveTo(-w / 2, -shaft / 2); ctx.lineTo(w / 2 - head, -shaft / 2); ctx.lineTo(w / 2 - head, -h / 2); ctx.lineTo(w / 2, 0)
+      ctx.lineTo(w / 2 - head, h / 2); ctx.lineTo(w / 2 - head, shaft / 2); ctx.lineTo(-w / 2, shaft / 2); ctx.closePath()
+      break
+    }
+    case 'line': ctx.moveTo(-w / 2, 0); ctx.lineTo(w / 2, 0); break
+  }
+}
+
+function drawShape(ctx: Ctx2D, clip: ShapeClip, localUs: number, W: number, H: number) {
+  const g = shapeGeometry(clip, localUs, W, H)
+  if (g.opacity <= 0 || g.scale <= 0) return
+  ctx.save()
+  ctx.globalAlpha = Math.min(1, g.opacity)
+  ctx.translate(g.cx, g.cy)
+  if (g.rotation) ctx.rotate((g.rotation * Math.PI) / 180)
+  ctx.scale(g.scale, g.scale)
+  shapePath(ctx, clip)
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+  if (clip.shape === 'line') {
+    // a line is all stroke: its colour is the fill (or the outline colour if there's no fill), its weight the height
+    ctx.strokeStyle = clip.fill ?? clip.stroke
+    ctx.lineWidth = Math.max(1, clip.strokeWidth || clip.height * 0.1)
+    ctx.stroke()
+  } else {
+    if (clip.fill) { ctx.fillStyle = clip.fill; ctx.fill() }
+    if (clip.strokeWidth > 0) { ctx.strokeStyle = clip.stroke; ctx.lineWidth = clip.strokeWidth; ctx.stroke() }
   }
   ctx.restore()
 }

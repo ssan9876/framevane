@@ -343,6 +343,7 @@ function ClipView({ doc, clip, track, start, dur, pxPerUs, selected, peaks, medi
   const media = clip.kind === 'video' || clip.kind === 'audio' || clip.kind === 'image' ? (clip as MediaClip) : null
   const asset = media ? doc.assets[media.assetId] : undefined
   const label = clip.kind === 'caption' || clip.kind === 'text' ? clip.text
+    : clip.kind === 'shape' ? `Shape · ${clip.shape}`
     : `${media?.freezeAtUs !== undefined ? 'Freeze · ' : ''}${asset?.name ?? 'Missing media'}${media?.reversed ? ' · reversed' : ''}${media && !media.audioEnabled && media.kind === 'video' && media.freezeAtUs === undefined ? ' · audio detached' : ''}`
   const keyTimes = media ? [...new Set(Object.values(media.keyframes).flatMap((k) => (k ?? []).map((x) => x.tUs)))] : []
   // subscribe only to "which of my keys is under the playhead", not to every playhead move
@@ -394,7 +395,7 @@ function ClipView({ doc, clip, track, start, dur, pxPerUs, selected, peaks, medi
     <ContextMenu items={items}>
       <div data-clip-id={clip.id} className="absolute top-0.5" style={{ left: start * pxPerUs, width }}>
         <TimelineClip
-          kind={(clip.kind === 'caption' ? 'caption' : clip.kind) as ClipKind}
+          kind={(clip.kind === 'shape' ? 'sticker' : clip.kind) as ClipKind}
           label={label}
           width={width}
           height={h - 4}

@@ -41,7 +41,7 @@ export class Projects {
     return rows.map((r) => this.summary(r))
   }
 
-  create(name: string, canvas?: { width?: number; height?: number; fps?: number }): string {
+  create(name: string, canvas?: { width?: number; height?: number; fps?: number }, kind: 'video' | 'photo' = 'video'): string {
     const id = uuid7()
     const dir = join(this.paths.projectsDir, `${slug(name)}-${id.slice(-6)}`)
     mkdirSync(dir, { recursive: true })
@@ -49,13 +49,14 @@ export class Projects {
       ...(canvas?.width ? { width: canvas.width } : {}),
       ...(canvas?.height ? { height: canvas.height } : {}),
       ...(canvas?.fps ? { fps: { num: canvas.fps, den: 1 } } : {}),
-    })
+      ...(kind === 'photo' ? { background: { kind: 'transparent' as const } } : {}),
+    }, kind)
     writeAtomic(join(dir, 'project.json'), JSON.stringify(doc, null, 1))
     const t = now()
     this.db.prepare(
       `INSERT INTO projects (id, type, name, dir_path, width, height, fps_num, fps_den, duration_us, doc_version, status, created_at, updated_at, opened_at)
-       VALUES (?, 'video', ?, ?, ?, ?, ?, ?, 0, 0, 'ok', ?, ?, ?)`,
-    ).run(id, doc.name, dir, doc.canvas.width, doc.canvas.height, doc.canvas.fps.num, doc.canvas.fps.den, t, t, t)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'ok', ?, ?, ?)`,
+    ).run(id, kind, doc.name, dir, doc.canvas.width, doc.canvas.height, doc.canvas.fps.num, doc.canvas.fps.den, t, t, t)
     return id
   }
 

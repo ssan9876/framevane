@@ -154,7 +154,7 @@ test.describe('M6 export formats', () => {
 
 test.describe('M6 settings', () => {
   const folder = mkdtempSync(join(tmpdir(), 'framevane-newprojects-'))
-  test.afterAll(() => rmSync(folder, { recursive: true, force: true }))
+  test.afterAll(() => { try { rmSync(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) } catch { /* swept by the global teardown */ } })
   test.use({ pickFiles: [files.talk], reelEnv: { FRAMEVANE_TEST_PICK_FOLDER: folder } })
 
   test('projects folder, AI device (survives a restart), caches with sizes and clearing', async ({ framevane }) => {

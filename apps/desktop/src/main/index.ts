@@ -19,6 +19,7 @@ import { Fonts } from './fonts'
 import { Luts } from './luts'
 import { Ai } from './ai'
 import { Storage } from './storage'
+import { createPhotoProject } from './photo'
 import type { Follow, ReframeRatio } from '@framevane/doc'
 import { Tts } from './tts'
 import { handleMediaProtocol, registerSchemePrivileges } from './protocol'
@@ -160,7 +161,8 @@ async function main() {
 
   /* ── projects & doc ── */
   ipcMain.handle('projects:list', () => projects.list())
-  ipcMain.handle('projects:create', async (_e, opts: { name: string; width?: number; height?: number; fps?: number; files?: string[] }) => {
+  ipcMain.handle('projects:create', async (_e, opts: { name: string; width?: number; height?: number; fps?: number; files?: string[]; kind?: 'video' | 'photo' }) => {
+    if (opts.kind === 'photo') return { projectId: await createPhotoProject(projects, media, opts.name, opts.files ?? [], opts) }
     const projectId = projects.create(opts.name, opts)
     if (opts.files?.length) {
       const infos = await media.import(projectId, opts.files)

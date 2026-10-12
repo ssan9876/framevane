@@ -124,7 +124,7 @@ test.describe('M5 auto reframe', () => {
 
 test.describe('M5 model manager', () => {
   const models = mkdtempSync(join(tmpdir(), 'framevane-models-'))
-  test.afterAll(() => rmSync(models, { recursive: true, force: true }))
+  test.afterAll(() => { try { rmSync(models, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) } catch { /* swept by the global teardown */ } })
   test.use({ reelEnv: { FRAMEVANE_MODELS_DIR: models } })
 
   test('lists the local models; downloads and removes one (checksum-verified)', async ({ framevane }) => {
