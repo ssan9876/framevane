@@ -1,0 +1,42 @@
+import { useEffect } from 'react'
+import { ToastProvider, TooltipProvider, useToast } from '@reel/ui'
+import { connectEvents, useApp } from './store'
+import { Home } from '../screens/Home'
+import { Editor } from '../editor/Editor'
+import { ComingSoon } from '../screens/ComingSoon'
+import { SettingsDialog } from '../screens/SettingsDialog'
+
+function ErrorToasts() {
+  const error = useApp((s) => s.error)
+  const toast = useToast()
+  useEffect(() => {
+    if (!error) return
+    toast({ tone: 'error', title: error })
+    useApp.getState().setError(null)
+  }, [error, toast])
+  return null
+}
+
+export function App() {
+  const route = useApp((s) => s.route)
+  const dialog = useApp((s) => s.dialog)
+  useEffect(() => connectEvents(), [])
+  return (
+    <TooltipProvider>
+      <ToastProvider>
+        <ErrorToasts />
+        <div className="flex h-full flex-col">
+          {route.name === 'home' && <Home />}
+          {route.name === 'editor' && <Editor key={route.projectId} projectId={route.projectId} />}
+          {route.name === 'photo' && (
+            <ComingSoon id="S25" title="Photo editor" body="Layers, cutout, adjustments and AI tools for single images. It uses the same agent tools as the video editor." milestone="M7" />
+          )}
+          {route.name === 'ai-maker' && (
+            <ComingSoon id="S26" title="Script to video" body="Write or generate a script and get a rough cut with voice-over, captions and b-roll. It will be built as an agent recipe." milestone="should-have" />
+          )}
+        </div>
+        {(dialog === 'settings' || dialog === 'shortcuts') && <SettingsDialog />}
+      </ToastProvider>
+    </TooltipProvider>
+  )
+}

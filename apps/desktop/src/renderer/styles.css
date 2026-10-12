@@ -1,0 +1,3 @@
+@import "@reel/ui/styles.css";
+/* scan the app's own sources too */
+@source "./";
