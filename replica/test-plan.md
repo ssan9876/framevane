@@ -49,7 +49,7 @@ Legend for `auto`: e2e = Playwright spec · unit = vitest · manual · n/b = fea
 | F02-N1 | negative: overlap on overlay track | drag an overlay clip onto another | rejected with a clear message, no change | manual | not run (manual) |
 | — | ops engine | 20 unit tests: split/ripple/undo/atomicity/locks/source bounds/captions | | unit | pass |
 
-## F03 Text · F05 music fades · F06 transitions · F07 keyframes · F08 remove BG · F09 color · F11 photo · F15 transcript edit (F13 MCP servers and F14 batch: see M2 below)
+## F06 transitions · F08 remove BG · F09 color · F11 photo (F03 text, F05 fades, F15 transcript: see M3; F13, F14: see M2)
 Not built in M0 (n/b). The screens exist as stubs; cases are written when each is built. Partial checks today:
 | case | type | steps | expected | auto | result |
 | --- | --- | --- | --- | --- | --- |
@@ -137,9 +137,27 @@ Not built in M0 (n/b). The screens exist as stubs; cases are written when each i
 | M2-E6 | edge | edit the timeline under a proposal → Apply → Ask again | conflict alert; old proposal discarded; new proposal applies | e2e | pass |
 | M2-M1 | manual | add a real remote server (e.g. Higgsfield with an API key header) and generate a clip with the live Claude API | clip imported and placed | manual | not run: no Anthropic key on this machine; OAuth-only servers unsupported |
 
+## M3 text, captions, audio
+| case | type | steps | expected | auto | result |
+| --- | --- | --- | --- | --- | --- |
+| M3-H1 | happy | Text tab → Headline preset; change words, Italic, size 200, box; In animation Typewriter; drag on canvas; undo | text clip on "Text 1"; label updates; Anton font; Position X > 100 then 0 | e2e | pass |
+| M3-H2 | happy | Speech tab → Kokoro "Heart" → Generate; then a Windows voice | an audio clip each (3, then 4 clips, "Audio 2") | e2e | pass |
+| M3-H3 | happy | import consola.ttf from the font picker | font list shows Consolas; fonts.custom() reads family/weight/style from the file; system fonts listed | e2e | pass |
+| M3-H4 | happy | auto captions → "One word" preset; Export .srt / .txt | one-word switch on, font Anton; valid SRT, text file | e2e | pass |
+| M3-H5 | happy | Show transcript; click word 1, Shift+click word 3; Cut 3 selected; undo | 3 selected; duration shorter; 3 fewer words; undo restores 0:29.1 | e2e | pass |
+| M3-H6 | happy | Import .srt | 2 caption lines with the file's text | e2e | pass |
+| M3-H7 | happy | Fade in 1.5 s / out 2 s; reselect | values kept | e2e | pass |
+| M3-H8 | happy | Clean-up "Reduce noise" on the video clip | video says "audio detached"; linked "talk (clean).m4a" clip | e2e | pass (BUG-011 regression) |
+| M3-H9 | happy | add music, "Lower under speech" | toast; volume keyframes exist | e2e | pass |
+| M3-H10 | happy | record a voiceover with a fake microphone | "Voiceover" clip on an audio track | e2e | pass |
+| M3-H11 | happy | MCP: add_text, edit_text, export/import_captions, list_voices, text_to_speech, clean_audio | each edit appears live | e2e | pass |
+| M3-U | unit | text ops, fades, split rules, ducking curve, set_keyframes, SRT round trip/parse, fillers | 16 new unit tests | unit | pass |
+| M3-M1 | manual | listen: fades, denoise strength, enhance, ducking depth, Kokoro voices | sounds right | manual | not run (needs ears) |
+| M3-M2 | manual | export a project with every text animation and check frames | matches the preview | manual | partial: the compositor is shared, so export uses the same drawing code; not pixel-checked per animation |
+
 ## Cross-cutting
 | case | type | steps | expected | auto | result |
 | --- | --- | --- | --- | --- | --- |
-| X-A11Y | a11y | axe WCAG 2.2 AA on S01 (empty, filled), S03, S11, S19, S22, S23/S28 (incl. MCP servers), S24, S27 permission prompt, S29, S31, F14 batch | no violations | e2e | pass |
+| X-A11Y | a11y | axe WCAG 2.2 AA on S01 (empty, filled), S03, S11, S19, S22, S23/S28 (incl. MCP servers), S24, S27 permission prompt, S29, S31, F14 batch, S05 voiceover, S06, S15 audio, S19 text/speech/caption, S30 | no violations | e2e | pass |
 | X-KB | keyboard | Space play/pause, ←/→ frame step, Home/End, Esc clears selection | playhead/timecode respond | e2e | pass |
 | X-SR | screen reader labels | every icon button has a name (axe `button-name`) | | e2e | pass |

@@ -1,14 +1,17 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Trash2, Captions, Construction } from 'lucide-react'
-import { Button, ColorPicker, EmptyState, PanelHeader, Segmented, Select, SliderField, Switch, TabPanel, UnderlineTabs } from '@framevane/ui'
+import { Trash2, Construction } from 'lucide-react'
+import { Button, ColorPicker, EmptyState, PanelHeader, Segmented, Select, SliderField, Switch, TabPanel, UnderlineTabs, useToast } from '@framevane/ui'
 import {
-  BLEND_MODES, DEFAULT_CAPTION_STYLE, EASINGS, findClip, formatUs, projectDurationUs, valueAt,
-  type AnimProp, type BlendMode, type CaptionClip, type Easing, type MediaClip, type OpInput, type Project, type Track,
+  BLEND_MODES, EASINGS, findClip, formatUs, projectDurationUs, valueAt,
+  type AnimatableClip, type AnimProp, type BlendMode, type Easing, type MediaClip, type OpInput, type Project,
 } from '@framevane/doc'
 import { useApp } from '../app/store'
 import { deleteSelection } from './actions'
 import { detachAudio, localPlayhead, setAnimProp } from './actions-m1'
 import { useEditor } from './Editor'
+import { CaptionInspector, TextInspector } from './TextInspector'
+import { cleanUpAudio, duckUnderSpeech } from './actions-m3'
+import type { AudioPreset } from '../../shared/api'
 
 /** S14–S19 · Inspector: properties of the selection, or project details (with S02 Modify) when nothing is selected. */
 export function Inspector() {
@@ -27,8 +30,8 @@ export function Inspector() {
   if (!found) return <ProjectDetails doc={doc} />
   const { clip, track } = found
   if (clip.kind === 'caption') return <CaptionInspector key={clip.id} clip={clip} track={track} />
-  if (clip.kind === 'text') return <><PanelHeader title="Text" /><EmptyState icon={<Construction />} title="Text clips arrive in M3" /></>
-  return <MediaInspector key={clip.id} clip={clip as MediaClip} doc={doc} locked={track.locked} />
+  if (clip.kind === 'text') return <TextInspector key={clip.id} clip={clip} track={track} />
+  return <MediaInspector key={clip.id} clip={clip as MediaClip} doc={doc} locked={track.locked} main={track.main} />
 }
 
 function ProjectDetails({ doc }: { doc: Project }) {
@@ -72,7 +75,7 @@ function BackgroundTools({ doc }: { doc: Project }) {
 }
 
 /** Live value while dragging; one op (one undo step) shortly after the last change. */
-function useCommitted<T>(value: T, commit: (v: T) => void, delay = 250): [T, (v: T) => void] {
+export function useCommitted<T>(value: T, commit: (v: T) => void, delay = 250): [T, (v: T) => void] {
   const [local, setLocal] = useState(value)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pending = useRef(false)
@@ -86,7 +89,7 @@ function useCommitted<T>(value: T, commit: (v: T) => void, delay = 250): [T, (v:
   return [local, set]
 }
 
-function MediaInspector({ clip, doc, locked }: { clip: MediaClip; doc: Project; locked: boolean }) {
+function MediaInspector({ clip, doc, locked, main }: { clip: MediaClip; doc: Project; locked: boolean; main: boolean }) {
   const isAudio = clip.kind === 'audio'
   const [tab, setTab] = useState(isAudio ? 'audio' : 'video')
   const [sub, setSub] = useState('basic')
@@ -141,7 +144,7 @@ function MediaInspector({ clip, doc, locked }: { clip: MediaClip; doc: Project; 
             {!clip.audioEnabled && <p className="text-sm text-muted">This clip's sound was detached to a linked audio clip.</p>}
             {clip.kind === 'video' && clip.audioEnabled && <Button size="sm" onClick={() => void detachAudio()}>Detach audio</Button>}
             {isAudio && <KeyframeTools clip={clip} keysHere={keysHere} animated={animated} local={local} />}
-            <p className="pt-2 text-xs text-muted">Fades, noise reduction and voice enhancement come in M3. Fade by keying the volume.</p>
+            {clip.audioEnabled && <AudioTools clip={clip} isMain={main} />}
           </div>
         </TabPanel>
         <TabPanel value="speed">
@@ -159,8 +162,8 @@ function MediaInspector({ clip, doc, locked }: { clip: MediaClip; doc: Project; 
 }
 
 /** A slider bound to an animatable property: shows the value at the playhead, keys it if the property is animated. */
-function AnimSlider({ clip, prop, label, toUi = (v) => Math.round(v), fromUi = (v) => v, ...rest }: {
-  clip: MediaClip; prop: AnimProp; label: string; min: number; max: number; step?: number; precision?: number; unit?: string; defaultValue?: number; bipolar?: boolean
+export function AnimSlider({ clip, prop, label, toUi = (v) => Math.round(v), fromUi = (v) => v, ...rest }: {
+  clip: AnimatableClip; prop: AnimProp; label: string; min: number; max: number; step?: number; precision?: number; unit?: string; defaultValue?: number; bipolar?: boolean
   toUi?: (v: number) => number; fromUi?: (v: number) => number
 }) {
   const playheadUs = useApp((s) => s.playheadUs)
@@ -186,7 +189,7 @@ function AnimSlider({ clip, prop, label, toUi = (v) => Math.round(v), fromUi = (
   )
 }
 
-function KeyframeTools({ clip, keysHere, animated, local }: { clip: MediaClip; keysHere: { prop: AnimProp; tUs: number; value: number; easing: Easing }[]; animated: boolean; local: number }) {
+export function KeyframeTools({ clip, keysHere, animated, local }: { clip: AnimatableClip; keysHere: { prop: AnimProp; tUs: number; value: number; easing: Easing }[]; animated: boolean; local: number }) {
   if (!animated) return <p className="pt-2 text-xs text-muted">Tap a ◇ to key a value at the playhead, move the playhead, then change the value.</p>
   const easing = keysHere[0]?.easing
   return (
@@ -223,33 +226,51 @@ function CropTools({ clip }: { clip: MediaClip }) {
   )
 }
 
-function CaptionInspector({ clip, track }: { clip: CaptionClip; track: Track }) {
-  const style = track.style ?? DEFAULT_CAPTION_STYLE
-  const [text, setText] = useState(clip.text)
-  useEffect(() => setText(clip.text), [clip.text])
-  const commitText = () => { if (text.trim() && text !== clip.text) void useApp.getState().apply([{ type: 'set_caption_text', clipId: clip.id, text: text.trim() }]) }
-  const styleOp = (s: Partial<typeof style>) => void useApp.getState().apply([{ type: 'set_track_style', trackId: track.id, style: s }])
-  const [size, setSize] = useCommitted(style.fontSize, (v) => styleOp({ fontSize: v }))
-  const [pos, setPos] = useCommitted(Math.round(style.y * 100), (v) => styleOp({ y: v / 100 }))
-  const [stroke, setStroke] = useCommitted(style.strokeWidth, (v) => styleOp({ strokeWidth: v }))
-  const [color, setColor] = useCommitted(style.color, (v) => styleOp({ color: v }), 400)
-  const [strokeColor, setStrokeColor] = useCommitted(style.strokeColor, (v) => styleOp({ strokeColor: v }), 400)
+const CLEANUP: { value: AudioPreset; label: string; hint: string }[] = [
+  { value: 'denoise', label: 'Reduce noise', hint: 'hum, hiss, room' },
+  { value: 'denoise-light', label: 'Reduce noise (light)', hint: 'gentle' },
+  { value: 'denoise-strong', label: 'Reduce noise (strong)', hint: 'noisy places' },
+  { value: 'enhance', label: 'Enhance voice', hint: 'clearer, even' },
+  { value: 'normalize', label: 'Normalize loudness', hint: '−14 LUFS' },
+]
+
+/** Fades, local clean-up (FFmpeg filters → a new audio file), and ducking music under speech. */
+function AudioTools({ clip, isMain }: { clip: MediaClip; isMain: boolean }) {
+  const maxFade = Math.max(0.1, Math.floor(clip.durationUs / 2 / 1e5) / 10)
+  const [fin, setFin] = useCommitted(Math.round(clip.fadeInUs / 1e5) / 10, (v) => void useApp.getState().apply([{ type: 'set_clip_props', clipId: clip.id, fadeInUs: Math.round(v * 1e6) }]))
+  const [fout, setFout] = useCommitted(Math.round(clip.fadeOutUs / 1e5) / 10, (v) => void useApp.getState().apply([{ type: 'set_clip_props', clipId: clip.id, fadeOutUs: Math.round(v * 1e6) }]))
+  const [preset, setPreset] = useState<AudioPreset>('denoise')
+  const [busy, setBusy] = useState<'clean' | 'duck' | null>(null)
+  const toast = useToast()
+  const msg = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
   return (
-    <>
-      <PanelHeader title={<span className="flex items-center gap-1.5"><Captions className="size-3.5 text-muted" />Caption</span>} />
-      <div className="flex flex-col gap-3 p-3">
-        <label className="flex flex-col gap-1">
-          <span className="text-sm text-muted">Text ({formatUs(clip.startUs)}–{formatUs(clip.startUs + clip.durationUs)})</span>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={commitText} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitText() } }}
-            rows={3} maxLength={500} className="resize-none rounded-sm border border-border-input bg-surface-2 p-2 text-md focus-visible:border-focus focus-visible:outline-none" />
-        </label>
-        <h3 className="pt-1 text-sm text-muted">Style · applies to all captions</h3>
-        <SliderField label="Size" value={size} onChange={setSize} min={16} max={200} unit="px" defaultValue={DEFAULT_CAPTION_STYLE.fontSize} />
-        <SliderField label="Height" value={pos} onChange={setPos} min={5} max={95} unit="%" defaultValue={Math.round(DEFAULT_CAPTION_STYLE.y * 100)} />
-        <SliderField label="Outline" value={stroke} onChange={setStroke} min={0} max={20} unit="px" defaultValue={DEFAULT_CAPTION_STYLE.strokeWidth} />
-        <div className="flex items-center gap-3"><span className="w-[88px] text-sm text-muted">Color</span><ColorPicker label="Caption color" value={color} onChange={setColor} /></div>
-        <div className="flex items-center gap-3"><span className="w-[88px] text-sm text-muted">Outline color</span><ColorPicker label="Outline color" value={strokeColor} onChange={setStrokeColor} /></div>
+    <div className="flex flex-col gap-2 border-t border-border pt-3">
+      <SliderField label="Fade in" value={fin} onChange={setFin} min={0} max={Math.min(10, maxFade)} step={0.1} precision={1} unit="s" defaultValue={0} />
+      <SliderField label="Fade out" value={fout} onChange={setFout} min={0} max={Math.min(10, maxFade)} step={0.1} precision={1} unit="s" defaultValue={0} />
+      <h3 className="pt-2 text-sm text-muted">Clean up</h3>
+      <div className="flex items-center gap-2">
+        <Select label="Clean-up" hideLabel value={preset} width={190} onValueChange={(v) => setPreset(v as AudioPreset)} options={CLEANUP} />
+        <Button size="sm" loading={busy === 'clean'} onClick={async () => {
+          setBusy('clean')
+          try {
+            if (await cleanUpAudio(clip.id, preset)) toast({ tone: 'success', title: `${CLEANUP.find((c) => c.value === preset)!.label}: done`, description: clip.kind === 'video' ? 'The cleaned sound is on a linked audio clip. Ctrl+Z undoes it.' : 'Ctrl+Z undoes it.' })
+          } catch (e) { toast({ tone: 'error', title: "The sound couldn't be cleaned up", description: msg(e) }) } finally { setBusy(null) }
+        }}>Apply</Button>
       </div>
-    </>
+      <p className="text-xs text-muted">Runs on your computer and makes a new audio file; the original is kept.</p>
+      {clip.kind === 'audio' && !isMain && (
+        <>
+          <h3 className="pt-2 text-sm text-muted">Music under speech</h3>
+          <Button size="sm" loading={busy === 'duck'} onClick={async () => {
+            setBusy('duck')
+            try {
+              const n = await duckUnderSpeech(clip.id)
+              if (n) toast({ tone: 'success', title: 'Music lowered under speech', description: `${n} stretch${n === 1 ? '' : 'es'} of talking. Adjust the curve with the volume keyframes.` })
+            } catch (e) { toast({ tone: 'error', title: "Couldn't find the speech", description: msg(e) }) } finally { setBusy(null) }
+          }}>Lower under speech</Button>
+        </>
+      )}
+    </div>
   )
 }
+

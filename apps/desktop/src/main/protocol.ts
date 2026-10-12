@@ -2,12 +2,14 @@ import { protocol } from 'electron'
 import { createReadStream, statSync } from 'node:fs'
 import { extname } from 'node:path'
 import { Readable } from 'node:stream'
+import type { Fonts } from './fonts'
 import type { Media } from './media'
 
 /**
  * framevane-media:// serves ONLY registered assets (by id), never arbitrary paths:
  *   asset/<id>  the playable file (original or mezzanine), with HTTP Range support for WebCodecs demuxing
  *   thumb/<id>  poster jpg · strip/<id> filmstrip jpg · peaks/<id> waveform peaks (Uint8, 100/s)
+ *   font/<file> a font the user imported (only files inside the app's fonts folder)
  */
 
 export const SCHEME = 'framevane-media'
@@ -24,11 +26,17 @@ const MIME: Record<string, string> = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp', '.avif': 'image/avif',
 }
 
-export function handleMediaProtocol(media: Media) {
+const FONT_MIME: Record<string, string> = { '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff': 'font/woff', '.woff2': 'font/woff2' }
+
+export function handleMediaProtocol(media: Media, fonts?: Fonts) {
   protocol.handle(SCHEME, async (req) => {
     const url = new URL(req.url)
     const kind = url.host
     const id = decodeURIComponent(url.pathname.replace(/^\//, ''))
+    if (kind === 'font') {
+      const file = fonts?.path(id)
+      return file ? serveFile(file, null, FONT_MIME[extname(file).toLowerCase()] ?? 'application/octet-stream') : new Response('Not found', { status: 404 })
+    }
     const row = media.get(id)
     if (!row) return new Response('Not found', { status: 404 })
     let file: string | null = null

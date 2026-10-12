@@ -13,6 +13,8 @@ Only reproduced bugs are listed. Each one has a test that failed before the fix 
 | BUG-006 | S3 | Tabs in Settings and the inspector point aria-controls at panels that don't exist | fixed in 16aa598 |
 | BUG-007 | S3 | Inspector slider thumbs have no accessible name | fixed in 16aa598 |
 | BUG-008 | S4 | Home requests project covers before their thumbnails exist (404) | fixed in 16aa598 |
+| BUG-012 | S3 | Agent library tool checkboxes are too small and too close together to hit reliably (WCAG 2.5.8) | fixed in M3 |
+| BUG-011 | S2 | Audio clean-up fails on media whose sound is shorter than its picture | fixed in M3 (before release) |
 | BUG-010 | S2 | Editing one transform or caption-style field silently reset the others to defaults | fixed in b26aae5 |
 | BUG-009 | S3 | Review dialog preview is black (only captions draw) | fixed in ea4a22f |
 
@@ -186,6 +188,37 @@ Status: fixed in b26aae5
 
 ---
 
+### BUG-012: Agent library tool checkboxes are too small and too close together
+- Severity: S3 (works, but the targets are hard to hit; fails WCAG 2.2 target size)
+- Build: shipped in M2 (65aa848)
+
+Steps
+1. Agent library → New agent → Tools it may use → Only these.
+
+Expected: each tool checkbox has a 24px target, or enough space around it.
+Actual: 28 checkboxes 14px tall with 6px between rows (axe `target-size`).
+Evidence: m2-agents.spec.ts › agent library, once its a11y check was actually asserted (see the test bugs below).
+Fix: 12px row spacing in the tool grid.
+Status: fixed in M3
+
+---
+
+### BUG-011: Audio clean-up fails on media whose sound is shorter than its picture
+- Severity: S2 (the feature fails with a technical error, no workaround in the UI)
+- Build: M3 work in progress, never shipped
+
+Steps
+1. Import talk.mp4 (picture 29.1 s, audio 27.8 s), select the clip, Audio → Clean up → Reduce noise → Apply.
+
+Expected: the cleaned sound replaces the original on a linked audio clip.
+Actual: "Clip … runs past the end of talk (clean).m4a", nothing changes.
+Evidence: m3-text-audio.spec.ts › fades, clean-up…, and the same through the MCP clean_audio tool.
+Cause: FFmpeg wrote only the audio stream's length; the clip is timed against the container's length.
+Fix: the filter chain ends in `apad` and the output is cut to the source's duration (`-t`), so the cleaned file is exactly as long as the source. The cache folder is versioned (`-v2`) so stale short files aren't reused.
+Status: fixed before release (M3 commit)
+
+---
+
 ## Test bugs (fixed in the specs, not the app)
 
 - `projectDuration()` read the project panel, which is hidden when a clip is selected. It now reads the player timecode (which also gained an accessible label).
@@ -193,6 +226,7 @@ Status: fixed in b26aae5
 - F01-N3 refreshed the list by creating a new project. It now restarts the app.
 - An ambiguous "Undo" matched both the toolbar and the toast action, so the test now scopes to the toolbar (`banner`).
 - axe in Electron needs `setLegacyMode(true)` (no new pages).
+- The M2 spec called `a11y()` without asserting on its result, so its four accessibility checks never failed whatever they found. The test plan marked them as passing. Since M3 they are asserted (`expect(...).toEqual([])`).
 
 ## To check (not reproduced as a bug yet)
 

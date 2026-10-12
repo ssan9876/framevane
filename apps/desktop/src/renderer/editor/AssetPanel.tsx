@@ -5,8 +5,9 @@ import { buildCaptionClips, formatUs, timelineWords } from '@framevane/doc'
 import type { MediaInfo } from '../../shared/api'
 import { useApp } from '../app/store'
 import { addAssetToTimeline } from './actions'
+import { CaptionFiles, TextTab, TranscriptEditor, VoiceoverRecorder } from './AssetTabsM3'
 
-/** S04–S12 · Asset panel. Media (S04) and Captions (S11) work in M0; the rest are reachable stubs. */
+/** S04–S12 · Asset panel. Media, Audio, Text and Captions work; effects, transitions, filters and stickers are reachable stubs. */
 export function AssetPanel() {
   const [tab, setTab] = useState('media')
   return (
@@ -28,7 +29,7 @@ export function AssetPanel() {
     >
       <TabPanel value="media" className="flex min-h-0"><MediaTab /></TabPanel>
       <TabPanel value="audio" className="flex min-h-0"><AudioTab /></TabPanel>
-      <TabPanel value="text"><Stub id="S06" what="Text presets and title templates" when="M3" /></TabPanel>
+      <TabPanel value="text" className="flex min-h-0 flex-col"><TextTab /></TabPanel>
       <TabPanel value="stickers"><Stub id="S07" what="Stickers, emoji and shapes" when="should-have" /></TabPanel>
       <TabPanel value="effects"><Stub id="S08" what="Video effects" when="M4" /></TabPanel>
       <TabPanel value="transitions"><Stub id="S09" what="Transitions" when="M4" /></TabPanel>
@@ -145,7 +146,8 @@ function AudioTab() {
   return (
     <>
       <CategoryList label="Audio sources" value={cat} onValueChange={setCat} items={[{ value: 'local', label: 'Your audio', count: audio.length }, { value: 'sfx', label: 'Sound effects' }, { value: 'free', label: 'Free library' }]} />
-      <div className="scroll-y flex-1 p-3">
+      <div className="scroll-y flex flex-1 flex-col gap-3 p-3">
+        {cat === 'local' && <VoiceoverRecorder />}
         {cat === 'local' ? (
           audio.length ? (
             <ul className="flex flex-col gap-1">
@@ -215,11 +217,9 @@ function CaptionsTab() {
         {busy ? 'Transcribing…' : existing ? 'Generate again' : 'Generate captions'}
       </Button>
       {!audioAssets.length && <p className="text-sm text-muted">Add a clip with sound to the main track first.</p>}
-      {existing && <p className="text-sm text-muted">{existing.clips.length} caption lines on “{existing.name}”. Select a line on the timeline to edit its text.</p>}
-      <div className="rounded-md border border-border p-3">
-        <h3 className="text-sm">Edit by transcript (S30)</h3>
-        <p className="mt-1 text-sm text-muted">Deleting words to cut the video arrives as a should-have. Today you can ask the agent: “cut the sentence about shipping”.</p>
-      </div>
+      {existing && <p className="text-sm text-muted">{existing.clips.length} caption lines on “{existing.name}”. Select a line on the timeline to edit its text and the look of all captions.</p>}
+      <CaptionFiles hasCaptions={!!existing?.clips.length} />
+      <TranscriptEditor />
     </div>
   )
 }

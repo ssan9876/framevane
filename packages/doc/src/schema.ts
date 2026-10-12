@@ -128,6 +128,9 @@ export const MediaClip = z.object({
   linkId: Id.optional(),
   /** The media is a reversed render of the original (label only; the asset itself is the reversed file). */
   reversed: z.boolean().default(false),
+  /** Audio fade in / out lengths (timeline µs), on top of volume and its keyframes. */
+  fadeInUs: Us.min(0).default(0),
+  fadeOutUs: Us.min(0).default(0),
 })
 export type MediaClip = z.infer<typeof MediaClip>
 
@@ -143,27 +146,59 @@ export const CaptionClip = z.object({
 })
 export type CaptionClip = z.infer<typeof CaptionClip>
 
+export const Shadow = z.object({ color: z.string().default('#000000'), blur: z.number().min(0).max(100).default(12), x: z.number().min(-100).max(100).default(0), y: z.number().min(-100).max(100).default(4) })
+export type Shadow = z.infer<typeof Shadow>
+
 export const TextStyle = z.object({
   fontFamily: z.string().default('Inter Variable'),
   fontSize: z.number().min(4).max(800).default(64), // px at canvas resolution
   fontWeight: z.number().int().min(100).max(1000).default(700),
+  italic: z.boolean().default(false),
+  underline: z.boolean().default(false),
   color: z.string().default('#ffffff'),
   strokeColor: z.string().default('#000000'),
   strokeWidth: z.number().min(0).max(50).default(6),
+  /** A box behind each line (null = none). */
   background: z.string().nullable().default(null),
+  /** Corner radius of the box, as a fraction of the font size. */
+  backgroundRadius: z.number().min(0).max(1).default(0.2),
+  shadow: Shadow.nullable().default(null),
+  /** Extra space between letters, px. */
+  letterSpacing: z.number().min(-50).max(200).default(0),
+  /** Line height as a multiple of the font size. */
+  lineHeight: z.number().min(0.6).max(4).default(1.18),
   align: z.enum(['left', 'center', 'right']).default('center'),
   /** Vertical anchor as a fraction of canvas height (0 = top, 1 = bottom). */
   y: z.number().min(0).max(1).default(0.82),
   maxWidth: z.number().min(0.1).max(1).default(0.86),
+  /** Captions: colour of the word being spoken (karaoke); null turns the highlight off. */
+  highlightColor: z.string().nullable().default('#ffd84d'),
+  /** Captions: show one word at a time instead of the whole line. */
+  wordByWord: z.boolean().default(false),
 })
 export type TextStyle = z.infer<typeof TextStyle>
 export const DEFAULT_CAPTION_STYLE: TextStyle = TextStyle.parse({})
 
+export const TEXT_ANIMS = ['none', 'fade', 'slide-up', 'slide-down', 'slide-left', 'slide-right', 'pop', 'zoom-out', 'typewriter', 'wipe'] as const
+export const TextAnimKind = z.enum(TEXT_ANIMS)
+export type TextAnimKind = z.infer<typeof TextAnimKind>
+export const TextAnimPart = z.object({ kind: TextAnimKind.default('none'), durationUs: PositiveUs.default(500_000) })
+export const TextAnim = z.object({ in: TextAnimPart.default({ kind: 'none', durationUs: 500_000 }), out: TextAnimPart.default({ kind: 'none', durationUs: 500_000 }) })
+export type TextAnim = z.infer<typeof TextAnim>
+export const NO_TEXT_ANIM: TextAnim = { in: { kind: 'none', durationUs: 500_000 }, out: { kind: 'none', durationUs: 500_000 } }
+
+/**
+ * A title or text overlay. The text block is anchored at (canvas centre x + transform.x, style.y × height + transform.y);
+ * scale, rotation and opacity come from the transform and can be keyframed like media.
+ */
 export const TextClip = z.object({
   ...ClipBase,
   kind: z.literal('text'),
   text: z.string().max(2000),
   style: TextStyle.default(DEFAULT_CAPTION_STYLE),
+  transform: Transform.default(IDENTITY_TRANSFORM),
+  keyframes: Keyframes.default({}),
+  anim: TextAnim.default(NO_TEXT_ANIM),
 })
 export type TextClip = z.infer<typeof TextClip>
 

@@ -48,7 +48,7 @@ test.describe('M2 tools from other apps (MCP)', () => {
     expect(JSON.stringify(view)).not.toContain('hunter22')
     // the bundled local AI shows as a built-in provider
     await expect(page.getByRole('article', { name: 'Server local' })).toBeVisible()
-    await a11y(page, 'S28 MCP servers')
+    expect(await a11y(page, 'S28 MCP servers')).toEqual([])
 
     // per-tool settings persist
     await card.getByRole('combobox', { name: 'Permission for ping' }).click()
@@ -80,7 +80,7 @@ test.describe('M2 permission prompts', () => {
     await ask(page, 'Use the test tool to make a clip')
     await expect(prompt).toBeVisible({ timeout: 30_000 })
     await expect(prompt).toContainText('testtools.make_clip')
-    await a11y(page, 'S27 permission prompt')
+    expect(await a11y(page, 'S27 permission prompt')).toEqual([])
     await prompt.getByRole('button', { name: 'Allow once' }).click()
     await page.getByRole('button', { name: 'Review edits' }).click({ timeout: 60_000 })
     await page.getByRole('dialog', { name: "Review the agent's edits" }).getByRole('button', { name: /^Apply \d+ edit/ }).click()
@@ -152,7 +152,7 @@ test.describe('M2 agent library', () => {
     await form.getByRole('checkbox', { name: 'add_marker' }).click()
     await form.getByRole('button', { name: 'Create agent' }).click()
     await expect(dialog.getByRole('form', { name: 'Edit Hook marker' })).toBeVisible()
-    await a11y(page, 'S31 agent library')
+    expect(await a11y(page, 'S31 agent library')).toEqual([])
     // a duplicate name is refused
     await dialog.getByRole('button', { name: 'New agent' }).click()
     await dialog.getByRole('form', { name: 'New agent' }).getByRole('textbox', { name: 'Name' }).fill('hook marker')
@@ -198,7 +198,7 @@ test.describe('M2 batch and review', () => {
     await page.getByRole('option', { name: 'Highlight finder' }).click()
     await expect(dialog.getByRole('textbox', { name: 'Request' })).toHaveValue('Mark the highlights.')
     await dialog.getByRole('switch', { name: 'Apply the edits automatically' }).click()
-    await a11y(page, 'F14 batch')
+    expect(await a11y(page, 'F14 batch')).toEqual([])
     await dialog.getByRole('button', { name: 'Run on 2 projects' }).click()
     const progress = dialog.getByRole('list', { name: 'Batch progress' })
     await expect(progress.getByRole('listitem', { name: 'Batch one: Edited' })).toBeVisible({ timeout: 60_000 })

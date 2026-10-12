@@ -1,7 +1,7 @@
 import { useRef, useState, type PointerEvent as RPointerEvent } from 'react'
-import { applyOps, clipEnd, findClip, valueAt, type MediaClip, type OpInput, type Project } from '@framevane/doc'
+import { applyOps, clipEnd, findClip, valueAt, type AnimatableClip, type Clip, type OpInput, type Project } from '@framevane/doc'
 import { useApp } from '../app/store'
-import { layersAt, mediaGeometry } from '../engine/compositor'
+import { layersAt, mediaGeometry, textGeometry } from '../engine/compositor'
 import { localPlayhead, setAnimProp } from './actions-m1'
 import { useEditor } from './Editor'
 
@@ -27,22 +27,28 @@ export function CanvasHandles({ doc, cssW, cssH }: { doc: Project; cssW: number;
   const H = doc.canvas.height
   const k = cssW / W // canvas px → css px
 
-  // the selected picture under the playhead
+  const movable = (c: Clip): c is AnimatableClip => c.kind === 'video' || c.kind === 'image' || c.kind === 'text'
+  /** Canvas-space box of a picture or text clip at the playhead (null when its size isn't known yet). */
+  const geometry = (c: AnimatableClip) => {
+    const local = localPlayhead(c, playheadUs)
+    if (c.kind === 'text') return textGeometry(c, local, W, H)
+    const a = doc.assets[c.assetId]
+    return a?.width && a.height ? mediaGeometry(c, local, a.width, a.height, W, H) : null
+  }
+
+  // the selected picture or text under the playhead
   const f = selection.length === 1 ? findClip(doc, selection[0]!) : null
-  const clip = f && (f.clip.kind === 'video' || f.clip.kind === 'image') && !f.track.locked && !f.track.hidden && f.clip.startUs <= playheadUs && playheadUs < clipEnd(f.clip) ? (f.clip as MediaClip) : null
-  const asset = clip ? doc.assets[clip.assetId] : undefined
+  const clip = f && movable(f.clip) && !f.track.locked && !f.track.hidden && f.clip.startUs <= playheadUs && playheadUs < clipEnd(f.clip) ? f.clip : null
 
   // click on the canvas selects the topmost picture under the pointer
   const pick = (e: RPointerEvent) => {
     const r = box.current!.getBoundingClientRect()
     const px = (e.clientX - r.left) / k
     const py = (e.clientY - r.top) / k
-    const hits = layersAt(doc, playheadUs).filter((l) => l.clip.kind === 'video' || l.clip.kind === 'image').reverse()
-    for (const l of hits) {
-      const c = l.clip as MediaClip
-      const a = doc.assets[c.assetId]
-      if (!a?.width || !a.height) continue
-      const g = mediaGeometry(c, localPlayhead(c, playheadUs), a.width, a.height, W, H)
+    const hits = layersAt(doc, playheadUs).map((l) => l.clip).filter(movable).reverse()
+    for (const c of hits) {
+      const g = geometry(c)
+      if (!g) continue
       const rad = (-g.rotation * Math.PI) / 180
       const dx = px - g.cx
       const dy = py - g.cy
@@ -54,7 +60,7 @@ export function CanvasHandles({ doc, cssW, cssH }: { doc: Project; cssW: number;
     return null
   }
 
-  const opsFor = (c: MediaClip, v: { x: number; y: number; scale: number; rotation: number }): OpInput[] => {
+  const opsFor = (c: AnimatableClip, v: { x: number; y: number; scale: number; rotation: number }): OpInput[] => {
     const ops: OpInput[] = []
     const cur = { x: c.transform.x, y: c.transform.y, scale: c.transform.scale, rotation: c.transform.rotation }
     for (const prop of ['x', 'y', 'scale', 'rotation'] as const) {
@@ -65,18 +71,18 @@ export function CanvasHandles({ doc, cssW, cssH }: { doc: Project; cssW: number;
   }
 
   const startDrag = (kind: Mode['kind']) => (e: RPointerEvent) => {
-    if (!clip || !asset?.width || !asset.height) return
+    const g = clip && geometry(clip)
+    if (!clip || !g) return
     e.stopPropagation()
     ;(e.target as Element).setPointerCapture(e.pointerId)
-    const g = mediaGeometry(clip, localPlayhead(clip, playheadUs), asset.width, asset.height, W, H)
     const t = { x: valueOf(clip, 'x'), y: valueOf(clip, 'y'), scale: valueOf(clip, 'scale'), rotation: valueOf(clip, 'rotation') }
     setMode({ kind, startX: e.clientX, startY: e.clientY, orig: t, cx: g.cx, cy: g.cy })
     setLive(t)
   }
-  const valueOf = (c: MediaClip, p: 'x' | 'y' | 'scale' | 'rotation') => valueAt(c, p, localPlayhead(c, playheadUs))
+  const valueOf = (c: AnimatableClip, p: 'x' | 'y' | 'scale' | 'rotation') => valueAt(c, p, localPlayhead(c, playheadUs))
 
   const onMove = (e: RPointerEvent) => {
-    if (!mode || !clip || !asset?.width || !asset.height) return
+    if (!mode || !clip) return
     const dx = (e.clientX - mode.startX) / k
     const dy = (e.clientY - mode.startY) / k
     let next = { ...mode.orig }
@@ -125,8 +131,9 @@ export function CanvasHandles({ doc, cssW, cssH }: { doc: Project; cssW: number;
   }
 
   let frame = null
-  if (clip && asset?.width && asset.height) {
-    const g = mediaGeometry(clip, localPlayhead(clip, playheadUs), asset.width, asset.height, W, H)
+  const g0 = clip && geometry(clip)
+  if (clip && g0) {
+    const g = g0
     const cx = mode && live ? g.cx + (live.x - mode.orig.x) : g.cx
     const cy = mode && live ? g.cy + (live.y - mode.orig.y) : g.cy
     const sc = mode && live ? live.scale / Math.max(1e-6, mode.orig.scale) : 1
@@ -135,7 +142,7 @@ export function CanvasHandles({ doc, cssW, cssH }: { doc: Project; cssW: number;
     const h = g.h * sc * k
     frame = (
       <div
-        role="group" aria-label="Selected clip on canvas: drag to move, corners to resize, top knob to rotate"
+        role="group" aria-label={`Selected ${clip.kind === 'text' ? 'text' : 'clip'} on canvas: drag to move, corners to resize, top knob to rotate`}
         className="absolute cursor-move outline outline-1 outline-selection"
         style={{ left: cx * k - w / 2, top: cy * k - h / 2, width: w, height: h, transform: `rotate(${rot}deg)` }}
         onPointerDown={startDrag('move')}

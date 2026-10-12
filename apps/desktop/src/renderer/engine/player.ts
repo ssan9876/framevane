@@ -54,13 +54,14 @@ export class Player {
   }
 
   setDoc(doc: Project) {
-    const fontsChanged = JSON.stringify(doc.tracks.map((t) => t.style?.fontFamily)) !== JSON.stringify(this.doc.tracks.map((t) => t.style?.fontFamily))
+    const fonts = (d: Project) => JSON.stringify(d.tracks.map((t) => [t.style?.fontFamily, t.style?.italic, ...t.clips.map((c) => (c.kind === 'text' ? `${c.style.fontFamily}/${c.style.italic}` : ''))]))
+    const fontsChanged = fonts(doc) !== fonts(this.doc)
     this.doc = doc
     this.audioReady = null
     // never close decoders under a frame that is being drawn: prune after the render (BUG-003)
     this.pendingPrune = new Set(doc.tracks.flatMap((t) => t.clips.map((c) => c.id)))
     if (!this.rendering) this.flushPrune()
-    if (fontsChanged) void ensureFonts(doc)
+    if (fontsChanged) void ensureFonts(doc).then(() => { if (!this.playing) this.seek(this.lastUs) })
     if (this.playing) { const t = this.now(); this.pause(); void this.play(t) }
     else this.seek(this.lastUs)
   }

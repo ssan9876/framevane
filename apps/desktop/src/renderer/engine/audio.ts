@@ -1,4 +1,4 @@
-import { clipEnd, isAnimated, valueAt, type MediaClip, type Project } from '@framevane/doc'
+import { clipEnd, fadeGainAt, isAnimated, valueAt, type MediaClip, type Project } from '@framevane/doc'
 import type { MediaPool } from './sources'
 
 /**
@@ -48,10 +48,12 @@ export function schedule(doc: Project, buffers: Map<string, AudioBuffer | null>,
     node.playbackRate.value = c.speed
     const gain = ctx.createGain()
     const t0 = when + (startTl - fromUs) / 1e6
-    if (isAnimated(c, 'volumeDb')) {
-      // sample the volume curve every 20 ms (smooth enough for fades, cheap to schedule)
-      gain.gain.setValueAtTime(dbToGain(valueAt(c, 'volumeDb', startTl - c.startUs)), t0)
-      for (let t = startTl + 20_000; t <= end; t += 20_000) gain.gain.linearRampToValueAtTime(dbToGain(valueAt(c, 'volumeDb', t - c.startUs)), when + (t - fromUs) / 1e6)
+    if (isAnimated(c, 'volumeDb') || c.fadeInUs > 0 || c.fadeOutUs > 0) {
+      // sample volume × fade every 20 ms (smooth enough for fades, cheap to schedule)
+      const g = (tl: number) => dbToGain(valueAt(c, 'volumeDb', tl - c.startUs)) * fadeGainAt(c, tl - c.startUs)
+      gain.gain.setValueAtTime(g(startTl), t0)
+      for (let t = startTl + 20_000; t < end; t += 20_000) gain.gain.linearRampToValueAtTime(g(t), when + (t - fromUs) / 1e6)
+      gain.gain.linearRampToValueAtTime(g(end), when + (end - fromUs) / 1e6)
     } else {
       gain.gain.value = dbToGain(c.volumeDb)
     }

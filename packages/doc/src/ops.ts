@@ -1,9 +1,9 @@
 import { z } from 'zod'
 import {
-  AnimProp, AssetRef, BlendMode, CaptionClip, Canvas, Clip, Easing, Id, MediaClip, Marker, patchOf, PositiveUs, Project, TextStyle, Track, Transform, Us,
-  type Clip as ClipT, type Project as ProjectT, type Track as TrackT,
+  AnimProp, AssetRef, BlendMode, Keyframe, CaptionClip, Canvas, Clip, Easing, Id, MediaClip, Marker, patchOf, PositiveUs, Project, TextAnimKind, TextStyle, Track, Transform, Us,
+  type Clip as ClipT, type Project as ProjectT, type TextClip, type Track as TrackT,
 } from './schema'
-import { removeKeyframeAt, scaleKeyframes, sliceKeyframes, upsertKeyframe } from './keyframes'
+import { removeKeyframeAt, scaleKeyframes, sliceKeyframes, upsertKeyframe, type AnimatableClip } from './keyframes'
 
 /**
  * Ops are the ONLY way a project changes: UI gestures, shortcuts, undo/redo, the agent panel and external MCP agents
@@ -57,9 +57,22 @@ export const Op = z.discriminatedUnion('type', [
     blend: BlendMode.optional(), audioEnabled: z.boolean().optional(),
     /** null removes the group / link. */
     groupId: Id.nullable().optional(), linkId: Id.nullable().optional(),
+    fadeInUs: Us.min(0).optional(), fadeOutUs: Us.min(0).optional(),
+  }),
+  /** Text clips: content, style (a patch) and in/out animation. */
+  z.object({
+    type: z.literal('set_text'), clipId: Id,
+    text: z.string().max(2000).optional(),
+    style: patchOf(TextStyle).optional(),
+    anim: z.object({
+      in: z.object({ kind: TextAnimKind.optional(), durationUs: PositiveUs.optional() }).optional(),
+      out: z.object({ kind: TextAnimKind.optional(), durationUs: PositiveUs.optional() }).optional(),
+    }).optional(),
   }),
   z.object({ type: z.literal('set_keyframe'), clipId: Id, prop: AnimProp, tUs: Us.min(0), value: z.number(), easing: Easing.optional() }),
   z.object({ type: z.literal('remove_keyframe'), clipId: Id, prop: AnimProp, tUs: Us.min(0) }),
+  /** Replace every keyframe of one property (e.g. a generated ducking curve). An empty list removes the animation. */
+  z.object({ type: z.literal('set_keyframes'), clipId: Id, prop: AnimProp, keyframes: z.array(Keyframe).max(10_000) }),
   /** Remove all keyframes of a property (or of every property); the property keeps its value at `atUs`. */
   z.object({ type: z.literal('clear_keyframes'), clipId: Id, prop: AnimProp.optional(), atUs: Us.min(0).default(0) }),
   z.object({ type: z.literal('replace_clip_media'), clipId: Id, assetId: Id, inUs: Us.min(0), reversed: z.boolean().optional() }),
@@ -303,7 +316,10 @@ function applyOne(doc: ProjectT, op: Op): ProjectT {
           if (c.id !== op.clipId) return c
           let next: ClipT = op.enabled === undefined ? c : { ...c, enabled: op.enabled }
           if (op.groupId !== undefined) next = { ...next, groupId: op.groupId ?? undefined }
-          if (op.transform || op.volumeDb !== undefined || op.speed !== undefined || op.blend || op.audioEnabled !== undefined || op.linkId !== undefined) {
+          if (next.kind === 'text' && op.transform && op.volumeDb === undefined && op.speed === undefined && !op.blend && op.audioEnabled === undefined && op.linkId === undefined && op.fadeInUs === undefined && op.fadeOutUs === undefined) {
+            return { ...next, transform: { ...next.transform, ...defined(op.transform) } }
+          }
+          if (op.transform || op.fadeInUs !== undefined || op.fadeOutUs !== undefined || op.volumeDb !== undefined || op.speed !== undefined || op.blend || op.audioEnabled !== undefined || op.linkId !== undefined) {
             if (!isMedia(next)) throw new OpError('kind_mismatch', 'Transform/volume/speed/blend apply to media clips')
             const m: MediaClip = next
             next = {
@@ -313,6 +329,8 @@ function applyOne(doc: ProjectT, op: Op): ProjectT {
               ...(op.blend ? { blend: op.blend } : {}),
               ...(op.audioEnabled !== undefined ? { audioEnabled: op.audioEnabled } : {}),
               ...(op.linkId !== undefined ? { linkId: op.linkId ?? undefined } : {}),
+              ...(op.fadeInUs !== undefined ? { fadeInUs: op.fadeInUs } : {}),
+              ...(op.fadeOutUs !== undefined ? { fadeOutUs: op.fadeOutUs } : {}),
               ...(op.speed !== undefined ? {
                 speed: op.speed,
                 durationUs: Math.max(1, Math.round((m.durationUs * m.speed) / op.speed)),
@@ -325,15 +343,41 @@ function applyOne(doc: ProjectT, op: Op): ProjectT {
       }))
     }
 
+    case 'set_text': {
+      const f = needClip(doc, op.clipId)
+      if (f.clip.kind !== 'text') throw new OpError('kind_mismatch', 'Not a text clip')
+      const c = f.clip
+      const next: TextClip = {
+        ...c,
+        ...(op.text !== undefined ? { text: op.text } : {}),
+        ...(op.style ? { style: TextStyle.parse({ ...c.style, ...defined(op.style) }) } : {}),
+        ...(op.anim ? { anim: { in: { ...c.anim.in, ...defined(op.anim.in ?? {}) }, out: { ...c.anim.out, ...defined(op.anim.out ?? {}) } } } : {}),
+      }
+      return mapTrack(doc, f.track.id, (t) => ({ ...t, clips: t.clips.map((x) => (x.id === c.id ? next : x)) }))
+    }
+
+    case 'set_keyframes': {
+      const f = needClip(doc, op.clipId)
+      if (!isAnimatable(f.clip)) throw new OpError('kind_mismatch', 'Only media and text clips have keyframes')
+      if (f.clip.kind === 'text' && op.prop === 'volumeDb') throw new OpError('kind_mismatch', 'Text has no volume')
+      const c = f.clip
+      if (op.keyframes.some((k) => k.tUs > c.durationUs)) throw new OpError('out_of_range', 'Keyframe time is outside the clip')
+      const keyframes = { ...c.keyframes }
+      if (op.keyframes.length) keyframes[op.prop] = [...op.keyframes].sort((a, b) => a.tUs - b.tUs)
+      else delete keyframes[op.prop]
+      return mapTrack(doc, f.track.id, (t) => ({ ...t, clips: t.clips.map((x) => (x.id === c.id ? ({ ...c, keyframes } as ClipT) : x)) }))
+    }
+
     case 'set_keyframe':
     case 'remove_keyframe':
     case 'clear_keyframes': {
       const f = needClip(doc, op.clipId)
-      if (!isMedia(f.clip)) throw new OpError('kind_mismatch', 'Only media clips have keyframes')
+      if (!isAnimatable(f.clip)) throw new OpError('kind_mismatch', 'Only media and text clips have keyframes')
       const clip = f.clip
+      if (clip.kind === 'text' && op.type !== 'clear_keyframes' && op.prop === 'volumeDb') throw new OpError('kind_mismatch', 'Text has no volume')
       if (op.type !== 'clear_keyframes' && (op.tUs < 0 || op.tUs > clip.durationUs)) throw new OpError('out_of_range', 'Keyframe time is outside the clip')
       let keyframes = { ...clip.keyframes }
-      let next: MediaClip = clip
+      let next: AnimatableClip = clip
       if (op.type === 'set_keyframe') {
         const existing = keyframes[op.prop]?.find((k) => Math.abs(k.tUs - op.tUs) <= 16_666)
         keyframes[op.prop] = upsertKeyframe(keyframes[op.prop], { tUs: op.tUs, value: op.value, easing: op.easing ?? existing?.easing ?? 'ease-in-out' })
@@ -347,7 +391,7 @@ function applyOne(doc: ProjectT, op: Op): ProjectT {
           const kfs = keyframes[prop]
           if (!kfs?.length) continue
           const v = sampleKeys(kfs, op.atUs)
-          next = prop === 'volumeDb' ? { ...next, volumeDb: clampVolume(v) } : { ...next, transform: { ...next.transform, [prop]: v } }
+          next = prop === 'volumeDb' ? (next.kind === 'text' ? next : { ...next, volumeDb: clampVolume(v) }) : { ...next, transform: { ...next.transform, [prop]: v } } as AnimatableClip
           delete keyframes[prop]
         }
       }
@@ -448,6 +492,7 @@ export function validateDoc(doc: ProjectT) {
 /* ───────────────────────── helpers ───────────────────────── */
 
 const isMedia = (c: ClipT): c is MediaClip => c.kind === 'video' || c.kind === 'image' || c.kind === 'audio'
+const isAnimatable = (c: ClipT): c is AnimatableClip => isMedia(c) || c.kind === 'text'
 const sortClips = (clips: ClipT[]) => clips.slice().sort((a, b) => a.startUs - b.startUs)
 const defined = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
 
@@ -476,7 +521,7 @@ function deriveId(doc: ProjectT, base: string, atUs: number) {
   return id
 }
 
-const hasKeys = (c: MediaClip) => Object.values(c.keyframes).some((k) => k && k.length)
+const hasKeys = (c: AnimatableClip) => Object.values(c.keyframes).some((k) => k && k.length)
 const clampVolume = (v: number) => Math.max(-60, Math.min(20, v))
 function sampleKeys(kfs: { tUs: number; value: number }[], t: number) {
   if (t <= kfs[0]!.tUs) return kfs[0]!.value
@@ -487,9 +532,10 @@ function sampleKeys(kfs: { tUs: number; value: number }[], t: number) {
 /** Keep [start, at) of a clip. */
 function trimRight(c: ClipT, atUs: number): ClipT {
   const durationUs = atUs - c.startUs
-  if (isMedia(c) && hasKeys(c)) return { ...c, durationUs, keyframes: sliceKeyframes(c.keyframes, 0, durationUs) }
+  if (isMedia(c)) return { ...c, durationUs, fadeOutUs: 0, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, 0, durationUs) } : {}) }
+  if (c.kind === 'text') return { ...c, durationUs, anim: { ...c.anim, out: { ...c.anim.out, kind: 'none' } }, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, 0, durationUs) } : {}) }
   if (c.kind === 'caption') return { ...c, durationUs, words: c.words.filter((w) => w.startUs < durationUs).map((w) => ({ ...w, endUs: Math.min(w.endUs, durationUs) })) }
-  return { ...c, durationUs }
+  return c
 }
 
 /** Keep [at, end) of a clip (startUs is left at `at`; the caller repositions it). */
@@ -498,12 +544,15 @@ function trimLeft(c: ClipT, atUs: number): ClipT {
   const durationUs = c.durationUs - cut
   if (isMedia(c)) {
     const inUs = c.freezeAtUs !== undefined ? c.inUs : c.inUs + Math.round(cut * c.speed)
-    return { ...c, startUs: atUs, durationUs, inUs, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, cut, c.durationUs) } : {}) }
+    return { ...c, startUs: atUs, durationUs, inUs, fadeInUs: 0, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, cut, c.durationUs) } : {}) }
+  }
+  if (c.kind === 'text') {
+    return { ...c, startUs: atUs, durationUs, anim: { ...c.anim, in: { ...c.anim.in, kind: 'none' } }, ...(hasKeys(c) ? { keyframes: sliceKeyframes(c.keyframes, cut, c.durationUs) } : {}) }
   }
   if (c.kind === 'caption') {
     return { ...c, startUs: atUs, durationUs, words: c.words.filter((w) => w.endUs > cut).map((w) => ({ ...w, startUs: Math.max(0, w.startUs - cut), endUs: w.endUs - cut })) }
   }
-  return { ...c, startUs: atUs, durationUs }
+  return c
 }
 
 function splitClip(c: ClipT, atUs: number, newId: string): [ClipT, ClipT] {
@@ -542,11 +591,13 @@ export function describeOp(doc: ProjectT, raw: OpInput): string {
     case 'pack_track': return 'Reorder clips'
     case 'set_keyframe': return `Keyframe ${op.prop} on ${clipName(op.clipId)} at ${formatUs(op.tUs)}`
     case 'remove_keyframe': return `Remove ${op.prop} keyframe`
+    case 'set_keyframes': return op.prop === 'volumeDb' ? `Volume curve on ${clipName(op.clipId)} (${op.keyframes.length} points)` : `Animate ${op.prop} on ${clipName(op.clipId)}`
     case 'clear_keyframes': return `Clear ${op.prop ?? 'all'} keyframes`
     case 'replace_clip_media': return op.reversed ? `Reverse ${clipName(op.clipId)}` : `Replace media of ${clipName(op.clipId)}`
     case 'add_marker': return `Add marker at ${formatUs(op.marker.atUs)}`
     case 'remove_marker': return 'Remove marker'
     case 'set_caption_text': return `Edit caption → "${op.text.slice(0, 32)}"`
+    case 'set_text': return op.text !== undefined ? `Edit text → "${op.text.slice(0, 32)}"` : op.anim ? `Animate ${clipName(op.clipId)}` : `Restyle ${clipName(op.clipId)}`
     case 'set_clip_props': return `Change ${clipName(op.clipId)} (${Object.keys(op).filter((k) => !['type', 'clipId'].includes(k)).join(', ')})`
     case 'set_track_style': return 'Restyle captions'
     case 'set_canvas': return `Canvas ${op.canvas.width ?? doc.canvas.width}×${op.canvas.height ?? doc.canvas.height}`

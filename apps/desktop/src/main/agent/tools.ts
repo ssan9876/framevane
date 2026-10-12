@@ -1,13 +1,16 @@
 import { z } from 'zod'
 import type Anthropic from '@anthropic-ai/sdk'
 import {
-  applyOps, BLEND_MODES, buildCaptionClips, clipEnd, findClip, formatUs, mergeRanges, projectDurationUs, sourceTimeAt, timelineSilences, timelineWords,
-  type MediaClip, type OpInput, type Project, type SourceWord,
+  applyOps, BLEND_MODES, buildCaptionClips, captionLines, clipEnd, DEFAULT_CAPTION_STYLE, duckingKeyframes, findClip, formatUs, isFiller, mergeRanges, NO_TEXT_ANIM,
+  parseSrt, projectDurationUs, sourceTimeAt, speechRanges, TEXT_ANIMS, TextStyle, timelineSilences, timelineWords, toPlainText, toSrt, wordCutRanges,
+  type MediaClip, type OpInput, type Project, type SourceWord, type TextClip,
 } from '@framevane/doc'
+import { writeFile } from 'node:fs/promises'
 import { runFfmpeg } from '../ffmpeg'
 import { uuid7 } from '../db'
 import type { Analysis } from '../analysis'
 import type { Media } from '../media'
+import type { Tts } from '../tts'
 
 /**
  * The editor's agent tools. Read tools look at the run's working copy of the project ("fork"); write tools change only
@@ -23,6 +26,8 @@ export interface ToolCtx {
   signal: AbortSignal
   analysis: Analysis
   media: Media
+  /** Text to speech (absent in contexts that can't speak). */
+  tts?: Tts
   /** The run's working copy. */
   doc(): Project
   /** Apply ops to the working copy and record them as proposed edits. Throws OpError if invalid. */
@@ -58,6 +63,34 @@ async function transcripts(ctx: ToolCtx): Promise<Record<string, SourceWord[]>> 
     out[id] = t.words
   }
   return out
+}
+
+/** Text style fields as agents see them ("outline" rather than "stroke"). */
+const TEXT_STYLE_INPUT = z.object({
+  fontFamily: z.string().max(100).optional(),
+  fontSize: z.number().min(12).max(400).optional().describe('px at canvas resolution'),
+  fontWeight: z.number().int().min(100).max(900).optional(),
+  italic: z.boolean().optional(),
+  underline: z.boolean().optional(),
+  color: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
+  outlineColor: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
+  outlineWidth: z.number().min(0).max(30).optional(),
+  background: z.string().regex(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i).nullable().optional().describe('Box behind the text; null removes it'),
+  shadow: z.boolean().optional(),
+  align: z.enum(['left', 'center', 'right']).optional(),
+  letterSpacing: z.number().min(-20).max(80).optional(),
+  verticalPosition: z.number().min(0).max(1).optional().describe('Centre of the block as a fraction of the height'),
+})
+
+function textStyleFrom(i: z.infer<typeof TEXT_STYLE_INPUT>) {
+  const { outlineColor, outlineWidth, shadow, verticalPosition, ...rest } = i
+  return Object.fromEntries(Object.entries({
+    ...rest,
+    strokeColor: outlineColor,
+    strokeWidth: outlineWidth,
+    y: verticalPosition,
+    shadow: shadow === undefined ? undefined : shadow ? { color: '#000000', blur: 16, x: 0, y: 4 } : null,
+  }).filter(([, v]) => v !== undefined))
 }
 
 export const TOOLS: AgentTool[] = [
@@ -207,14 +240,19 @@ export const TOOLS: AgentTool[] = [
       strokeWidth: z.number().min(0).max(30).optional(),
       verticalPosition: z.number().min(0.05).max(0.95).optional().describe('0 = top, 1 = bottom'),
       fontWeight: z.number().int().min(100).max(900).optional(),
+      fontFamily: z.string().max(100).optional().describe('Built in: Inter Variable, Montserrat Variable, Oswald Variable, Playfair Display Variable, Anton, Bebas Neue, Bangers, Permanent Marker, Pacifico; or any font installed in Windows'),
+      background: z.string().regex(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i).nullable().optional().describe('Box behind each line, #rrggbb or #rrggbbaa; null removes it'),
+      highlightColor: z.string().regex(/^#[0-9a-f]{6}$/i).nullable().optional().describe('Colour of the word being spoken; null turns highlighting off'),
+      wordByWord: z.boolean().optional().describe('Show one word at a time (punchy short-form style)'),
+      shadow: z.boolean().optional(),
     }),
     permission: 'auto',
     mutates: true,
     async run(i, ctx) {
       const track = ctx.doc().tracks.find((t) => t.kind === 'caption')
       if (!track) return { summary: 'no captions', content: 'There is no caption track yet. Call add_captions first.' }
-      const { verticalPosition, ...rest } = i
-      ctx.propose([{ type: 'set_track_style', trackId: track.id, style: { ...rest, ...(verticalPosition !== undefined ? { y: verticalPosition } : {}) } }])
+      const { verticalPosition, shadow, ...rest } = i
+      ctx.propose([{ type: 'set_track_style', trackId: track.id, style: { ...rest, ...(verticalPosition !== undefined ? { y: verticalPosition } : {}), ...(shadow !== undefined ? { shadow: shadow ? { color: '#000000', blur: 12, x: 0, y: 4 } : null } : {}) } }])
       return { summary: 'captions restyled', content: 'ok' }
     },
   }),
@@ -248,7 +286,7 @@ export const TOOLS: AgentTool[] = [
   tool({
     name: 'set_clip',
     provider: 'editor',
-    description: 'Change a media clip: zoom (scale), position (x/y px from center), rotation, opacity, volume (dB), speed, blend mode, crop (fractions per side), mirror, or enable/disable it. Animated properties: use animate_clip instead.',
+    description: 'Change a media clip: zoom (scale), position (x/y px from center), rotation, opacity, volume (dB), audio fades, speed, blend mode, crop (fractions per side), mirror, or enable/disable it. Also moves/rotates/scales text clips. Animated properties: use animate_clip instead.',
     schema: z.object({
       clipId: z.string(),
       rotation: z.number().min(-360).max(360).optional(),
@@ -262,15 +300,18 @@ export const TOOLS: AgentTool[] = [
       volumeDb: z.number().min(-60).max(20).optional(),
       speed: z.number().min(0.1).max(100).optional(),
       enabled: z.boolean().optional(),
+      fadeInSeconds: z.number().min(0).max(30).optional().describe('Audio fade in'),
+      fadeOutSeconds: z.number().min(0).max(30).optional().describe('Audio fade out'),
     }),
     permission: 'auto',
     mutates: true,
     async run(i, ctx) {
-      const { clipId, volumeDb, speed, enabled, blend, mirror, crop, ...t } = i
+      const { clipId, volumeDb, speed, enabled, blend, mirror, crop, fadeInSeconds, fadeOutSeconds, ...t } = i
+      const fades = { ...(fadeInSeconds !== undefined ? { fadeInUs: us(fadeInSeconds) } : {}), ...(fadeOutSeconds !== undefined ? { fadeOutUs: us(fadeOutSeconds) } : {}) }
       const transform: Record<string, unknown> = Object.fromEntries(Object.entries(t).filter(([, v]) => v !== undefined))
       if (mirror !== undefined) transform.flipH = mirror
       if (crop) transform.crop = crop
-      ctx.propose([{ type: 'set_clip_props', clipId, ...(Object.keys(transform).length ? { transform } : {}), ...(volumeDb !== undefined ? { volumeDb } : {}), ...(speed !== undefined ? { speed } : {}), ...(enabled !== undefined ? { enabled } : {}), ...(blend ? { blend } : {}) }])
+      ctx.propose([{ type: 'set_clip_props', clipId, ...(Object.keys(transform).length ? { transform } : {}), ...(volumeDb !== undefined ? { volumeDb } : {}), ...(speed !== undefined ? { speed } : {}), ...(enabled !== undefined ? { enabled } : {}), ...(blend ? { blend } : {}), ...fades }])
       return { summary: Object.keys(i).filter((k) => k !== 'clipId').join(', '), content: 'ok' }
     },
   }),
@@ -278,7 +319,7 @@ export const TOOLS: AgentTool[] = [
   tool({
     name: 'animate_clip',
     provider: 'editor',
-    description: 'Animate one property of a media clip with keyframes at TIMELINE seconds (e.g. a punch-in: scale 1 → 1.2 over 0.3 s). Replaces existing keyframes of that property unless keep is true. Props: x, y (px from centre), scale (1 = fit), rotation (deg), opacity (0–1), volumeDb.',
+    description: 'Animate one property of a media or text clip with keyframes at TIMELINE seconds (e.g. a punch-in: scale 1 → 1.2 over 0.3 s). Replaces existing keyframes of that property unless keep is true. Props: x, y (px from centre), scale (1 = fit), rotation (deg), opacity (0–1), volumeDb.',
     schema: z.object({
       clipId: z.string(),
       prop: z.enum(['x', 'y', 'scale', 'rotation', 'opacity', 'volumeDb']),
@@ -420,6 +461,211 @@ export const TOOLS: AgentTool[] = [
       const dur = asset.kind === 'image' ? us(i.durationSeconds ?? 5) : asset.durationUs ?? 5_000_000
       ctx.propose(placeOps(doc, asset.id, asset.kind, dur, i.atSeconds === undefined ? undefined : us(i.atSeconds), i.track))
       return { summary: asset.name, content: JSON.stringify({ placed: true, newDurationSeconds: sec(projectDurationUs(ctx.doc())) }) }
+    },
+  }),
+
+  tool({
+    name: 'add_text',
+    provider: 'editor',
+    description: 'Add a title / text overlay at a TIMELINE time. Use a preset for a ready-made look, then override style fields if needed. position: where the text block sits (y is a fraction of the height for its centre).',
+    schema: z.object({
+      text: z.string().min(1).max(2000),
+      atSeconds: z.number().min(0),
+      durationSeconds: z.number().min(0.2).max(3600).default(3),
+      position: z.enum(['center', 'top', 'upper-third', 'lower-third', 'bottom']).default('center'),
+      style: TEXT_STYLE_INPUT.optional(),
+      animIn: z.enum(TEXT_ANIMS).default('none'),
+      animOut: z.enum(TEXT_ANIMS).default('none'),
+    }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const doc = ctx.doc()
+      const startUs = us(i.atSeconds)
+      const dur = us(i.durationSeconds)
+      const y = { center: 0.5, top: 0.12, 'upper-third': 0.3, 'lower-third': 0.78, bottom: 0.9 }[i.position]
+      const style = TextStyle.parse({ ...DEFAULT_CAPTION_STYLE, fontSize: 96, strokeWidth: 0, shadow: { color: '#000000', blur: 16, x: 0, y: 4 }, y, ...textStyleFrom(i.style ?? {}) })
+      const clip: TextClip = {
+        id: `text-${uuid7().slice(-12)}`, kind: 'text', startUs, durationUs: dur, enabled: true, text: i.text, style,
+        transform: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, flipH: false, flipV: false, crop: { left: 0, top: 0, right: 0, bottom: 0 } },
+        keyframes: {}, anim: { in: { ...NO_TEXT_ANIM.in, kind: i.animIn }, out: { ...NO_TEXT_ANIM.out, kind: i.animOut } },
+      }
+      const free = doc.tracks.find((t) => t.kind === 'text' && !t.locked && !t.clips.some((c) => c.startUs < startUs + dur && startUs < clipEnd(c)))
+      if (free) ctx.propose([{ type: 'add_clip', trackId: free.id, clip }])
+      else {
+        const tid = `track-text-${uuid7().slice(-8)}`
+        ctx.propose([{ type: 'add_track', track: { id: tid, kind: 'text', name: `Text ${doc.tracks.filter((t) => t.kind === 'text').length + 1}`, main: false, locked: false, hidden: false, muted: false, clips: [] } }, { type: 'add_clip', trackId: tid, clip }])
+      }
+      return { summary: `"${i.text.slice(0, 30)}" at ${i.atSeconds}s`, content: JSON.stringify({ clipId: clip.id }) }
+    },
+  }),
+
+  tool({
+    name: 'edit_text',
+    provider: 'editor',
+    description: 'Change a text clip: its words, style fields, or in/out animation. (Move/scale/rotate it with set_clip or animate_clip.)',
+    schema: z.object({
+      clipId: z.string(),
+      text: z.string().min(1).max(2000).optional(),
+      style: TEXT_STYLE_INPUT.optional(),
+      animIn: z.enum(TEXT_ANIMS).optional(),
+      animOut: z.enum(TEXT_ANIMS).optional(),
+      animSeconds: z.number().min(0.1).max(5).optional().describe('Length of the in and out animations'),
+    }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const f = findClip(ctx.doc(), i.clipId)
+      if (!f || f.clip.kind !== 'text') throw new Error(`${i.clipId} is not a text clip`)
+      const d = i.animSeconds !== undefined ? { durationUs: us(i.animSeconds) } : {}
+      const anim = i.animIn || i.animOut || i.animSeconds ? { in: { ...(i.animIn ? { kind: i.animIn } : {}), ...d }, out: { ...(i.animOut ? { kind: i.animOut } : {}), ...d } } : undefined
+      ctx.propose([{ type: 'set_text', clipId: i.clipId, ...(i.text !== undefined ? { text: i.text } : {}), ...(i.style ? { style: textStyleFrom(i.style) } : {}), ...(anim ? { anim } : {}) }])
+      return { summary: i.clipId, content: 'ok' }
+    },
+  }),
+
+  tool({
+    name: 'export_captions',
+    provider: 'editor',
+    description: 'Get the captions as SRT (or plain text). Optionally also write them to an absolute .srt/.txt path on this computer.',
+    schema: z.object({ format: z.enum(['srt', 'txt']).default('srt'), path: z.string().optional() }),
+    permission: 'auto',
+    mutates: false,
+    async run(i, ctx) {
+      const lines = captionLines(ctx.doc())
+      if (!lines.length) return { summary: 'no captions', content: 'There are no captions yet. Call add_captions first.' }
+      const text = i.format === 'srt' ? toSrt(lines) : toPlainText(lines)
+      if (i.path) {
+        if (!new RegExp(`\\.${i.format}$`, 'i').test(i.path)) throw new Error(`path must end in .${i.format}`)
+        await writeFile(i.path, text, 'utf8')
+      }
+      return { summary: `${lines.length} lines${i.path ? ` → ${i.path}` : ''}`, content: text.length > 30_000 ? `${text.slice(0, 30_000)}\n[…cut]` : text }
+    },
+  }),
+
+  tool({
+    name: 'import_captions',
+    provider: 'editor',
+    description: 'Replace the captions with lines from SRT text (e.g. a translation you wrote, or a file the user has). Times are timeline seconds.',
+    schema: z.object({ srt: z.string().min(10).max(500_000) }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const clips = parseSrt(i.srt, `srt-${uuid7().slice(-8)}`)
+      if (!clips.length) throw new Error('No caption cues were found in that SRT text')
+      const existing = ctx.doc().tracks.find((t) => t.kind === 'caption')
+      ctx.propose([{ type: 'add_captions', trackId: existing?.id ?? 'track-captions', trackName: 'Captions', clips, replace: !!existing }])
+      return { summary: `${clips.length} lines`, content: 'ok' }
+    },
+  }),
+
+  tool({
+    name: 'remove_filler_words',
+    provider: 'editor',
+    description: 'Cut hesitation sounds ("um", "uh", "erm"…) out of the main track using the transcript. Returns how many were cut.',
+    schema: z.object({}),
+    permission: 'auto',
+    mutates: true,
+    async run(_i, ctx) {
+      const doc = ctx.doc()
+      const main = doc.tracks.find((t) => t.main)
+      const words = timelineWords(doc, await transcripts(ctx), main?.id).filter((w) => isFiller(w.text))
+      if (!words.length) return { summary: 'none found', content: JSON.stringify({ removed: 0 }) }
+      const ranges = wordCutRanges(words).reverse()
+      ctx.propose(ranges.map((r) => ({ type: 'ripple_delete_range', startUs: r.startUs, endUs: r.endUs })))
+      return { summary: `${words.length} fillers`, content: JSON.stringify({ removed: words.length, words: words.map((w) => `${w.text}@${sec(w.startUs)}s`) }) }
+    },
+  }),
+
+  tool({
+    name: 'clean_audio',
+    provider: 'editor',
+    description: 'Clean up a clip\'s sound locally: denoise (hum/hiss/room noise; -light / -strong variants), enhance (clearer voice: de-noise, EQ, compression, loudness), normalize (to −14 LUFS). A video clip\'s sound moves to a linked audio clip. Takes a few seconds per minute of audio.',
+    schema: z.object({ clipId: z.string(), mode: z.enum(['denoise', 'denoise-light', 'denoise-strong', 'enhance', 'normalize']).default('denoise') }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const f = findClip(ctx.doc(), i.clipId)
+      if (!f || (f.clip.kind !== 'audio' && f.clip.kind !== 'video')) throw new Error(`${i.clipId} is not a clip with sound`)
+      const c = f.clip as MediaClip
+      if (!c.audioEnabled) throw new Error('This clip\'s sound was detached; clean the linked audio clip instead')
+      const m = await ctx.media.processAudio(ctx.projectId, c.assetId, i.mode)
+      const doc = ctx.doc()
+      const ops: OpInput[] = doc.assets[m.asset.id] ? [] : [{ type: 'add_asset', asset: m.asset }]
+      if (c.kind === 'audio') ops.push({ type: 'replace_clip_media', clipId: c.id, assetId: m.asset.id, inUs: c.inUs })
+      else {
+        const linkId = c.linkId ?? `link-${uuid7().slice(-12)}`
+        ops.push({ type: 'set_clip_props', clipId: c.id, audioEnabled: false, linkId, fadeInUs: 0, fadeOutUs: 0 })
+        const audio: MediaClip = { ...c, id: `clip-${uuid7().slice(-12)}`, kind: 'audio', assetId: m.asset.id, linkId, blend: 'normal', reversed: false, keyframes: c.keyframes.volumeDb ? { volumeDb: c.keyframes.volumeDb } : {}, freezeAtUs: undefined }
+        const free = doc.tracks.find((t) => t.kind === 'audio' && !t.locked && !t.clips.some((x) => x.startUs < clipEnd(audio) && audio.startUs < clipEnd(x)))
+        if (free) ops.push({ type: 'add_clip', trackId: free.id, clip: audio })
+        else {
+          const tid = `track-audio-${uuid7().slice(-8)}`
+          ops.push({ type: 'add_track', track: { id: tid, kind: 'audio', name: `Audio ${doc.tracks.filter((t) => t.kind === 'audio').length + 1}`, main: false, locked: false, hidden: false, muted: false, clips: [] } }, { type: 'add_clip', trackId: tid, clip: audio })
+        }
+      }
+      ctx.propose(ops)
+      return { summary: `${i.mode} · ${m.asset.name}`, content: JSON.stringify({ assetId: m.asset.id }) }
+    },
+  }),
+
+  tool({
+    name: 'duck_music',
+    provider: 'editor',
+    description: 'Lower a music/audio clip while someone speaks on the main track (writes a volume curve). duckDb: how much quieter under speech.',
+    schema: z.object({ clipId: z.string(), duckDb: z.number().min(3).max(40).default(12) }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      const doc = ctx.doc()
+      const f = findClip(doc, i.clipId)
+      if (!f || f.clip.kind !== 'audio') throw new Error(`${i.clipId} is not an audio clip`)
+      const main = doc.tracks.find((t) => t.main)
+      const ranges = speechRanges(timelineWords(doc, await transcripts(ctx), main?.id))
+      const keyframes = duckingKeyframes(f.clip as MediaClip, ranges, { duckDb: i.duckDb })
+      if (!keyframes.length) return { summary: 'no speech under it', content: 'No speech overlaps this clip; nothing changed.' }
+      ctx.propose([{ type: 'set_keyframes', clipId: i.clipId, prop: 'volumeDb', keyframes }])
+      return { summary: `${ranges.length} speech ranges`, content: JSON.stringify({ speechRanges: ranges.length, points: keyframes.length }) }
+    },
+  }),
+
+  tool({
+    name: 'list_voices',
+    provider: 'editor',
+    description: 'Voices for text_to_speech. "kokoro:*" are natural voices (need a one-time download in the app); "windows:*" are built into Windows.',
+    schema: z.object({}),
+    permission: 'auto',
+    mutates: false,
+    async run(_i, ctx) {
+      if (!ctx.tts) throw new Error('Text to speech is not available here')
+      const v = await ctx.tts.voices()
+      return { summary: `${v.length} voices`, content: JSON.stringify(v.map((x) => ({ id: x.id, name: x.name, language: x.language, gender: x.gender, ready: x.ready }))) }
+    },
+  }),
+
+  tool({
+    name: 'text_to_speech',
+    provider: 'editor',
+    description: 'Read text aloud with a voice (see list_voices) and put the audio on an audio track at a TIMELINE time. Local and free.',
+    schema: z.object({ text: z.string().min(1).max(5000), voice: z.string().default('kokoro:af_heart'), speed: z.number().min(0.5).max(2).default(1), atSeconds: z.number().min(0).default(0) }),
+    permission: 'auto',
+    mutates: true,
+    async run(i, ctx) {
+      if (!ctx.tts) throw new Error('Text to speech is not available here')
+      let voice = i.voice
+      const voices = await ctx.tts.voices()
+      if (!voices.find((v) => v.id === voice)?.ready) {
+        const fallback = voices.find((v) => v.ready)
+        if (!fallback) throw new Error('No voice is ready. Ask the user to download the natural voices (Text → Speech) first.')
+        voice = fallback.id
+      }
+      const file = await ctx.tts.synthesize(i.text, voice, i.speed, ctx.signal)
+      const [m] = await ctx.media.import(ctx.projectId, [file])
+      const doc = ctx.doc()
+      const ops: OpInput[] = doc.assets[m!.asset.id] ? [] : [{ type: 'add_asset', asset: m!.asset }]
+      ops.push(...placeOps(doc, m!.asset.id, 'audio', m!.asset.durationUs ?? 1_000_000, us(i.atSeconds), 'audio'))
+      ctx.propose(ops)
+      return { summary: `${voice} · ${sec(m!.asset.durationUs ?? 0)}s`, content: JSON.stringify({ assetId: m!.asset.id, voice, durationSeconds: sec(m!.asset.durationUs ?? 0) }) }
     },
   }),
 ]

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents } from 'electron'
-import { open as fsOpen, rm, type FileHandle } from 'node:fs/promises'
+import { open as fsOpen, readFile, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { AgentDefInput, AgentEvent, BatchEvent, DocEvent, ExternalActivity, JobEvent, MediaInfo, ProviderInput, ToolPermission } from '../shared/api'
+import type { AgentDefInput, AudioPreset, AgentEvent, BatchEvent, DocEvent, ExternalActivity, JobEvent, MediaInfo, ProviderInput, ToolPermission } from '../shared/api'
 import { AgentRunner } from './agent/runner'
 import { AgentDefs } from './agent/defs'
 import { TOOLS } from './agent/tools'
@@ -15,6 +15,8 @@ import { defaultSidecarDir, McpHub } from './mcp-hub'
 import { Media } from './media'
 import { appPaths } from './paths'
 import { Projects } from './projects'
+import { Fonts } from './fonts'
+import { Tts } from './tts'
 import { handleMediaProtocol, registerSchemePrivileges } from './protocol'
 
 app.setName('Framevane')
@@ -25,6 +27,11 @@ registerSchemePrivileges()
 // Prefer the discrete GPU (RTX) for WebGPU/WebCodecs over the integrated one.
 app.commandLine.appendSwitch('force_high_performance_gpu')
 app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport,MediaFoundationD3D11VideoCapture')
+// test hook: a synthetic microphone (a beep) and auto-accepted capture prompts for the voiceover e2e
+if (process.env.FRAMEVANE_FAKE_MEDIA === '1') {
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream')
+  app.commandLine.appendSwitch('use-fake-ui-for-media-stream')
+}
 
 const isDev = !!process.env.VITE_DEV_SERVER_URL
 
@@ -46,7 +53,9 @@ async function main() {
   defs.seed()
   const agent = new AgentRunner(db, projects, analysis, media, registry, defs, (e: AgentEvent) => broadcast('agent:event', e), (e: BatchEvent) => broadcast('agent:batch', e))
   void registry.connectAll()
-  handleMediaProtocol(media)
+  const fonts = new Fonts(join(paths.userData, 'fonts'))
+  const tts = new Tts(paths.cacheDir, hub)
+  handleMediaProtocol(media, fonts)
 
   /* ── Framevane as an MCP server (Claude Code connects here) ── */
   let ui: UiState = { projectId: null, playheadUs: 0, selection: [] }
@@ -63,8 +72,9 @@ async function main() {
     pending.set(requestId, (v) => { clearTimeout(t); pending.delete(requestId); resolve(v as T) })
     win.webContents.send(channel, { requestId, ...payload })
   })
+  agent.tts = tts
   const editorMcp = new EditorMcp({
-    db, projects, media, analysis,
+    db, projects, media, analysis, tts,
     emitActivity: (a: ExternalActivity) => broadcast('mcp:activity', a),
     ui: () => ui,
     openInUi: async (projectId) => {
@@ -90,7 +100,7 @@ async function main() {
     version: app.getVersion(), userData: paths.userData, projectsDir: paths.projectsDir,
     ffmpeg: ffmpegPaths()?.ffmpeg ?? null, sidecar: hub.sidecarStatus,
   }))
-  ipcMain.handle('app:pickFiles', async (e, opts: { kind: 'media' | 'image' }) => {
+  ipcMain.handle('app:pickFiles', async (e, opts: { kind: 'media' | 'image' | 'subtitle' | 'font' }) => {
     // test hook: e2e runs can't click native dialogs
     if (process.env.FRAMEVANE_TEST_PICK_FILES) return process.env.FRAMEVANE_TEST_PICK_FILES.split(';').filter(Boolean)
     const win = BrowserWindow.fromWebContents(e.sender)!
@@ -98,6 +108,10 @@ async function main() {
       properties: ['openFile', 'multiSelections'],
       filters: opts.kind === 'image'
         ? [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'avif'] }]
+        : opts.kind === 'subtitle'
+        ? [{ name: 'Subtitles', extensions: ['srt', 'vtt'] }]
+        : opts.kind === 'font'
+        ? [{ name: 'Fonts', extensions: ['ttf', 'otf', 'woff', 'woff2'] }]
         : [{ name: 'Media', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi', 'mts', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'png', 'jpg', 'jpeg', 'webp', 'gif'] }, { name: 'All files', extensions: ['*'] }],
     })
     return r.canceled ? [] : r.filePaths
@@ -109,6 +123,17 @@ async function main() {
     return r.canceled ? null : r.filePath
   })
   ipcMain.handle('app:showItemInFolder', (_e, path: string) => shell.showItemInFolder(path))
+  // only for files the user picked in a dialog: captions out (.srt/.txt) and in (.srt/.vtt)
+  ipcMain.handle('app:writeTextFile', async (_e, path: string, text: string) => {
+    if (!/\.(srt|vtt|txt)$/i.test(path)) throw new Error('Only caption files (.srt, .vtt, .txt) can be written')
+    await writeFile(path, text, 'utf8')
+  })
+  ipcMain.handle('app:readTextFile', async (_e, path: string) => {
+    if (!/\.(srt|vtt|txt)$/i.test(path)) throw new Error('Only caption files (.srt, .vtt, .txt) can be read')
+    const st = await stat(path)
+    if (st.size > 10 * 1024 * 1024) throw new Error('That file is too large to be a caption file')
+    return readFile(path, 'utf8')
+  })
 
   /* ── projects & doc ── */
   ipcMain.handle('projects:list', () => projects.list())
@@ -153,6 +178,19 @@ async function main() {
   ipcMain.handle('media:list', (_e, projectId: string) => media.list(projectId))
   ipcMain.handle('media:reverse', (_e, projectId: string, assetId: string, inUs: number, outUs: number) => media.reverse(projectId, assetId, inUs, outUs))
   ipcMain.handle('media:relink', (_e, projectId: string, assetId: string, newPath: string) => media.relink(projectId, assetId, newPath))
+  ipcMain.handle('media:processAudio', (_e, projectId: string, assetId: string, preset: AudioPreset) => media.processAudio(projectId, assetId, preset))
+  ipcMain.handle('media:saveRecording', (_e, projectId: string, data: Uint8Array) => media.saveRecording(projectId, data, projects.dirOf(projectId)))
+  ipcMain.handle('fonts:system', () => fonts.systemFamilies())
+  ipcMain.handle('fonts:custom', () => fonts.custom())
+  ipcMain.handle('fonts:import', (_e, paths: string[]) => fonts.import(paths))
+  ipcMain.handle('fonts:remove', async (_e, file: string) => { await fonts.remove(file); return fonts.custom() })
+  ipcMain.handle('tts:voices', () => tts.voices())
+  ipcMain.handle('tts:installKokoro', () => jobs.add({ kind: 'tts', title: 'Downloading natural voices', run: ({ progress }) => tts.installKokoro((p) => progress(p)) }).done)
+  ipcMain.handle('tts:speak', async (_e, projectId: string, text: string, voiceId: string, speed: number) => {
+    const file = await jobs.add({ kind: 'tts', title: 'Generating speech', projectId, run: ({ signal }) => tts.synthesize(text, voiceId, speed, signal) }).done
+    const [info] = await media.import(projectId, [file])
+    return info!
+  })
   ipcMain.handle('jobs:cancel', (_e, id: string) => jobs.cancel(id))
   ipcMain.handle('analysis:transcript', (_e, projectId: string, assetId: string, opts) => analysis.transcript(projectId, assetId, opts ?? {}))
   ipcMain.handle('analysis:silences', (_e, projectId: string, assetId: string, opts) => analysis.silences(projectId, assetId, opts ?? {}))

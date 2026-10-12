@@ -1,5 +1,6 @@
 import { clipEnd, DEFAULT_CAPTION_STYLE, resolveAt, sourceTimeAt, type CaptionClip, type Clip, type MediaClip, type Project, type TextClip, type TextStyle } from '@framevane/doc'
 import type { VideoSample } from 'mediabunny'
+import { loadCustomFonts } from './fonts'
 import type { MediaPool } from './sources'
 
 /**
@@ -132,51 +133,165 @@ function drawMedia(ctx: Ctx2D, clip: MediaClip, v: Visual, W: number, H: number,
   ctx.restore()
 }
 
-const HIGHLIGHT = '#ffd84d'
+/* ───────────────────────── text ───────────────────────── */
 
-/** Caption/text: wrapped lines, stroke then fill, active word highlighted when word timings exist. */
-function drawText(ctx: Ctx2D, clip: CaptionClip | TextClip, style: TextStyle, localUs: number, W: number, H: number) {
-  const text = clip.text.trim()
-  if (!text) return
-  ctx.save()
-  ctx.font = `${style.fontWeight} ${style.fontSize}px "${style.fontFamily}", "Inter Variable", system-ui, sans-serif`
-  ctx.textBaseline = 'alphabetic'
-  ctx.lineJoin = 'round'
-  const words = text.split(/\s+/)
-  const timed = clip.kind === 'caption' && clip.words.length === words.length ? clip.words : null
-  const active = timed ? timed.findIndex((w) => localUs >= w.startUs && localUs < w.endUs) : -1
+export function fontString(style: TextStyle) {
+  return `${style.italic ? 'italic ' : ''}${style.fontWeight} ${style.fontSize}px "${style.fontFamily}", "Inter Variable", system-ui, sans-serif`
+}
+
+interface LaidWord { idx: number; word: string; w: number }
+export interface TextLayout { lines: LaidWord[][]; lineWidths: number[]; lineH: number; blockW: number; blockH: number; space: number }
+
+/** Wrap text into lines no wider than style.maxWidth × canvas width. Explicit newlines start a new line. */
+export function layoutText(ctx: Ctx2D, text: string, style: TextStyle, W: number): TextLayout {
+  ctx.font = fontString(style)
+  ;(ctx as CanvasRenderingContext2D).letterSpacing = `${style.letterSpacing}px`
   const maxW = W * style.maxWidth
   const space = ctx.measureText(' ').width
-  const lines: { idx: number; word: string; w: number }[][] = [[]]
-  let lineW = 0
-  words.forEach((word, idx) => {
-    const w = ctx.measureText(word).width
-    const cur = lines[lines.length - 1]!
-    if (cur.length && lineW + space + w > maxW) { lines.push([]); lineW = 0 }
-    lines[lines.length - 1]!.push({ idx, word, w })
-    lineW += (lines[lines.length - 1]!.length > 1 ? space : 0) + w
-  })
-  const lineH = style.fontSize * 1.18
-  const blockH = lineH * lines.length
-  const baseY = H * style.y - blockH / 2 + style.fontSize * 0.9
-  lines.forEach((line, li) => {
-    const total = line.reduce((s, x) => s + x.w, 0) + space * (line.length - 1)
-    let x = style.align === 'left' ? W * (1 - style.maxWidth) / 2 : style.align === 'right' ? W - W * (1 - style.maxWidth) / 2 - total : (W - total) / 2
-    const y = baseY + li * lineH
-    if (style.background) {
-      ctx.fillStyle = style.background
-      const pad = style.fontSize * 0.2
-      ctx.fillRect(x - pad, y - style.fontSize * 0.95, total + pad * 2, lineH)
+  const lines: LaidWord[][] = []
+  let idx = 0
+  for (const para of text.split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean)
+    let line: LaidWord[] = []
+    let lineW = 0
+    for (const word of words) {
+      const w = ctx.measureText(word).width
+      if (line.length && lineW + space + w > maxW) { lines.push(line); line = []; lineW = 0 }
+      line.push({ idx: idx++, word, w })
+      lineW += (line.length > 1 ? space : 0) + w
     }
+    lines.push(line)
+  }
+  const lineWidths = lines.map((l) => l.reduce((s, x) => s + x.w, 0) + space * Math.max(0, l.length - 1))
+  const lineH = style.fontSize * style.lineHeight
+  return { lines, lineWidths, lineH, blockW: Math.max(0, ...lineWidths), blockH: lineH * lines.length, space }
+}
+
+let measureCtx: OffscreenCanvasRenderingContext2D | null = null
+/** Where a text clip sits on the canvas at clip-local time t (for the on-canvas handles). Ignores in/out animation. */
+export function textGeometry(clip: TextClip, localUs: number, W: number, H: number) {
+  measureCtx ??= new OffscreenCanvas(8, 8).getContext('2d')!
+  const t = resolveAt(clip, localUs)
+  const L = layoutText(measureCtx, clip.text.trim() || ' ', clip.style, W)
+  const pad = clip.style.background ? clip.style.fontSize * 0.25 : 0
+  return { cx: W / 2 + t.x, cy: H * clip.style.y + t.y, w: (L.blockW + pad * 2) * t.scale, h: L.blockH * t.scale, rotation: t.rotation }
+}
+
+const easeOut = (p: number) => 1 - Math.pow(1 - p, 3)
+const backOut = (p: number) => { const c1 = 1.70158; const c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2) }
+
+/** In/out animation state at clip-local time t: extra offset, scale, alpha, how much text is revealed. */
+function animState(clip: TextClip, localUs: number, W: number, H: number) {
+  const st = { dx: 0, dy: 0, scale: 1, alpha: 1, reveal: 1, wipe: 1 }
+  const apply = (kind: string, p: number, dir: 1 | -1) => {
+    const e = easeOut(p)
+    const d = (1 - e) * dir
+    switch (kind) {
+      case 'fade': st.alpha *= p; break
+      case 'slide-up': st.dy += d * H * 0.08; st.alpha *= p; break
+      case 'slide-down': st.dy -= d * H * 0.08; st.alpha *= p; break
+      case 'slide-left': st.dx += d * W * 0.1; st.alpha *= p; break
+      case 'slide-right': st.dx -= d * W * 0.1; st.alpha *= p; break
+      case 'pop': st.scale *= Math.max(0, backOut(p)); st.alpha *= Math.min(1, p * 3); break
+      case 'zoom-out': st.scale *= 1 + 0.6 * (1 - e); st.alpha *= p; break
+      case 'typewriter': st.reveal = Math.min(st.reveal, p); break
+      case 'wipe': st.wipe = Math.min(st.wipe, e); break
+    }
+  }
+  const { in: ain, out: aout } = clip.anim
+  if (ain.kind !== 'none' && localUs < ain.durationUs) apply(ain.kind, Math.max(0, localUs / ain.durationUs), 1)
+  const left = clip.durationUs - localUs
+  if (aout.kind !== 'none' && left < aout.durationUs) apply(aout.kind, Math.max(0, left / aout.durationUs), -1)
+  return st
+}
+
+/**
+ * Captions and text: wrapped lines with optional box, shadow, outline, underline; the spoken word is highlighted when
+ * word timings exist. Text clips are positioned, scaled, rotated and animated; captions sit at style.y.
+ */
+function drawText(ctx: Ctx2D, clip: CaptionClip | TextClip, style: TextStyle, localUs: number, W: number, H: number) {
+  let text = clip.text.trim()
+  if (!text) return
+  const timed = clip.kind === 'caption' && clip.words.length === text.split(/\s+/).length ? clip.words : null
+  let active = timed ? timed.findIndex((w) => localUs >= w.startUs && localUs < w.endUs) : -1
+  if (clip.kind === 'caption' && style.wordByWord && timed) {
+    // one word at a time: the word being said, or the last one said during a short pause
+    if (active < 0) for (let i = timed.length - 1; i >= 0; i--) if (timed[i]!.startUs <= localUs) { active = i; break }
+    if (active < 0) return
+    text = text.split(/\s+/)[active]!
+    active = 0
+  }
+  ctx.save()
+  const L = layoutText(ctx, text, style, W)
+  ctx.textBaseline = 'alphabetic'
+  ctx.lineJoin = 'round'
+  let ax = W / 2
+  let ay = H * style.y
+  let anim = { dx: 0, dy: 0, scale: 1, alpha: 1, reveal: 1, wipe: 1 }
+  if (clip.kind === 'text') {
+    const t = resolveAt(clip, localUs)
+    anim = animState(clip, localUs, W, H)
+    ax += t.x
+    ay += t.y
+    ctx.globalAlpha = Math.max(0, Math.min(1, t.opacity * anim.alpha))
+    ctx.translate(ax + anim.dx, ay + anim.dy)
+    if (t.rotation) ctx.rotate((t.rotation * Math.PI) / 180)
+    const sc = t.scale * anim.scale
+    ctx.scale(sc, sc)
+  } else {
+    ctx.translate(ax, ay)
+  }
+  if (ctx.globalAlpha <= 0) { ctx.restore(); return }
+  // shadow sizes are in device pixels, so follow the current scale
+  const m = ctx.getTransform()
+  const k = Math.hypot(m.a, m.b)
+  if (anim.wipe < 1) {
+    ctx.beginPath()
+    ctx.rect(-L.blockW / 2 - style.fontSize, -L.blockH / 2 - style.fontSize, (L.blockW + style.fontSize * 2) * anim.wipe, L.blockH + style.fontSize * 2)
+    ctx.clip()
+  }
+  const totalChars = L.lines.reduce((n, l) => n + l.reduce((a, w) => a + w.word.length, 0), 0)
+  let charsLeft = anim.reveal >= 1 ? Infinity : Math.round(totalChars * anim.reveal)
+  const top = -L.blockH / 2
+  L.lines.forEach((line, li) => {
+    const lw = L.lineWidths[li]!
+    let x = style.align === 'left' ? -L.blockW / 2 : style.align === 'right' ? L.blockW / 2 - lw : -lw / 2
+    const y = top + li * L.lineH + (L.lineH - style.fontSize) / 2 + style.fontSize * 0.9
+    if (style.background && line.length) {
+      const padX = style.fontSize * 0.25
+      const padY = style.fontSize * 0.08
+      ctx.save()
+      ctx.fillStyle = style.background
+      ctx.beginPath()
+      ctx.roundRect(x - padX, y - style.fontSize * 0.92 - padY, lw + padX * 2, style.fontSize * 1.18 + padY * 2, style.backgroundRadius * style.fontSize)
+      ctx.fill()
+      ctx.restore()
+    }
+    const lineX = x
     for (const { idx, word, w } of line) {
+      if (charsLeft <= 0) break
+      const shown = charsLeft >= word.length ? word : word.slice(0, charsLeft)
+      charsLeft -= word.length
+      if (style.shadow) {
+        ctx.shadowColor = style.shadow.color
+        ctx.shadowBlur = style.shadow.blur * k
+        ctx.shadowOffsetX = style.shadow.x * k
+        ctx.shadowOffsetY = style.shadow.y * k
+      }
       if (style.strokeWidth > 0) {
         ctx.strokeStyle = style.strokeColor
         ctx.lineWidth = style.strokeWidth * 2
-        ctx.strokeText(word, x, y)
+        ctx.strokeText(shown, x, y)
+        ctx.shadowColor = 'transparent'
       }
-      ctx.fillStyle = idx === active ? HIGHLIGHT : style.color
-      ctx.fillText(word, x, y)
-      x += w + space
+      ctx.fillStyle = idx === active && style.highlightColor ? style.highlightColor : style.color
+      ctx.fillText(shown, x, y)
+      ctx.shadowColor = 'transparent'
+      x += w + L.space
+    }
+    if (style.underline && line.length) {
+      ctx.fillStyle = style.color
+      ctx.fillRect(lineX, y + style.fontSize * 0.12, lw, Math.max(1, style.fontSize * 0.06))
     }
   })
   ctx.restore()
@@ -184,10 +299,11 @@ function drawText(ctx: Ctx2D, clip: CaptionClip | TextClip, style: TextStyle, lo
 
 /** Make sure canvas text uses the bundled font (not a fallback) before the first frame or an export. */
 export async function ensureFonts(doc: Project) {
+  await loadCustomFonts().catch(() => [])
   const families = new Set<string>(['Inter Variable'])
   for (const t of doc.tracks) {
     if (t.style) families.add(t.style.fontFamily)
     for (const c of t.clips) if (c.kind === 'text') families.add(c.style.fontFamily)
   }
-  await Promise.all([...families].flatMap((f) => [400, 700, 900].map((w) => document.fonts.load(`${w} 48px "${f}"`).catch(() => []))))
+  await Promise.all([...families].flatMap((f) => [400, 700, 900].flatMap((w) => [`${w} 48px "${f}"`, `italic ${w} 48px "${f}"`].map((spec) => document.fonts.load(spec).catch(() => [])))))
 }

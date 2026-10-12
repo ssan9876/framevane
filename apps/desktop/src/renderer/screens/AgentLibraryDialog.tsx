@@ -136,7 +136,7 @@ function DefForm({ initial, tools, onSaved, onCancel, onDeleted }: {
         <Segmented label="Tools it may use" value={all ? 'all' : 'some'} onValueChange={(v) => set({ allowedTools: v === 'all' ? ['*'] : tools.filter((t) => t.provider === 'editor' && t.name.startsWith('get_')).map((t) => t.name) })}
           options={[{ value: 'all', label: 'All tools' }, { value: 'some', label: 'Only these' }]} />
         {!all && (
-          <div className="grid max-h-48 grid-cols-2 gap-x-4 gap-y-1.5 overflow-auto rounded-sm border border-border p-2">
+          <div className="grid max-h-56 grid-cols-2 gap-x-4 gap-y-3 overflow-auto rounded-sm border border-border p-2">
             {[...tools.map((t) => t.name), ...extra].map((name) => (
               <Checkbox key={name} label={name} checked={d.allowedTools.includes(name)}
                 onCheckedChange={(v) => set({ allowedTools: v ? [...d.allowedTools, name] : d.allowedTools.filter((x) => x !== name) })} />

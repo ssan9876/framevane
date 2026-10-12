@@ -1,4 +1,7 @@
-import type { AnimProp, Easing, Keyframe, Keyframes, MediaClip } from './schema'
+import type { AnimProp, Easing, Keyframe, Keyframes, MediaClip, TextClip } from './schema'
+
+/** Clips with a transform that can be keyframed: media and text. */
+export type AnimatableClip = MediaClip | TextClip
 
 /**
  * Keyframes live on a clip, at times relative to the clip start (timeline µs). A property with keyframes is animated;
@@ -14,11 +17,12 @@ const ease: Record<Easing, (t: number) => number> = {
   hold: () => 0,
 }
 
-export function staticValue(clip: MediaClip, prop: AnimProp): number {
-  return prop === 'volumeDb' ? clip.volumeDb : clip.transform[prop]
+export function staticValue(clip: AnimatableClip, prop: AnimProp): number {
+  if (prop === 'volumeDb') return clip.kind === 'text' ? 0 : clip.volumeDb
+  return clip.transform[prop]
 }
 
-export function isAnimated(clip: MediaClip, prop: AnimProp): boolean {
+export function isAnimated(clip: AnimatableClip, prop: AnimProp): boolean {
   return (clip.keyframes[prop]?.length ?? 0) > 0
 }
 
@@ -38,13 +42,13 @@ export function sampleTrack(kfs: Keyframe[], tUs: number): number {
 }
 
 /** Property value of a clip at clip-local time t (keyframed or static). */
-export function valueAt(clip: MediaClip, prop: AnimProp, localUs: number): number {
+export function valueAt(clip: AnimatableClip, prop: AnimProp, localUs: number): number {
   const kfs = clip.keyframes[prop]
   return kfs && kfs.length ? sampleTrack(kfs, localUs) : staticValue(clip, prop)
 }
 
 /** Resolved transform + volume at clip-local time t, used by the compositor and the audio graph. */
-export function resolveAt(clip: MediaClip, localUs: number) {
+export function resolveAt(clip: AnimatableClip, localUs: number) {
   return {
     ...clip.transform,
     x: valueAt(clip, 'x', localUs),

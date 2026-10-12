@@ -80,6 +80,11 @@ export interface ExternalActivity { id: string; client: string; tool: string; su
 export interface McpConnectInfo { enabled: boolean; listening: boolean; url: string; token: string; error: string | null; claudeCommand: string }
 export interface McpExportRequest { requestId: string; projectId: string; outputPath: string; height: number; fps: number; codec: 'avc' | 'hevc' }
 
+/* ── M3: fonts, voices, audio clean-up ── */
+export interface CustomFont { file: string; family: string; weight: number; style: 'normal' | 'italic'; url: string }
+export interface TtsVoice { id: string; engine: 'windows' | 'kokoro'; name: string; language: string; gender: 'female' | 'male' | 'neutral'; ready: boolean }
+export type AudioPreset = 'denoise-light' | 'denoise' | 'denoise-strong' | 'enhance' | 'normalize'
+
 /* ── M2: tool providers (MCP servers), agent library, batch ── */
 export type ToolPermission = 'auto' | 'ask' | 'never'
 export interface ProviderTool { name: string; description: string; permission: ToolPermission; costsMoney: boolean; readOnly: boolean }
@@ -129,7 +134,9 @@ export interface BatchEvent { batchId: string; items: BatchItem[]; done: boolean
 export interface ReelApi {
   app: {
     info(): Promise<{ version: string; userData: string; projectsDir: string; ffmpeg: string | null; sidecar: 'unknown' | 'ready' | 'starting' | 'error'; gpu?: string }>
-    pickFiles(opts: { kind: 'media' | 'image' }): Promise<string[]>
+    pickFiles(opts: { kind: 'media' | 'image' | 'subtitle' | 'font' }): Promise<string[]>
+    writeTextFile(path: string, text: string): Promise<void>
+    readTextFile(path: string): Promise<string>
     pickSavePath(opts: { defaultName: string; ext: string }): Promise<string | null>
     showItemInFolder(path: string): Promise<void>
     pathForFile(file: File): string
@@ -154,7 +161,24 @@ export interface ReelApi {
     list(projectId: string): Promise<MediaInfo[]>
     reverse(projectId: string, assetId: string, inUs: number, outUs: number): Promise<MediaInfo>
     relink(projectId: string, assetId: string, newPath: string): Promise<MediaInfo>
+    /** Cleaned-up copy of an asset's sound (a new audio asset of the same length). */
+    processAudio(projectId: string, assetId: string, preset: AudioPreset): Promise<MediaInfo>
+    /** A voiceover recorded in the window (WebM/Opus bytes), saved with the project and imported. */
+    saveRecording(projectId: string, data: Uint8Array): Promise<MediaInfo>
     onChange(cb: (m: MediaInfo) => void): () => void
+  }
+  fonts: {
+    system(): Promise<string[]>
+    custom(): Promise<CustomFont[]>
+    import(paths: string[]): Promise<CustomFont[]>
+    remove(file: string): Promise<CustomFont[]>
+  }
+  tts: {
+    voices(): Promise<TtsVoice[]>
+    /** Download the natural (Kokoro) voices once. Progress arrives as job events. */
+    installKokoro(): Promise<void>
+    /** Speak text and import the result into the project. */
+    speak(projectId: string, text: string, voiceId: string, speed: number): Promise<MediaInfo>
   }
   jobs: {
     onEvent(cb: (e: JobEvent) => void): () => void

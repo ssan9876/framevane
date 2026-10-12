@@ -88,7 +88,7 @@ function EditorLoaded({ doc }: { doc: Project }) {
           <section aria-label="Preview" className="flex min-w-0 flex-1 flex-col bg-bg">
             <Viewer />
           </section>
-          <section aria-label="Properties" className="flex w-[var(--fv-inspector-w-default)] shrink-0 flex-col border-l border-border bg-surface">
+          <section aria-label="Properties" className="scroll-y flex min-h-0 w-[var(--fv-inspector-w-default)] shrink-0 flex-col border-l border-border bg-surface">
             <Inspector />
           </section>
           {agentOpen && (

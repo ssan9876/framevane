@@ -217,6 +217,9 @@ export class Projects {
     return this.open.get(projectId)!
   }
 
+  /** The project's folder (recordings and other project-owned files live here). */
+  dirOf(projectId: string): string { return this.row(projectId).dir_path }
+
   private row(projectId: string): ProjectRow {
     const r = this.db.prepare(`SELECT * FROM projects WHERE id=?`).get(projectId) as unknown as ProjectRow | undefined
     if (!r) throw new Error('Project not found')

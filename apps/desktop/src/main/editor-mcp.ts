@@ -10,6 +10,7 @@ import { now, uuid7, type Db } from './db'
 import type { Analysis } from './analysis'
 import type { Media } from './media'
 import type { Projects } from './projects'
+import type { Tts } from './tts'
 import { TOOLS, type ToolCtx, type ToolResult } from './agent/tools'
 
 /**
@@ -36,6 +37,7 @@ interface Deps {
   projects: Projects
   media: Media
   analysis: Analysis
+  tts?: Tts
   emitActivity(a: ExternalActivity): void
   ui(): UiState
   /** Ask the window to open a project; resolves once the editor shows it. */
@@ -198,6 +200,7 @@ export class EditorMcp {
           signal: new AbortController().signal,
           analysis: d.analysis,
           media: d.media,
+          tts: d.tts,
           doc: () => d.projects.get(projectId),
           propose: (ops: OpInput[]) => {
             const doc = d.projects.get(projectId)

@@ -122,6 +122,25 @@ Notes:
 - Pending proposals live in memory, so they are lost if the app restarts before review. The transcript and ops stay in SQLite, so this could be rebuilt later.
 - The fake model (`FRAMEVANE_FAKE_AGENT=1`) gained policies for "test tool" (calls `*__make_clip` → import → place) and "mark…" (adds a marker). The e2e fixture `e2e/test-mcp-server.mjs` is a real stdio MCP server.
 
+## M3 text, captions, audio (2026-10-11)
+
+| area | status | notes |
+| --- | --- | --- |
+| Text (S06, S19) | done | Text clips have a transform + keyframes like media, and on-canvas handles (layout is shared with the compositor through `textGeometry`). Style: font, weight, B/I/U, size, colour, outline, shadow, box (colour, opacity, roundness), letter spacing, line height, alignment; explicit line breaks. New op `set_text`. 12 presets, previewed by the real compositor on small canvases. |
+| Text animation (S17 for text) | partial | In/out: fade, slide up/down/left/right, pop, zoom, typewriter, wipe, each with a length. A split keeps the in-animation left and the out-animation right. No loop animations yet. |
+| Fonts | done | Windows-installed families (listed via System.Drawing, drawn by name), imported .ttf/.otf/.woff/.woff2 (family/weight/italic read from the name and OS/2 tables, served as `framevane-media://font/…`), 9 bundled OFL/Apache display fonts (fontsource, pinned). |
+| Text to speech | done | Kokoro v1.0 int8 in the sidecar (12 voices, a one-time 120 MB download with SHA-256 pinned; 4.8 s of speech in 1.75 s on the CPU) + the Windows SAPI voices. Cached by voice + speed + text. The audio lands on an audio track under the text. |
+| Captions | done | Style gains font, box, shadow, spacing, a highlight colour (or none), one-word-at-a-time; 5 presets. SRT/TXT export, SRT/VTT import. |
+| Transcript editing (S30) | done | In the Captions tab: words of the main track, click to jump, Shift/Ctrl to select, Delete or "Cut N selected", "Remove N fillers". Each cut is one undo step. |
+| Audio | done | Fades (preview + export, outer fades survive a split). Clean-up = FFmpeg to a new file of the same length: denoise ×3, enhance voice, normalize (−14 LUFS). A video clip's sound moves to a linked cleaned audio clip. "Lower under speech" writes a volume curve with the new `set_keyframes` op. Voiceover recording with a mic picker, recording at the playhead while the timeline plays. |
+| Agent tools | done | add_text, edit_text, export_captions, import_captions, remove_filler_words, clean_audio, duck_music, list_voices, text_to_speech; set_clip fades; style_captions with font/box/highlight/one-word. New built-in agent "Sound fixer"; Filler-word remover, Captioner and Short-form maker use the new tools. All of these also go to Claude Code over MCP. |
+| ML noise removal (DeepFilterNet), beat detection, stems, loop text animations | not built | DeepFilterNet needs PyTorch; FFmpeg's afftdn covers most room noise. Beats and stems are later should-haves. |
+
+Harder than expected:
+- **BUG-011:** the seed video's audio track is 1.3 s shorter than its picture, so the first cleaned file was shorter than the clip and the op was rejected. Processed audio is now padded to the source's full length.
+- axe checks colour contrast even on `aria-hidden` text, and treats outlined text by its stroke colour. The preset previews are now drawn on canvases by the compositor (more faithful anyway).
+- The inspector column didn't scroll; the longer text inspector spilled over the timeline.
+
 ## Next (architecture build order)
 
 - **Still open from M1/M2:**
@@ -130,8 +149,6 @@ Notes:
   - run F12 and `get_frames` against the live Claude API (needs a key)
   - OAuth MCP servers
   - agent import/export
-- **M3 text, captions, audio:**
-  - text tool with styles and animations
-  - caption editor and caption styles
-  - audio fades, ducking and noise reduction
-  - transcript-based editing (F15)
+- **M4 visuals:**
+  - own WGSL effects, transitions and filters (≈20 / 15 / 20), .cube LUTs
+  - basic colour (S18), chroma key

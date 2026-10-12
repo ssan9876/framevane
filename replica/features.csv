@@ -44,32 +44,32 @@ Masks (linear mirror circle rectangle heart star) with feather invert keyframes,
 Chroma key with intensity shadow edge,compositing,must,yes,no,
 Video stabilization (3 levels),compositing,should,yes,no,CapCut: possibly PRO on Windows; ffmpeg vidstab
 Motion tracking (attach text/sticker to subject),compositing,could,yes,no,CapCut: conflicting gating
-Add text with font size color stroke shadow background spacing,text,must,yes,no,S19
-Import local / system fonts,text,must,yes,no,
-Text presets (our own),text,should,yes,no,CapCut: PRO styles
-Text animations in/out/loop,text,should,yes,no,
+Add text with font size color stroke shadow background spacing,text,must,yes,yes,"S19 | M3: text clips with font, weight, bold/italic/underline, size, colour, outline, shadow, box (colour/opacity/roundness), letter spacing, line height, alignment; position/scale/rotation/opacity with keyframes; on-canvas handles"
+Import local / system fonts,text,must,yes,yes,M3: every font installed in Windows by name; import .ttf/.otf/.woff/.woff2 (family read from the font file); 9 bundled OFL/Apache display fonts
+Text presets (our own),text,should,yes,yes,M3: 12 text presets (S06) with live compositor previews; 5 caption presets
+Text animations in/out/loop,text,should,yes,partial,"M3: in/out: fade, slide ×4, pop, zoom, typewriter, wipe, with lengths; no loop animations yet (key Position/Scale for motion)"
 Text templates (our own),text,could,yes,no,CapCut: PRO
-Text-to-speech with multiple voices,text,must,yes,no,CapCut: PRO/credits; Piper/Kokoro local or user API
+Text-to-speech with multiple voices,text,must,yes,yes,"M3: 12 natural Kokoro voices (local, 120 MB one-time download, checksum-pinned) + the Windows voices; speed; lands on an audio track under the text"
 Auto captions from speech (multi-language),captions,must,yes,yes,"CapCut: PRO; Whisper local | M0: local faster-whisper large-v3-turbo on CUDA, word timings"
-Caption styling with apply-to-all,captions,must,yes,yes,"M0: size, height, outline, colors"
-Keyword highlight / word-by-word karaoke captions,captions,should,yes,partial,M0: active word highlighted; no keyword option yet
+Caption styling with apply-to-all,captions,must,yes,yes,"M0: size, height, outline, colors | M3: font, weight, box, shadow, spacing, highlight colour, one-word-at-a-time, presets"
+Keyword highlight / word-by-word karaoke captions,captions,should,yes,yes,"M3: spoken-word highlight with any colour (or off), and a one-word-at-a-time mode; no keyword-only emphasis"
 Bilingual / translated captions,captions,should,yes,no,LLM translate
-Import SRT,captions,should,yes,no,
-Export SRT / TXT captions,captions,must,yes,no,
-Transcript-based editing (delete words to cut),captions,should,yes,no,S30
-Remove filler words and silences,captions,should,yes,partial,M0: silences via the agent | M2: Filler-word remover agent (transcript + cut_ranges); no one-click button yet
+Import SRT,captions,should,yes,yes,"M3: .srt/.vtt import (tags stripped, overlaps trimmed) from the Captions tab and import_captions"
+Export SRT / TXT captions,captions,must,yes,yes,M3: Captions tab and export_captions
+Transcript-based editing (delete words to cut),captions,should,yes,yes,"S30 | M3: Captions tab transcript: click to jump, Shift/Ctrl select, Delete cuts; follows the playhead; one undo step"
+Remove filler words and silences,captions,should,yes,yes,"M0: silences via the agent | M3: ""Remove N fillers"" in the transcript, remove_filler_words tool, Filler-word remover agent"
 Add local music and audio files,audio,must,yes,yes,
 Volume and volume keyframes,audio,must,yes,yes,M0: volume yes; keyframes M1 | M1
-Fade in / fade out,audio,must,yes,no,
+Fade in / fade out,audio,must,yes,yes,"M3: per clip, preview and export; split keeps the outer fades"
 Waveform display,audio,must,yes,yes,M0: real peaks from ffmpeg
-Noise reduction,audio,must,yes,no,CapCut: PRO; RNNoise/DeepFilterNet
-Normalize loudness,audio,should,yes,no,CapCut: PRO; ffmpeg loudnorm
-Enhance voice,audio,should,yes,no,CapCut: PRO
+Noise reduction,audio,must,yes,yes,M3: local FFmpeg spectral denoise (light / normal / strong) to a new audio file; video clips get a linked cleaned audio clip. DeepFilterNet-quality ML denoise not built
+Normalize loudness,audio,should,yes,yes,M3: loudnorm to −14 LUFS
+Enhance voice,audio,should,yes,yes,"M3: rumble cut, denoise, presence EQ, compression, loudness (FFmpeg chain)"
 Vocal isolation / stem separation,audio,should,yes,no,Demucs local
 Voice changer effects,audio,should,yes,no,
 Beat detection and beat markers,audio,should,yes,no,
-Auto ducking music under voice,audio,should,no,no,CapCut lacks a toggle; easy win
-Voiceover recording,audio,should,yes,no,
+Auto ducking music under voice,audio,should,no,yes,"M3: ""Lower under speech"" writes a volume curve from the main-track transcript; duck_music tool; Sound fixer agent"
+Voiceover recording,audio,should,yes,yes,"M3: mic picker, record at the playhead while the timeline plays, saved with the project as AAC"
 Voice cloning / AI dubbing,audio,could,yes,no,CapCut: PRO/credits; via user API or local model
 Video effects (our authored shader presets),effects,must,yes,no,CapCut: PRO pack; write our own GLSL
 Transitions (our authored set) with duration and apply-to-all,effects,must,yes,no,CapCut: PRO pack

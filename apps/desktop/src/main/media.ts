@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
-import { mkdir, open, rm, writeFile } from 'node:fs/promises'
-import { basename, extname, join } from 'node:path'
+import { mkdir, open, rename, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, extname, join } from 'node:path'
 import type { AssetRef } from '@framevane/doc'
 import type { MediaInfo } from '../shared/api'
 import { now, uuid7, type Db } from './db'
@@ -29,6 +29,18 @@ interface AssetRow {
 
 const PROXY_ABOVE = 1920 // long edge in px; bigger sources get a 1280px proxy for smooth preview
 const MAX_DOWNLOAD = 2 * 1024 ** 3
+
+export type AudioPreset = 'denoise-light' | 'denoise' | 'denoise-strong' | 'enhance' | 'normalize'
+const AUDIO_PRESETS: Record<AudioPreset, { title: string; suffix: string; filter: string }> = {
+  'denoise-light': { title: 'Reducing noise', suffix: 'clean', filter: 'highpass=f=60,afftdn=nr=10:nf=-42:tn=1' },
+  denoise: { title: 'Reducing noise', suffix: 'clean', filter: 'highpass=f=70,afftdn=nr=18:nf=-36:tn=1' },
+  'denoise-strong': { title: 'Reducing noise', suffix: 'clean', filter: 'highpass=f=80,afftdn=nr=30:nf=-30:tn=1,lowpass=f=12000' },
+  enhance: {
+    title: 'Enhancing voice', suffix: 'enhanced',
+    filter: 'highpass=f=80,lowpass=f=14000,afftdn=nr=12:nf=-38:tn=1,equalizer=f=220:t=q:w=1:g=-2,equalizer=f=3500:t=q:w=1.2:g=3,acompressor=threshold=-20dB:ratio=3:attack=10:release=150:makeup=2,loudnorm=I=-16:TP=-1.5:LRA=9',
+  },
+  normalize: { title: 'Normalizing loudness', suffix: 'normalized', filter: 'loudnorm=I=-14:TP=-1:LRA=11' },
+}
 const MIME_EXT: Record<string, string> = {
   'video/mp4': '.mp4', 'video/quicktime': '.mov', 'video/webm': '.webm', 'video/x-matroska': '.mkv',
   'audio/mpeg': '.mp3', 'audio/mp4': '.m4a', 'audio/wav': '.wav', 'audio/x-wav': '.wav', 'audio/ogg': '.ogg', 'audio/flac': '.flac', 'audio/aac': '.aac',
@@ -157,6 +169,59 @@ export class Media {
       },
     })
     return job.done
+  }
+
+  /**
+   * Clean up an asset's sound as a new audio asset of the same length (so a clip can swap to it with the same in-point).
+   * FFmpeg filters, all local: spectral noise reduction, a voice chain (rumble cut, de-noise, presence EQ, compression,
+   * loudness), or loudness normalisation to −14 LUFS.
+   */
+  processAudio(projectId: string, assetId: string, preset: AudioPreset): Promise<MediaInfo> {
+    const row = this.get(assetId)
+    if (!row) return Promise.reject(new Error('Unknown media'))
+    if (!row.has_audio && row.kind !== 'audio') return Promise.reject(new Error('That media has no sound'))
+    const p = AUDIO_PRESETS[preset]
+    const src = this.playablePath(assetId) ?? row.path
+    // a folder per asset + preset keeps the file name readable in the media panel ("talk (clean).m4a")
+    const out = join(this.paths.mezzanine, `${assetId}-${preset}-v2`, `${basename(row.path, extname(row.path))} (${p.suffix}).m4a`)
+    const job = this.jobs.add({
+      kind: preset === 'enhance' ? 'enhance_voice' : 'denoise',
+      title: `${p.title}: ${basename(row.path)}`,
+      projectId,
+      assetId,
+      dedupeKey: `audio:${assetId}:${preset}`,
+      run: async ({ signal, progress }) => {
+        if (!existsSync(out)) {
+          await mkdir(dirname(out), { recursive: true })
+          const tmp = `${out}.part.m4a`
+          // pad to the source's full length: a clip timed against the original must fit the cleaned copy exactly
+          const dur = row.duration_us ? ['-t', String(row.duration_us / 1e6)] : []
+          await runFfmpeg(['-i', src, '-vn', '-af', `${p.filter},apad`, ...dur, '-ar', '48000', '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart', tmp],
+            { signal, durationUs: row.duration_us ?? undefined, onProgress: progress })
+          await rename(tmp, out)
+        }
+        const [info] = await this.import(projectId, [out])
+        return info!
+      },
+    })
+    return job.done
+  }
+
+  /** Save a voiceover recorded in the window (WebM/Opus) as AAC in the project's recordings folder and import it. */
+  async saveRecording(projectId: string, data: Uint8Array, projectDir: string): Promise<MediaInfo> {
+    const dir = join(projectDir, 'recordings')
+    await mkdir(dir, { recursive: true })
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const raw = join(dir, `voiceover-${stamp}.webm`)
+    const out = join(dir, `Voiceover ${stamp.replace('T', ' ')}.m4a`)
+    await writeFile(raw, data)
+    try {
+      await runFfmpeg(['-i', raw, '-vn', '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out])
+    } finally {
+      await rm(raw, { force: true })
+    }
+    const [info] = await this.import(projectId, [out])
+    return info!
   }
 
   /** Point a missing asset at a file in its new location (same kind, about the same length). */

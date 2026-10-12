@@ -1,6 +1,6 @@
 import {
   applyOps, clipEnd, findClip, isAnimated, sourceTimeAt,
-  type AnimProp, type Clip, type MediaClip, type OpInput, type Project, type Track, type TrackKind,
+  type AnimatableClip, type AnimProp, type Clip, type MediaClip, type OpInput, type Project, type Track, type TrackKind,
 } from '@framevane/doc'
 import { useApp } from '../app/store'
 import { newId } from './actions'
@@ -144,9 +144,9 @@ export async function detachAudio() {
     const audio: MediaClip = {
       id: newId('clip'), kind: 'audio', assetId: c.assetId, startUs: c.startUs, durationUs: c.durationUs, enabled: true,
       inUs: c.inUs, speed: c.speed, transform: c.transform, volumeDb: c.volumeDb, blend: 'normal', audioEnabled: true, reversed: c.reversed,
-      keyframes: c.keyframes.volumeDb ? { volumeDb: c.keyframes.volumeDb } : {}, linkId,
+      keyframes: c.keyframes.volumeDb ? { volumeDb: c.keyframes.volumeDb } : {}, linkId, fadeInUs: c.fadeInUs, fadeOutUs: c.fadeOutUs,
     }
-    const own: OpInput = { type: 'set_clip_props', clipId: c.id, audioEnabled: false, linkId }
+    const own: OpInput = { type: 'set_clip_props', clipId: c.id, audioEnabled: false, linkId, fadeInUs: 0, fadeOutUs: 0 }
     const free = work.tracks.find((t) => t.kind === 'audio' && !t.locked && simulate(work, [{ type: 'add_clip', trackId: t.id, clip: audio }]))
     const step: OpInput[] = free
       ? [own, { type: 'add_clip', trackId: free.id, clip: audio }]
@@ -255,7 +255,7 @@ export function localPlayhead(clip: Clip, playheadUs = st().playheadUs) {
 }
 
 /** Set a property: animated → keyframe at the playhead, otherwise the static value. */
-export function setAnimProp(clip: MediaClip, prop: AnimProp, value: number): OpInput {
+export function setAnimProp(clip: AnimatableClip, prop: AnimProp, value: number): OpInput {
   if (isAnimated(clip, prop)) return { type: 'set_keyframe', clipId: clip.id, prop, tUs: localPlayhead(clip), value }
   return prop === 'volumeDb' ? { type: 'set_clip_props', clipId: clip.id, volumeDb: value } : { type: 'set_clip_props', clipId: clip.id, transform: { [prop]: value } }
 }
