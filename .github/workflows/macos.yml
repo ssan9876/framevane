@@ -36,8 +36,18 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           version: 0.11.28
-      - name: FFmpeg (for the tests; the release bundles its own)
-        run: brew install ffmpeg
+      # the same static build the release bundles (Homebrew's ffmpeg has no drawtext, which the test media needs)
+      - name: FFmpeg for the tests
+        run: |
+          set -euo pipefail
+          base=https://ffmpeg.martin-riedl.de/download/macos/arm64/1795207104_9.1
+          mkdir -p "$HOME/ffmpeg-bin" && cd "$HOME/ffmpeg-bin"
+          curl -fsSL -o ffmpeg.zip "$base/ffmpeg.zip" && curl -fsSL -o ffprobe.zip "$base/ffprobe.zip"
+          echo "1f66e9a690a7f1c9e60b012379f8869c11818d1797f45b21dbb2f2564ba61ae1  ffmpeg.zip" | shasum -a 256 -c -
+          echo "6ef2df5f575042923a28537ab37adf936f28bf3e7b85de23a1447ed447ec1dbd  ffprobe.zip" | shasum -a 256 -c -
+          unzip -oq ffmpeg.zip && unzip -oq ffprobe.zip && chmod +x ffmpeg ffprobe && rm -f *.zip
+          echo "$HOME/ffmpeg-bin" >> "$GITHUB_PATH"
+          ./ffmpeg -hide_banner -filters | grep -q drawtext
 
       - run: pnpm install --frozen-lockfile
 

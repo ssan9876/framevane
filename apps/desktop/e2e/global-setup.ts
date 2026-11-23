@@ -84,7 +84,9 @@ export default function globalSetup() {
   }
   if (existsSync(files.person) && !existsSync(files.personStill)) ff(['-ss', '3', '-i', files.person, '-frames:v', '1', files.personStill])
   if (!existsSync(files.edit)) {
-    const font = boldFont()
+    // some FFmpeg builds (Homebrew's) leave out drawtext; then the post has no text and the text checks are skipped
+    const hasDrawtext = /drawtext/.test(spawnSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8' }).stdout ?? '')
+    const font = hasDrawtext ? boldFont() : null
     // inside a filtergraph a drive colon must be escaped (C\:/Windows/…)
     const fontArg = font ? `fontfile='${font.replace(/:/g, '\\:')}'` : ''
     const text = font
