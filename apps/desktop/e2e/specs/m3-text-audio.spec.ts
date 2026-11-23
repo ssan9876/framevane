@@ -14,10 +14,11 @@ const SRT = join(tmpdir(), 'framevane-e2e-import.srt')
 const FONT = process.platform === 'darwin'
   ? { path: '/System/Library/Fonts/Supplemental/Courier New.ttf', file: 'Courier New.ttf', family: 'Courier New' }
   : { path: 'C:\\Windows\\Fonts\\consola.ttf', file: 'consola.ttf', family: 'Consolas' }
-/** The OS's own voices: SAPI voices on Windows, `say` voices on a Mac. */
+/** The OS's own voices: SAPI voices on Windows, `say` voices on a Mac. Any English one will do; which are installed
+ *  varies by machine, so match the engine hint the voice picker shows ("Mac · en-US"), not a voice name. */
 const SYSTEM_VOICE = process.platform === 'darwin'
-  ? { prefix: 'macos:', option: /^Samantha/ }
-  : { prefix: 'windows:', option: /David|Zira|Mark/ }
+  ? { prefix: 'macos:', hint: /Mac · en-/ }
+  : { prefix: 'windows:', hint: /Windows · en-/ }
 writeFileSync(SRT, '1\n00:00:00,500 --> 00:00:02,000\nImported line one\n\n2\n00:00:02,500 --> 00:00:04,000\nImported line two\n')
 
 const props = (page: Page) => page.getByRole('region', { name: 'Properties' })
@@ -112,7 +113,7 @@ test.describe('M3 text', () => {
     await expect(page.getByText('Speech added').first()).toBeVisible({ timeout: 120_000 })
     await expect(clips(page)).toHaveCount(3)
     await voice.click()
-    await page.getByRole('option', { name: SYSTEM_VOICE.option }).first().click()
+    await page.getByRole('option').filter({ hasText: SYSTEM_VOICE.hint }).first().click()
     await props(page).getByRole('button', { name: 'Generate speech' }).click()
     await expect(clips(page)).toHaveCount(4, { timeout: 120_000 })
     await expect(page.getByRole('rowheader', { name: /Audio 2/ })).toBeVisible()
@@ -271,8 +272,8 @@ test.describe('M3 agent tools over MCP', () => {
     await expect.poll(() => clips(page, 'srt-').count()).toBe(2)
     expect(await call('export_captions', { format: 'srt' })).toContain('Imported line two')
 
-    const voices = JSON.parse(await call('list_voices')) as { id: string; ready: boolean }[]
-    const sys = voices.find((v) => v.id.startsWith(SYSTEM_VOICE.prefix) && v.ready)
+    const voices = JSON.parse(await call('list_voices')) as { id: string; ready: boolean; language: string }[]
+    const sys = voices.find((v) => v.id.startsWith(SYSTEM_VOICE.prefix) && v.ready && v.language.startsWith('en'))
     expect(sys, `a ready ${SYSTEM_VOICE.prefix} voice in ${JSON.stringify(voices.map((v) => v.id))}`).toBeTruthy()
     await call('text_to_speech', { text: 'Testing one two.', voice: sys!.id, atSeconds: 2 })
     await expect(page.getByRole('rowheader', { name: /Audio 1/ })).toBeVisible()
