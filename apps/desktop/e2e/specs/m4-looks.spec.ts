@@ -35,14 +35,18 @@ const bar = (page: Page) => previewPixel(page, 0.06, 0.5).then((p) => p!.rgba as
 const isRed = ([r, g, b]: number[]) => r! > 120 && r! - b! > 80 && r! - g! > 60
 const isGrey = ([r, g, b]: number[]) => Math.abs(r! - g!) < 14 && Math.abs(g! - b!) < 14
 const dist = (a: number[], b: number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!)
-/** The preview's centre pixel once the playhead shows `s` seconds and the frame has stopped changing (a slow machine
- *  can still be drawing the frame it was on when the seek landed). */
-async function settledCentre(page: Page, s: number) {
+/** Where the transition test samples: the middle of talk.mp4's blue bar (the 4th of six). Not the frame's centre, which
+ *  is exactly the yellow/blue edge: in a small preview (196 px at the 1280x720 window) that pixel is half of each, and
+ *  its colour then depends on how a render path filters the edge, so it differed with and without a transition. */
+const PROBE = [3.5 / 6, 0.5] as const
+/** The probe pixel once the playhead shows `s` seconds and the frame has stopped changing (a slow machine can still
+ *  be drawing the frame it was on when the seek landed). */
+async function settledProbe(page: Page, s: number) {
   const tc = `00:00:${String(s).padStart(2, '0')}:00`
   await expect(page.getByRole('img', { name: /^Preview at / })).toHaveAttribute('aria-label', `Preview at ${tc}`)
   let prev: number[] | null = null
   await expect.poll(async () => {
-    const now = (await previewPixel(page, 0.5, 0.5))!.rgba
+    const now = (await previewPixel(page, ...PROBE))!.rgba
     const same = prev !== null && dist(now, prev) < 3
     prev = now
     return same
@@ -130,7 +134,7 @@ test.describe('M4 transitions', () => {
     await newProjectFromFiles(page)
     await expect(clips(page)).toHaveCount(3)
     await seekSeconds(page, 29) // the cut is at 29.13 s
-    const plain = await settledCentre(page, 29)
+    const plain = await settledProbe(page, 29)
     await clips(page).first().click()
     await assetTab(page, 'Transitions').click()
     expect(await a11y(page, 'S09 transitions')).toEqual([])
@@ -139,7 +143,7 @@ test.describe('M4 transitions', () => {
     await setField(assets(page), 'Duration', '2')
     await expect(timeline(page).getByRole('gridcell', { name: /talk\.mp4.*Dissolve transition into the next clip/ })).toBeVisible()
     await seekSeconds(page, 29)
-    await expect.poll(async () => dist((await previewPixel(page, 0.5, 0.5))!.rgba, plain)).toBeGreaterThan(30)
+    await expect.poll(async () => dist((await previewPixel(page, ...PROBE))!.rgba, plain)).toBeGreaterThan(30)
 
     await clips(page).first().click()
     await assets(page).getByRole('button', { name: 'Apply to all cuts' }).click()
@@ -149,7 +153,7 @@ test.describe('M4 transitions', () => {
     await assets(page).getByRole('button', { name: 'Remove' }).click()
     await expect(timeline(page).getByRole('gridcell', { name: /Dissolve transition into the next clip/ })).toHaveCount(1)
     await seekSeconds(page, 29)
-    await expect.poll(async () => dist((await previewPixel(page, 0.5, 0.5))!.rgba, plain)).toBeLessThan(12)
+    await expect.poll(async () => dist((await previewPixel(page, ...PROBE))!.rgba, plain)).toBeLessThan(12)
   })
 })
 
