@@ -60,14 +60,18 @@ jobs:
         working-directory: apps/desktop
         run: node scripts/build.mjs
 
-      - name: Cache AI models
-        uses: actions/cache@v4
+      # restore and save are separate steps so the caches are saved even when a test fails (actions/cache only saves
+      # after a green job, which left every red run downloading the 1.6 GB Whisper model inside the first test)
+      - name: Restore AI models
+        id: models
+        uses: actions/cache/restore@v4
         with:
           path: .models
           key: models-${{ hashFiles('sidecar/framevane_sidecar/models.py', 'apps/desktop/src/main/tts.ts') }}
           restore-keys: models-
-      - name: Cache seed media
-        uses: actions/cache@v4
+      - name: Restore seed media
+        id: seed
+        uses: actions/cache/restore@v4
         with:
           path: replica/seed-media
           key: seed-media-mac-${{ hashFiles('apps/desktop/scripts/make-seed-media.sh', 'apps/desktop/e2e/global-setup.ts') }}
@@ -76,6 +80,21 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.e2e }}
         working-directory: apps/desktop
         run: npx playwright test --reporter=list,github
+      # (a missing folder only means nothing was downloaded: never fail the job over a cache)
+      - name: Save AI models
+        if: ${{ !cancelled() && steps.models.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .models
+          key: ${{ steps.models.outputs.cache-primary-key }}
+      - name: Save seed media
+        if: ${{ !cancelled() && steps.seed.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: replica/seed-media
+          key: ${{ steps.seed.outputs.cache-primary-key }}
       - name: Upload e2e results
         if: failure()
         uses: actions/upload-artifact@v4

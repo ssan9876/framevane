@@ -157,6 +157,8 @@ def matte_video(model: Path, src: str, out: str, progress: Callable[[float], Non
         vs = inp.streams.video[0]
         # picked once: the recurrent state is tied to the input size, so it stays the same even if the GPU drops out
         rvm, side = _pick_matting(model, rvm, vs.codec_context.width or 1920, vs.codec_context.height or 1080)
+        started = time.perf_counter()
+        print(f"[vision] matting {Path(src).name} on {rvm.device} ({', '.join(rvm.s.get_providers()[:1])}) at {side} px", file=sys.stderr, flush=True)
         vs.thread_type = "AUTO"
         duration = float(vs.duration * vs.time_base) if vs.duration else float(inp.duration or 0) / 1e6
         rate = float(vs.average_rate or 30)
@@ -194,6 +196,8 @@ def matte_video(model: Path, src: str, out: str, progress: Callable[[float], Non
             n += 1
             if n % 10 == 0:
                 progress(min(0.99, n / expected))
+            if n % 150 == 0:
+                print(f"[vision] {n}/{expected} frames, {n / (time.perf_counter() - started):.1f} fps", file=sys.stderr, flush=True)
         if os_ is None:
             raise RuntimeError("No video frames found")
         for p in os_.encode():

@@ -46,8 +46,14 @@ export const test = base.extend<Options & { framevane: Framevane }>({
       ...reelEnv,
     } as Record<string, string>
 
+    // the main process's output, with the local AI sidecar's log in it ("[local] ..."), saved with a failed test
+    const mainLog: string[] = []
+    const t0 = Date.now()
     const start = async () => {
       const app = await electron.launch({ args: [resolve(HERE, '..')], env })
+      for (const s of [app.process().stdout, app.process().stderr]) {
+        s?.on('data', (d: Buffer) => { for (const line of d.toString('utf8').split(/\r?\n/)) if (line) mainLog.push(`+${((Date.now() - t0) / 1000).toFixed(1)}s ${line}`) })
+      }
       const page = await app.firstWindow()
       page.on('console', (m) => {
         if (m.type() !== 'error') return
@@ -79,7 +85,10 @@ export const test = base.extend<Options & { framevane: Framevane }>({
       },
     }
     await use(framevane)
-    if (testInfo.status !== testInfo.expectedStatus) await cur.page.screenshot({ path: testInfo.outputPath('failure.png') }).catch(() => {})
+    if (testInfo.status !== testInfo.expectedStatus) {
+      await cur.page.screenshot({ path: testInfo.outputPath('failure.png') }).catch(() => {})
+      await testInfo.attach('main-process.log', { body: mainLog.join('\n'), contentType: 'text/plain' }).catch(() => {})
+    }
     await cur.app.close().catch(() => {})
     // each test's profile, projects and exports live in a temp folder: remove it (set FRAMEVANE_KEEP_TEST_DIRS=1 to inspect)
     // best effort: a killed app's helpers can still hold files; the global teardown sweeps what's left
