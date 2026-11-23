@@ -9,6 +9,8 @@ Subject tracking reuses the video matte model at low resolution: the person mask
 from __future__ import annotations
 
 import os
+import sys
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -108,15 +110,53 @@ def _fit(w: int, h: int, cap: int) -> tuple[int, int]:
     return max(2, int(round(w * k / 2)) * 2), max(2, int(round(h * k / 2)) * 2)
 
 
+def _seconds_per_frame(rvm: Rvm, w: int, h: int, runs: int = 2) -> float:
+    """Time `rvm` on a w×h frame (after one warm-up run, which also compiles for that size); its state is reset after."""
+    frame = np.zeros([h, w, 3], np.uint8)
+    rvm.alpha(frame)
+    t = time.perf_counter()
+    for _ in range(runs):
+        rvm.alpha(frame)
+    rvm.rec = [np.zeros([1, 1, 1, 1], np.float32)] * 4
+    return (time.perf_counter() - t) / runs
+
+
+# (model, width, height) -> whether CoreML beat the CPU for it, measured once per run of the sidecar
+_coreml_wins: dict[tuple[str, int, int], bool] = {}
+
+
+def _pick_matting(model: Path, rvm: Rvm, w: int, h: int) -> tuple[Rvm, int]:
+    """The matting session and frame size for a w×h video. DirectML is a proven win on Windows. CoreML is timed against
+    the CPU first: on a real Mac it can run the graph on the GPU / Neural Engine, but on a Mac without them (a CI
+    virtual machine) or for parts of the graph it won't take, it is no faster than the CPU at full size, and the CPU
+    at the smaller size is then several times quicker."""
+    if rvm.device != "gpu":
+        return rvm, CPU_MATTE_SIDE
+    if "CoreMLExecutionProvider" not in rvm.s.get_providers():
+        return rvm, GPU_MATTE_SIDE
+    key = (str(model), w, h)
+    if key not in _coreml_wins:
+        cpu = Rvm(model, gpu=False)
+        try:
+            gpu_s = _seconds_per_frame(rvm, *_fit(w, h, GPU_MATTE_SIDE))
+        except Exception:
+            gpu_s = float("inf")
+        cpu_s = _seconds_per_frame(cpu, *_fit(w, h, CPU_MATTE_SIDE))
+        # (a CoreML run that failed mid-timing has already moved this session to the CPU, at the big size: a loss)
+        _coreml_wins[key] = rvm.device == "gpu" and gpu_s < cpu_s
+        print(f"[vision] matting {w}x{h}: CoreML {gpu_s:.3f} s/frame at {GPU_MATTE_SIDE}, CPU {cpu_s:.3f} s/frame at {CPU_MATTE_SIDE} -> {'CoreML' if _coreml_wins[key] else 'CPU'}", file=sys.stderr, flush=True)
+    return (rvm, GPU_MATTE_SIDE) if _coreml_wins[key] else (Rvm(model, gpu=False), CPU_MATTE_SIDE)
+
+
 def matte_video(model: Path, src: str, out: str, progress: Callable[[float], None], cancelled: Callable[[], bool]) -> dict[str, Any]:
     import av
 
     rvm = Rvm(model)
-    # picked once: the recurrent state is tied to the input size, so it stays the same even if the GPU drops out
-    side = GPU_MATTE_SIDE if rvm.device == "gpu" else CPU_MATTE_SIDE
     inp = av.open(src)
     try:
         vs = inp.streams.video[0]
+        # picked once: the recurrent state is tied to the input size, so it stays the same even if the GPU drops out
+        rvm, side = _pick_matting(model, rvm, vs.codec_context.width or 1920, vs.codec_context.height or 1080)
         vs.thread_type = "AUTO"
         duration = float(vs.duration * vs.time_base) if vs.duration else float(inp.duration or 0) / 1e6
         rate = float(vs.average_rate or 30)
