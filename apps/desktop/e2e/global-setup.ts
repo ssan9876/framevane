@@ -11,6 +11,8 @@ export const EDGE = join(SEED, 'edge')
 export const WEIRD_DIR = join(EDGE, 'folder with spaces & ünïcode')
 export const files = {
   talk: join(SEED, 'talk.mp4'),
+  /** The first 8 s of talk.mp4, for checks that run an AI model on every frame (CPU-only CI Macs matte ~2 fps). */
+  talkShort: join(EDGE, 'talk-8s.mp4'),
   broll: join(SEED, 'broll.mp4'),
   music: join(SEED, 'music.m4a'),
   still: join(SEED, 'still.png'),
@@ -78,6 +80,7 @@ export default function globalSetup() {
   }
   mkdirSync(WEIRD_DIR, { recursive: true })
   if (!existsSync(files.weird)) ff(['-i', files.talk, '-t', '8', '-c', 'copy', files.weird])
+  if (!existsSync(files.talkShort)) ff(['-i', files.talk, '-t', '8', '-c', 'copy', files.talkShort])
   if (!existsSync(files.avi)) ff(['-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=25:duration=6', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=6', '-c:v', 'mpeg4', '-q:v', '5', '-c:a', 'pcm_s16le', files.avi])
   if (!existsSync(files.hevc10)) ff(['-f', 'lavfi', '-i', 'testsrc2=size=1920x1080:rate=30:duration=4', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=4', '-c:v', 'libx265', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p10le', '-tag:v', 'hvc1', '-c:a', 'aac', files.hevc10])
   if (!existsSync(files.rotated)) {

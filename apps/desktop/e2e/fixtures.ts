@@ -1,7 +1,7 @@
 import { test as base, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -87,7 +87,8 @@ export const test = base.extend<Options & { framevane: Framevane }>({
     await use(framevane)
     if (testInfo.status !== testInfo.expectedStatus) {
       await cur.page.screenshot({ path: testInfo.outputPath('failure.png') }).catch(() => {})
-      await testInfo.attach('main-process.log', { body: mainLog.join('\n'), contentType: 'text/plain' }).catch(() => {})
+      // written as a file in the test's output folder (uploaded by CI): a body-only attachment lives only in reports
+      try { writeFileSync(testInfo.outputPath('main-process.log'), mainLog.join('\n')) } catch { /* best effort */ }
     }
     await cur.app.close().catch(() => {})
     // each test's profile, projects and exports live in a temp folder: remove it (set FRAMEVANE_KEEP_TEST_DIRS=1 to inspect)

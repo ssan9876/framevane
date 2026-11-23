@@ -29,7 +29,8 @@ async function seekTo(page: Page, s: number) {
 
 test.describe('M5 remove background', () => {
   test.describe('footage with nobody in it', () => {
-    test.use({ pickFiles: [files.talk] })
+    // 8 s, not 29: the matte runs on every frame, and on a CI Mac without a GPU that's ~2 fps
+    test.use({ pickFiles: [files.talkShort] })
 
     test('the matte removes the whole picture; keep-background inverts it; undo', async ({ framevane }) => {
       const { page } = framevane
@@ -148,7 +149,7 @@ test.describe('M5 model manager', () => {
 
 test.describe('M5 agent tools over MCP', () => {
   const PORT = 47900
-  test.use({ pickFiles: [files.talk], reelEnv: { FRAMEVANE_MCP_PORT: String(PORT) } })
+  test.use({ pickFiles: [files.talkShort], reelEnv: { FRAMEVANE_MCP_PORT: String(PORT) } })
 
   test('remove_background and auto_reframe', async ({ framevane }) => {
     const { page } = framevane

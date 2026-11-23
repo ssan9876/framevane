@@ -143,7 +143,8 @@ test.describe('M4 transitions', () => {
 
     await clips(page).first().click()
     await assets(page).getByRole('button', { name: 'Apply to all cuts' }).click()
-    await expect(page.getByText('Applied to 2 cuts')).toBeVisible()
+    // exact: the toast library's screen-reader announcement contains the same words
+    await expect(page.getByText('Applied to 2 cuts', { exact: true })).toBeVisible()
     await expect(timeline(page).getByRole('gridcell', { name: /Dissolve transition into the next clip/ })).toHaveCount(2)
     await assets(page).getByRole('button', { name: 'Remove' }).click()
     await expect(timeline(page).getByRole('gridcell', { name: /Dissolve transition into the next clip/ })).toHaveCount(1)
