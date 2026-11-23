@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -30,12 +30,28 @@ export const files = {
   personStill: join(SEED, 'person.png'),
   /** A 4 s vertical "post" to copy: cuts at 1.0, 2.0 and 3.2 s, a title (0–2 s), a boxed caption (2–4 s) and a tone. */
   edit: join(EDGE, 'edit-to-copy.mp4'),
+  /** Whether the post above got its on-screen text, and why not: `{ text: boolean, reason?: string }`. */
+  editInfo: join(EDGE, 'edit-to-copy.json'),
 }
 
-/** A bold system font for drawtext (Windows, macOS, Linux). */
+/** What global setup could put into edit-to-copy.mp4 (read by the template spec). */
+export function editInfo(): { text: boolean; reason?: string } {
+  try { return JSON.parse(readFileSync(files.editInfo, 'utf8')) } catch { return { text: false, reason: 'edit-to-copy.json is missing (made by an older global setup)' } }
+}
+
+/** A bold system font for drawtext (Windows, macOS, Linux). FreeType reads .ttc collections too (first face). */
+const FONT_CANDIDATES = [
+  'C:/Windows/Fonts/arialbd.ttf',
+  '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+  '/Library/Fonts/Arial Bold.ttf',
+  '/System/Library/Fonts/Supplemental/Arial.ttf',
+  '/System/Library/Fonts/Supplemental/Verdana Bold.ttf',
+  '/System/Library/Fonts/Helvetica.ttc',
+  '/System/Library/Fonts/SFNS.ttf',
+  '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+]
 function boldFont() {
-  const candidates = ['C:/Windows/Fonts/arialbd.ttf', '/System/Library/Fonts/Supplemental/Arial Bold.ttf', '/Library/Fonts/Arial Bold.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf']
-  return candidates.find((f) => existsSync(f)) ?? null
+  return FONT_CANDIDATES.find((f) => existsSync(f)) ?? null
 }
 
 const PERSON_URL = 'https://upload.wikimedia.org/wikipedia/commons/7/77/Bill_Posey_speaking%2C_2021-10-21.webm'
@@ -83,10 +99,11 @@ export default function globalSetup() {
     }
   }
   if (existsSync(files.person) && !existsSync(files.personStill)) ff(['-ss', '3', '-i', files.person, '-frames:v', '1', files.personStill])
-  if (!existsSync(files.edit)) {
+  if (!existsSync(files.edit) || !existsSync(files.editInfo)) {
     // some FFmpeg builds (Homebrew's) leave out drawtext; then the post has no text and the text checks are skipped
     const hasDrawtext = /drawtext/.test(spawnSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8' }).stdout ?? '')
     const font = hasDrawtext ? boldFont() : null
+    const info: { text: boolean; reason?: string } = font ? { text: true } : { text: false, reason: hasDrawtext ? `no font for drawtext (looked for ${FONT_CANDIDATES.join(', ')})` : 'this FFmpeg has no drawtext filter' }
     // inside a filtergraph a drive colon must be escaped (C\:/Windows/…)
     const fontArg = font ? `fontfile='${font.replace(/:/g, '\\:')}'` : ''
     const text = font
@@ -101,6 +118,17 @@ export default function globalSetup() {
       '-filter_complex', `[0][1][2][3]concat=n=4:v=1:a=0,format=yuv420p${text}[v]`,
       '-map', '[v]', '-map', '4:a', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'aac', '-shortest', files.edit,
     ])
+    // check the title really is in the pixels: the band it sits in at 0.5 s against the same band of bare testsrc2
+    if (info.text) {
+      const band = (input: string[]) => spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...input, '-vf', 'crop=1080:160:0:460,format=gray', '-frames:v', '1', '-f', 'rawvideo', 'pipe:1'], { maxBuffer: 8 << 20 }).stdout as Buffer
+      const drawn = band(['-ss', '0.5', '-i', files.edit])
+      const bare = band(['-f', 'lavfi', '-i', 'testsrc2=s=1080x1920:r=30:d=1', '-ss', '0.5'])
+      let changed = 0
+      for (let i = 0; i < Math.min(drawn.length, bare.length); i++) if (Math.abs(drawn[i]! - bare[i]!) > 60) changed++
+      if (!drawn.length || changed < 1500) Object.assign(info, { text: false, reason: `drawtext with ${font} ran but the title isn't in the frame (${changed} px changed)` })
+    }
+    if (!info.text) console.warn(`[global-setup] edit-to-copy.mp4 has no on-screen text: ${info.reason}`)
+    writeFileSync(files.editInfo, JSON.stringify(info))
   }
   if (!existsSync(files.lut1d)) writeFileSync(files.lut1d, ['LUT_1D_SIZE 2', '0 0 0', '1 1 1', ''].join('\n'))
   if (!existsSync(files.fake)) writeFileSync(files.fake, 'This is a text file wearing an .mp4 name.\n')

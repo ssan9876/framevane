@@ -4,7 +4,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { MediaClip, Project, TextClip } from '@framevane/doc'
 import { a11y, expect, test } from '../fixtures'
-import { files } from '../global-setup'
+import { editInfo, files } from '../global-setup'
 
 /**
  * Templates: copy the edit of a video (edit-to-copy.mp4: cuts at 1.0 / 2.0 / 3.2 s, a title 0–2 s, a boxed caption
@@ -67,8 +67,16 @@ test.describe('M8 templates', () => {
     const sound = doc.tracks.find((t) => t.kind === 'audio')!
     expect(sound.clips[0]).toMatchObject({ startUs: 0, durationUs: 4_000_000 })
     const texts = doc.tracks.filter((t) => t.kind === 'text').flatMap((t) => t.clips) as TextClip[]
-    if (!texts.length) test.info().annotations.push({ type: 'note', description: 'no on-screen text found (local AI or drawtext unavailable)' })
-    else {
+    // what global setup managed to draw into the post decides what OCR should find: without its text, the reader
+    // still (rightly) picks up other writing, such as testsrc2's corner timer, so "no texts" can't be the signal
+    const post = editInfo()
+    if (!post.text) {
+      // CI pins an FFmpeg with drawtext, so a post without text there is a broken fixture, not a skip
+      expect(process.env.CI ? null : 'skip', `edit-to-copy.mp4 has no on-screen text: ${post.reason}`).toBe('skip')
+      test.info().annotations.push({ type: 'note', description: `text checks skipped: ${post.reason}` })
+    } else if (!texts.length && !process.env.CI) {
+      test.info().annotations.push({ type: 'note', description: 'no on-screen text found (the local AI is unavailable here)' })
+    } else {
       const title = texts.find((t) => /POV you finally/i.test(t.text))
       const step = texts.find((t) => /Step 1/i.test(t.text))
       expect(title, JSON.stringify(texts.map((t) => t.text))).toBeTruthy()
