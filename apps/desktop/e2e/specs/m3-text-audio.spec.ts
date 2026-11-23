@@ -100,6 +100,12 @@ test.describe('M3 text', () => {
     const voice = props(page).getByRole('combobox', { name: 'Voice' })
     await expect(voice).toBeVisible({ timeout: 60_000 })
     expect(await a11y(page, 'S19 speech')).toEqual([])
+    // a fresh models folder (CI, a new Mac): download the natural voices through the app first
+    const download = props(page).getByRole('button', { name: 'Download' })
+    if (await download.isVisible()) {
+      await download.click()
+      await expect(page.getByText('Natural voices are ready').first()).toBeVisible({ timeout: 300_000 })
+    }
     await voice.click()
     await page.getByRole('option', { name: /^Heart/ }).click()
     await props(page).getByRole('button', { name: 'Generate speech' }).click()

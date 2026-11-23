@@ -1,7 +1,7 @@
 """Background removal and subject tracking.
 
-Video: Robust Video Matting (recurrent, so mattes are stable frame to frame) on the GPU through DirectML, CPU if that
-fails. The result is a grayscale matte video with the source's own timestamps, which the editor uses as alpha (the
+Video: Robust Video Matting (recurrent, so mattes are stable frame to frame) on the GPU through DirectML (Windows) or
+CoreML (Mac), CPU if that fails; on the CPU the matte is worked out at a smaller size and scaled up. The result is a grayscale matte video with the source's own timestamps, which the editor uses as alpha (the
 original file is never changed). Photos: BiRefNet lite on the CPU (its graph hangs DirectML on some drivers).
 Subject tracking reuses the video matte model at low resolution: the person mask gives where the subject is.
 """
@@ -17,20 +17,46 @@ import numpy as np
 _sessions: dict[tuple[str, bool], Any] = {}
 
 
+_GPU_PROVIDERS = ("DmlExecutionProvider", "CoreMLExecutionProvider")
+
+
+def _gpu_provider(ort: Any) -> Any:
+    """DirectML on Windows (any GPU), CoreML on a Mac (GPU / Neural Engine); None when neither is there."""
+    available = ort.get_available_providers()
+    if "DmlExecutionProvider" in available:
+        return "DmlExecutionProvider"
+    if "CoreMLExecutionProvider" in available:
+        # MLProgram runs on more of the graph than the older NeuralNetwork format; RVM's inputs change size per video
+        return ("CoreMLExecutionProvider", {"ModelFormat": "MLProgram", "MLComputeUnits": "ALL", "RequireStaticInputShapes": "0"})
+    return None
+
+
 def session(model_path: Path, gpu: bool = True):
-    """A cached ONNX Runtime session: DirectML first (any Windows GPU), CPU as the fallback."""
+    """A cached ONNX Runtime session: the GPU provider first (DirectML / CoreML), CPU as the fallback."""
     import onnxruntime as ort
 
-    gpu = gpu and os.environ.get("FRAMEVANE_FORCE_CPU") != "1" and "DmlExecutionProvider" in ort.get_available_providers()
-    key = (str(model_path), gpu)
+    provider = _gpu_provider(ort) if gpu and os.environ.get("FRAMEVANE_FORCE_CPU") != "1" else None
+    key = (str(model_path), provider is not None)
     if key not in _sessions:
-        providers = ["DmlExecutionProvider", "CPUExecutionProvider"] if gpu else ["CPUExecutionProvider"]
-        _sessions[key] = ort.InferenceSession(str(model_path), providers=providers)
+        if provider is not None:
+            try:
+                _sessions[key] = ort.InferenceSession(str(model_path), providers=[provider, "CPUExecutionProvider"])
+            except Exception:
+                # the provider can refuse the graph (CoreML and some ops): the CPU still works
+                return session(model_path, gpu=False)
+        else:
+            _sessions[key] = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
     return _sessions[key]
 
 
 def _device(s: Any) -> str:
-    return "gpu" if "DmlExecutionProvider" in s.get_providers() else "cpu"
+    return "gpu" if any(p in s.get_providers() for p in _GPU_PROVIDERS) else "cpu"
+
+
+# On the CPU the matte is worked out at this size and scaled up to the video's: the edge refiner runs at the input's
+# full size, so a 1080p frame costs about 4x a 960 px one, for edges that are only slightly softer.
+CPU_MATTE_SIDE = 960
+GPU_MATTE_SIDE = 1920
 
 
 def _rotation(frame: Any) -> int:
@@ -51,6 +77,15 @@ class Rvm:
         self.s = session(model_path, gpu)
         self.rec = [np.zeros([1, 1, 1, 1], np.float32)] * 4
         self.device = _device(self.s)
+        if self.device == "gpu":
+            # a provider can load the graph and still fail to run it (CoreML on some ops): find out before the first
+            # real frame, so the caller sizes frames for the device that will actually do the work
+            try:
+                self.alpha(np.zeros([64, 64, 3], np.uint8))
+            except Exception:
+                self.s = session(model_path, gpu=False)
+                self.device = "cpu"
+            self.rec = [np.zeros([1, 1, 1, 1], np.float32)] * 4
 
     def alpha(self, rgb: np.ndarray) -> np.ndarray:
         h, w = rgb.shape[:2]
@@ -77,6 +112,8 @@ def matte_video(model: Path, src: str, out: str, progress: Callable[[float], Non
     import av
 
     rvm = Rvm(model)
+    # picked once: the recurrent state is tied to the input size, so it stays the same even if the GPU drops out
+    side = GPU_MATTE_SIDE if rvm.device == "gpu" else CPU_MATTE_SIDE
     inp = av.open(src)
     try:
         vs = inp.streams.video[0]
@@ -103,7 +140,7 @@ def matte_video(model: Path, src: str, out: str, progress: Callable[[float], Non
                 os_.codec_context.time_base = vs.time_base
                 os_.codec_context.gop_size = 30
                 os_.options = {"crf": "17", "preset": "veryfast"}
-            cw, ch = _fit(frame.width, frame.height, 1920)
+            cw, ch = _fit(frame.width, frame.height, side)
             rgb = _upright(frame.to_ndarray(format="rgb24", width=cw, height=ch), rot)
             a = rvm.alpha(rgb)
             gray = (np.clip(a, 0, 1) * 255 + 0.5).astype(np.uint8)
