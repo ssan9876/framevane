@@ -35,6 +35,20 @@ const bar = (page: Page) => previewPixel(page, 0.06, 0.5).then((p) => p!.rgba as
 const isRed = ([r, g, b]: number[]) => r! > 120 && r! - b! > 80 && r! - g! > 60
 const isGrey = ([r, g, b]: number[]) => Math.abs(r! - g!) < 14 && Math.abs(g! - b!) < 14
 const dist = (a: number[], b: number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!)
+/** The preview's centre pixel once the playhead shows `s` seconds and the frame has stopped changing (a slow machine
+ *  can still be drawing the frame it was on when the seek landed). */
+async function settledCentre(page: Page, s: number) {
+  const tc = `00:00:${String(s).padStart(2, '0')}:00`
+  await expect(page.getByRole('img', { name: /^Preview at / })).toHaveAttribute('aria-label', `Preview at ${tc}`)
+  let prev: number[] | null = null
+  await expect.poll(async () => {
+    const now = (await previewPixel(page, 0.5, 0.5))!.rgba
+    const same = prev !== null && dist(now, prev) < 3
+    prev = now
+    return same
+  }, { intervals: [250] }).toBe(true)
+  return prev!
+}
 
 test.describe('M4 colour', () => {
   test.use({ pickFiles: [files.lut] })
@@ -116,7 +130,7 @@ test.describe('M4 transitions', () => {
     await newProjectFromFiles(page)
     await expect(clips(page)).toHaveCount(3)
     await seekSeconds(page, 29) // the cut is at 29.13 s
-    const plain = (await previewPixel(page, 0.5, 0.5))!.rgba
+    const plain = await settledCentre(page, 29)
     await clips(page).first().click()
     await assetTab(page, 'Transitions').click()
     expect(await a11y(page, 'S09 transitions')).toEqual([])
