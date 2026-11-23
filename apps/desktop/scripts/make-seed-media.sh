@@ -24,7 +24,14 @@ WAV="$OUT/talk-voice.wav"
 say "${VOICE_ARGS[@]}" --file-format=WAVE --data-format=LEI16@22050 -o "$WAV" "$TEXT"
 
 ff() { ffmpeg -hide_banner -loglevel error -y "$@"; }
-ff -f lavfi -i "testsrc2=size=1920x1080:rate=30" -i "$WAV" -shortest -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "$OUT/talk.mp4"
+# say speaks faster than the Windows voices, and the specs expect talk.mp4 to be exactly as long as the Windows one
+# (29.13 s). Stretch the whole voice track to that length, so the lines and pauses keep their proportions, then pin it.
+TALK_SECONDS=29.13
+VOICE_SECONDS="$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$WAV")"
+TEMPO="$(awk -v v="$VOICE_SECONDS" -v t="$TALK_SECONDS" 'BEGIN { printf "%.6f", v / t }')"
+ff -i "$WAV" -af "atempo=$TEMPO,apad" -t "$TALK_SECONDS" -c:a pcm_s16le "$OUT/talk-voice-fit.wav"
+mv "$OUT/talk-voice-fit.wav" "$WAV"
+ff -f lavfi -i "testsrc2=size=1920x1080:rate=30" -i "$WAV" -t "$TALK_SECONDS" -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "$OUT/talk.mp4"
 ff -f lavfi -i "gradients=size=1920x1080:rate=30:speed=0.02:duration=12" -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -movflags +faststart "$OUT/broll.mp4"
 ff -f lavfi -i "sine=frequency=220:duration=20" -f lavfi -i "sine=frequency=330:duration=20" -filter_complex "[0][1]amix=inputs=2,volume=0.25,afade=t=in:d=2,afade=t=out:st=18:d=2[a]" -map "[a]" -c:a aac -b:a 160k "$OUT/music.m4a"
 ff -f lavfi -i "gradients=size=1920x1080:c0=0x203a5c:c1=0xd07a3c:duration=1" -frames:v 1 "$OUT/still.png"

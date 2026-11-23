@@ -10,7 +10,14 @@ import { files } from '../global-setup'
 /** Milestone 3: text, fonts, text to speech, captions in/out, transcript editing, audio fades, clean-up, ducking, voiceover. */
 
 const SRT = join(tmpdir(), 'framevane-e2e-import.srt')
-const FONT = 'C:\\Windows\\Fonts\\consola.ttf'
+/** A single-face .ttf that ships with the OS, so importing it gives one known family. */
+const FONT = process.platform === 'darwin'
+  ? { path: '/System/Library/Fonts/Supplemental/Courier New.ttf', file: 'Courier New.ttf', family: 'Courier New' }
+  : { path: 'C:\\Windows\\Fonts\\consola.ttf', file: 'consola.ttf', family: 'Consolas' }
+/** The OS's own voices: SAPI voices on Windows, `say` voices on a Mac. */
+const SYSTEM_VOICE = process.platform === 'darwin'
+  ? { prefix: 'macos:', option: /^Samantha/ }
+  : { prefix: 'windows:', option: /David|Zira|Mark/ }
 writeFileSync(SRT, '1\n00:00:00,500 --> 00:00:02,000\nImported line one\n\n2\n00:00:02,500 --> 00:00:04,000\nImported line two\n')
 
 const props = (page: Page) => page.getByRole('region', { name: 'Properties' })
@@ -80,7 +87,7 @@ test.describe('M3 text', () => {
     await expect.poll(async () => Number(await props(page).getByRole('spinbutton', { name: 'Position X' }).inputValue())).toBe(0)
   })
 
-  test('text to speech: natural (Kokoro) and Windows voices land on audio tracks', async ({ framevane }) => {
+  test('text to speech: natural (Kokoro) and system voices land on audio tracks', async ({ framevane }) => {
     const { page } = framevane
     await newProjectFromFiles(page)
     await home(page)
@@ -99,7 +106,7 @@ test.describe('M3 text', () => {
     await expect(page.getByText('Speech added').first()).toBeVisible({ timeout: 120_000 })
     await expect(clips(page)).toHaveCount(3)
     await voice.click()
-    await page.getByRole('option', { name: /David|Zira|Mark/ }).first().click()
+    await page.getByRole('option', { name: SYSTEM_VOICE.option }).first().click()
     await props(page).getByRole('button', { name: 'Generate speech' }).click()
     await expect(clips(page)).toHaveCount(4, { timeout: 120_000 })
     await expect(page.getByRole('rowheader', { name: /Audio 2/ })).toBeVisible()
@@ -107,7 +114,7 @@ test.describe('M3 text', () => {
 })
 
 test.describe('M3 fonts', () => {
-  test.use({ pickFiles: [FONT] })
+  test.use({ pickFiles: [FONT.path] })
   test('import a font file and use it', async ({ framevane }) => {
     const { page } = framevane
     await openTalkProject(page)
@@ -115,9 +122,9 @@ test.describe('M3 fonts', () => {
     await assetTab(page, 'Text').click()
     await page.getByRole('button', { name: 'Add text', exact: true }).click()
     await props(page).getByRole('button', { name: 'Import a font file' }).click()
-    await expect(props(page).getByRole('combobox', { name: 'Font' })).toContainText('Consolas')
+    await expect(props(page).getByRole('combobox', { name: 'Font' })).toContainText(FONT.family)
     const custom = await page.evaluate(() => window.framevane.fonts.custom())
-    expect(custom).toEqual([expect.objectContaining({ file: 'consola.ttf', family: 'Consolas', weight: 400, style: 'normal' })])
+    expect(custom).toEqual([expect.objectContaining({ file: FONT.file, family: FONT.family, weight: 400, style: 'normal' })])
     // system fonts are listed too
     expect((await page.evaluate(() => window.framevane.fonts.system())).length).toBeGreaterThan(20)
   })
@@ -259,8 +266,9 @@ test.describe('M3 agent tools over MCP', () => {
     expect(await call('export_captions', { format: 'srt' })).toContain('Imported line two')
 
     const voices = JSON.parse(await call('list_voices')) as { id: string; ready: boolean }[]
-    const win = voices.find((v) => v.id.startsWith('windows:') && v.ready)!
-    await call('text_to_speech', { text: 'Testing one two.', voice: win.id, atSeconds: 2 })
+    const sys = voices.find((v) => v.id.startsWith(SYSTEM_VOICE.prefix) && v.ready)
+    expect(sys, `a ready ${SYSTEM_VOICE.prefix} voice in ${JSON.stringify(voices.map((v) => v.id))}`).toBeTruthy()
+    await call('text_to_speech', { text: 'Testing one two.', voice: sys!.id, atSeconds: 2 })
     await expect(page.getByRole('rowheader', { name: /Audio 1/ })).toBeVisible()
 
     const timelineJson = JSON.parse(await call('get_timeline'))
