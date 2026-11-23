@@ -101,9 +101,16 @@ export default function globalSetup() {
   if (existsSync(files.person) && !existsSync(files.personStill)) ff(['-ss', '3', '-i', files.person, '-frames:v', '1', files.personStill])
   if (!existsSync(files.edit) || !existsSync(files.editInfo)) {
     // some FFmpeg builds (Homebrew's) leave out drawtext; then the post has no text and the text checks are skipped
-    const hasDrawtext = /drawtext/.test(spawnSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8' }).stdout ?? '')
+    // (this regex once held literal backspace bytes instead of word boundaries, so it never matched and every post
+    // lost its text)
+    const filters = spawnSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8', maxBuffer: 16 << 20 })
+    const hasDrawtext = /\bdrawtext\b/.test(filters.stdout ?? '')
+    // which ffmpeg this is, for the reason below (a PATH can hold more than one)
+    const which = process.platform === 'win32' ? spawnSync('where', ['ffmpeg'], { encoding: 'utf8' }) : spawnSync('sh', ['-c', 'command -v ffmpeg'], { encoding: 'utf8' })
+    const version = spawnSync('ffmpeg', ['-hide_banner', '-version'], { encoding: 'utf8' }).stdout?.split('\n')[0] ?? '?'
+    const ffmpegId = `${(which.stdout ?? '').trim().split(/\r?\n/)[0] || 'ffmpeg'} (${version}; -filters exit ${filters.status}, ${(filters.stdout ?? '').length} chars)`
     const font = hasDrawtext ? boldFont() : null
-    const info: { text: boolean; reason?: string } = font ? { text: true } : { text: false, reason: hasDrawtext ? `no font for drawtext (looked for ${FONT_CANDIDATES.join(', ')})` : 'this FFmpeg has no drawtext filter' }
+    const info: { text: boolean; reason?: string } = font ? { text: true } : { text: false, reason: hasDrawtext ? `no font for drawtext (looked for ${FONT_CANDIDATES.join(', ')})` : `this FFmpeg has no drawtext filter: ${ffmpegId}` }
     // inside a filtergraph a drive colon must be escaped (C\:/Windows/…)
     const fontArg = font ? `fontfile='${font.replace(/:/g, '\\:')}'` : ''
     const text = font
