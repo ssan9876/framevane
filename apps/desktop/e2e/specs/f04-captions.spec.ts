@@ -22,14 +22,24 @@ test.describe('F04 auto captions', () => {
       await page.keyboard.press('Home')
       for (let i = 0; i < 45; i++) await page.keyboard.press('ArrowRight')
       await page.waitForTimeout(800)
-      const withCaption = await page.evaluate(() => {
+      // compare the caption band with the Captions track shown and hidden. The preview's size follows the window
+      // (196 px wide at the 1280x720 minimum, e.g. on a small CI screen), so count changed pixels as a share of the
+      // band, not a fixed number of white ones: at that size the letters are ~5 px tall and barely any pixel is pure white
+      const band = () => page.evaluate(() => {
         const c = document.querySelector('canvas[role="img"]') as HTMLCanvasElement
         const d = c.getContext('2d')!.getImageData(0, Math.floor(c.height * 0.76), c.width, Math.floor(c.height * 0.1)).data
-        let white = 0
-        for (let i = 0; i < d.length; i += 4) if (d[i]! > 240 && d[i + 1]! > 240 && d[i + 2]! > 240) white++
-        return white
+        return Array.from(d)
       })
-      expect(withCaption).toBeGreaterThan(200)
+      const shown = await band()
+      await page.getByRole('button', { name: 'Hide Captions' }).click()
+      await page.waitForTimeout(800)
+      const hidden = await band()
+      await page.getByRole('button', { name: 'Show Captions' }).click()
+      let changed = 0
+      for (let i = 0; i < shown.length; i += 4) {
+        if (Math.abs(shown[i]! - hidden[i]!) + Math.abs(shown[i + 1]! - hidden[i + 1]!) + Math.abs(shown[i + 2]! - hidden[i + 2]!) > 90) changed++
+      }
+      expect(changed / (shown.length / 4), `${changed} of ${shown.length / 4} band pixels changed`).toBeGreaterThan(0.02)
       // regenerate with "Replace" on: same count, not doubled
       await generate(page)
       await expect(page.getByText(/Added \d+ caption lines/).nth(1)).toBeVisible({ timeout: 60_000 }).catch(() => {})
