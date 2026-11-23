@@ -303,7 +303,7 @@ function drawTransition(ctx: Ctx2D, doc: Project, tr: ActiveTransition, visuals:
 /* ───────────────────────── text ───────────────────────── */
 
 export function fontString(style: TextStyle) {
-  return `${style.italic ? 'italic ' : ''}${style.fontWeight} ${style.fontSize}px "${style.fontFamily}", "Inter Variable", system-ui, sans-serif`
+  return `${style.italic ? 'italic ' : ''}${style.fontWeight} ${style.fontSize}px "${style.fontFamily}", "Inter Variable", system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji"`
 }
 
 interface LaidWord { idx: number; word: string; w: number }

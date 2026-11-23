@@ -9,6 +9,7 @@ import type { McpHub } from './mcp-hub'
 /**
  * Text to speech. Two local engines:
  *  - "windows": the voices built into Windows (SAPI via System.Speech). Instant, no download, robotic.
+ *  - "macos":   the voices built into macOS (`say`), including any Enhanced/Premium ones the user downloaded.
  *  - "kokoro":  natural voices from the Kokoro model in the local AI sidecar (downloaded once, ~340 MB, runs on CPU).
  * Output is a WAV in the cache, keyed by engine + voice + speed + text, so asking twice costs nothing.
  */
@@ -26,8 +27,30 @@ function ps(command: string, env: Record<string, string> = {}, timeout = 120_000
   })
 }
 
+/** `say -v '?'` lines: "Name  [spaces]  en_US    # sample sentence" (names can contain spaces and brackets). */
+export function parseSayVoices(out: string): TtsVoice[] {
+  const seen = new Set<string>()
+  return out.split(/\r?\n/).flatMap((line) => {
+    const m = /^(.+?)\s{2,}([a-z]{2,3}[_-][A-Za-z0-9]{2,})\s+#/.exec(line)
+    if (!m || seen.has(m[1]!.trim())) return []
+    const name = m[1]!.trim()
+    seen.add(name)
+    return [{ id: `macos:${name}`, engine: 'macos' as const, name, language: m[2]!.replace('_', '-'), gender: 'neutral' as const, ready: true }]
+  })
+}
+
+function say(args: string[], timeout = 120_000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('/usr/bin/say', args, { timeout, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) reject(new Error((stderr || err.message).trim().split('\n').slice(-2).join(' ')))
+      else resolve(stdout)
+    })
+  })
+}
+
 export class Tts {
   private windows: Promise<TtsVoice[]> | null = null
+  private mac: Promise<TtsVoice[]> | null = null
 
   constructor(private cacheDir: string, private hub: McpHub) {}
 
@@ -36,8 +59,9 @@ export class Tts {
       const [name, culture, gender] = line.split('\t')
       return { id: `windows:${name!.trim()}`, engine: 'windows' as const, name: name!.trim().replace(/^Microsoft /, '').replace(/ Desktop$/, ''), language: culture?.trim() ?? '', gender: (gender?.trim().toLowerCase() === 'female' ? 'female' : gender?.trim().toLowerCase() === 'male' ? 'male' : 'neutral') as TtsVoice['gender'], ready: true }
     })).catch(() => [])
+    this.mac ??= process.platform !== 'darwin' ? Promise.resolve([]) : say(['-v', '?'], 20_000).then(parseSayVoices).catch(() => [])
     const kokoro = await this.kokoroVoices()
-    return [...kokoro, ...(await this.windows)]
+    return [...kokoro, ...(await this.windows), ...(await this.mac)]
   }
 
   /** Kokoro voices (always listed; `ready` is false until the model is downloaded). */
@@ -72,6 +96,16 @@ export class Tts {
         // SAPI rate is −10…10; map speed 0.5–2 onto it
         const rate = Math.round(Math.max(-10, Math.min(10, Math.log2(speed) * 6)))
         await ps(PS_SPEAK, { FV_VOICE: voice, FV_RATE: String(rate), FV_OUT: out, FV_TEXT: textFile })
+      } finally {
+        await rm(textFile, { force: true })
+      }
+    } else if (engine === 'macos') {
+      const textFile = `${out}.txt`
+      await writeFile(textFile, clean, 'utf8')
+      try {
+        // words per minute; macOS speaks at about 185 by default
+        const rate = Math.round(185 * Math.max(0.5, Math.min(2, speed)))
+        await say(['-v', voice, '-r', String(rate), '--file-format=WAVE', '--data-format=LEI16@24000', '-o', out, '-f', textFile], 10 * 60_000)
       } finally {
         await rm(textFile, { force: true })
       }

@@ -6,7 +6,7 @@ import { BUNDLED_FONTS, loadCustomFonts } from '../engine/fonts'
 
 let systemFonts: Promise<string[]> | null = null
 
-/** Font family picker: bundled fonts, fonts you imported, then the fonts installed in Windows. */
+/** Font family picker: bundled fonts, fonts you imported, then the fonts installed on this computer. */
 export function FontPicker({ value, onChange, label = 'Font' }: { value: string; onChange: (family: string) => void; label?: string }) {
   const [custom, setCustom] = useState<CustomFont[]>([])
   const [system, setSystem] = useState<string[]>([])

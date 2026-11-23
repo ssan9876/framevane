@@ -34,6 +34,19 @@ function McpBridge() {
   return null
 }
 
+/** Settings from the keyboard (Ctrl+,) and, on a Mac, from the app menu (⌘, is the menu item's shortcut there). */
+function AppCommands() {
+  useEffect(() => {
+    const off = window.framevane.app.onMenu((cmd) => { if (cmd === 'settings') useApp.getState().openDialog('settings') })
+    const onKey = (e: KeyboardEvent) => {
+      if (window.framevane.app.platform !== 'darwin' && e.ctrlKey && e.key === ',') { e.preventDefault(); useApp.getState().openDialog('settings') }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => { off(); window.removeEventListener('keydown', onKey) }
+  }, [])
+  return null
+}
+
 export function App() {
   const route = useApp((s) => s.route)
   const dialog = useApp((s) => s.dialog)
@@ -43,6 +56,7 @@ export function App() {
       <ToastProvider>
         <ErrorToasts />
         <McpBridge />
+        <AppCommands />
         <div className="flex h-full flex-col">
           {route.name === 'home' && <Home />}
           {route.name === 'editor' && <Editor key={route.projectId} projectId={route.projectId} />}

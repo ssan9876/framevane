@@ -10,3 +10,4 @@ apps/desktop/test-results/
 *.tsbuildinfo
 apps/desktop/release/
 apps/desktop/vendor/
+.models/

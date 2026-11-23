@@ -5,6 +5,7 @@ import { useApp } from '../app/store'
 import { SHORTCUTS } from '../editor/shortcuts'
 import { ToolServers } from './ToolServers'
 import { AiModels } from '../editor/AiPanels'
+import { isMac, keys } from '../app/platform'
 
 /** S23 Settings · S24 Shortcuts · S28 Agents & tools (Claude Code connection, API key + model, MCP servers). */
 export function SettingsDialog() {
@@ -53,7 +54,7 @@ function Agents() {
       <section className="flex flex-col gap-2">
         <h3 className="text-base">Built-in agent panel (optional)</h3>
         <p className="text-sm text-muted">
-          The agent panel inside Framevane needs an Anthropic API key and is billed by Anthropic per use. Not needed if you use Claude Code above. The key is encrypted with Windows DPAPI and never written to your project files.
+          The agent panel inside Framevane needs an Anthropic API key and is billed by Anthropic per use. Not needed if you use Claude Code above. The key is encrypted with {isMac() ? 'your macOS Keychain' : 'Windows DPAPI'} and never written to your project files.
         </p>
         <div className="flex items-center gap-2 text-sm">
           Status: {s.credentialSource === 'app_key' ? <Badge tone="success">Key saved in Framevane</Badge> : s.credentialSource === 'environment' ? <Badge tone="accent">Using ANTHROPIC_API_KEY from the environment</Badge> : <Badge tone="warning">No key</Badge>}
@@ -90,7 +91,7 @@ function ConnectClaude() {
         {info.listening ? <Badge tone="success">Ready on {info.url.replace('http://', '')}</Badge> : info.enabled ? <Badge tone="danger">Not listening</Badge> : <Badge>Off</Badge>}
       </div>
       <p className="text-sm text-muted">
-        Connect your Claude Code session and ask it to edit: “cut the silences in the open project and caption it”. It uses your Claude login, edits show up here live, and Ctrl+Z undoes each one. Only programs on this computer with the token below can connect.
+        Connect your Claude Code session and ask it to edit: “cut the silences in the open project and caption it”. It uses your Claude login, edits show up here live, and {keys('Ctrl+Z')} undoes each one. Only programs on this computer with the token below can connect.
       </p>
       {info.error && <p role="alert" className="text-sm text-danger">{info.error}</p>}
       <div className="flex gap-2">

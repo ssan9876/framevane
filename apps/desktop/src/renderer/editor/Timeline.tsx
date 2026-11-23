@@ -103,7 +103,7 @@ export function Timeline() {
     if (!f) return
     const sel = useApp.getState().selection
     const unit = expandSelection(doc, [clipId])
-    if (e.shiftKey || e.ctrlKey) useApp.getState().select(sel.includes(clipId) ? sel.filter((x) => !unit.includes(x)) : [...new Set([...sel, ...unit])])
+    if (e.shiftKey || e.ctrlKey || e.metaKey) useApp.getState().select(sel.includes(clipId) ? sel.filter((x) => !unit.includes(x)) : [...new Set([...sel, ...unit])])
     else if (!sel.includes(clipId)) useApp.getState().select(unit)
     if (f.track.locked) return
     const edge = target.closest<HTMLElement>('[data-edge]')?.dataset.edge as 'l' | 'r' | undefined

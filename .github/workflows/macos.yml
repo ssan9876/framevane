@@ -1,0 +1,94 @@
+# macOS (Apple Silicon): unit tests, typecheck, the full Electron e2e suite, then the .dmg/.zip release and its smoke
+# test. Artifacts: the release, and the Playwright results when something fails.
+name: macOS
+
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: Run the e2e suite
+        type: boolean
+        default: true
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 240
+    env:
+      # the AI models (Whisper, mattes, Kokoro) are cached between runs
+      FRAMEVANE_MODELS_DIR: ${{ github.workspace }}/.models
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.11.28
+      - name: FFmpeg (for the tests; the release bundles its own)
+        run: brew install ffmpeg
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Unit tests (packages/doc)
+        run: pnpm --filter @framevane/doc test
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Build
+        working-directory: apps/desktop
+        run: node scripts/build.mjs
+
+      - name: Cache AI models
+        uses: actions/cache@v4
+        with:
+          path: .models
+          key: models-${{ hashFiles('sidecar/framevane_sidecar/models.py', 'apps/desktop/src/main/tts.ts') }}
+          restore-keys: models-
+      - name: Cache seed media
+        uses: actions/cache@v4
+        with:
+          path: replica/seed-media
+          key: seed-media-mac-${{ hashFiles('apps/desktop/scripts/make-seed-media.sh', 'apps/desktop/e2e/global-setup.ts') }}
+
+      - name: E2E (Playwright + Electron)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.e2e }}
+        working-directory: apps/desktop
+        run: npx playwright test --reporter=list,github
+      - name: Upload e2e results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-mac
+          path: apps/desktop/test-results
+          retention-days: 7
+
+      - name: Package (.dmg + .zip)
+        if: ${{ !cancelled() }}
+        working-directory: apps/desktop
+        run: node scripts/package.mjs
+      - name: Smoke-test the release
+        if: ${{ !cancelled() }}
+        working-directory: apps/desktop
+        run: node scripts/smoke-release.mjs release/Framevane-*-mac-arm64.zip
+      - name: Upload the release
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Framevane-mac-arm64
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.sha256
+          retention-days: 14

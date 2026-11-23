@@ -4,8 +4,26 @@ import { dirname, join } from 'node:path'
 
 /**
  * FFmpeg/ffprobe as child processes. Arguments are always arrays (paths with spaces are safe; nothing goes through a shell).
- * Lookup: FRAMEVANE_FFMPEG env → bundled resources/ffmpeg → PATH.
+ * Lookup: FRAMEVANE_FFMPEG env → bundled resources/ffmpeg → PATH (on a Mac also Homebrew's folders, which an app
+ * started from the Finder doesn't have on its PATH).
  */
+
+const EXE = process.platform === 'win32' ? '.exe' : ''
+
+/** Folders where command-line tools live on a Mac but that a Finder-launched app's PATH leaves out. */
+export function extraToolDirs(): string[] {
+  if (process.platform !== 'darwin') return []
+  const home = process.env.HOME ?? ''
+  return ['/opt/homebrew/bin', '/usr/local/bin', ...(home ? [`${home}/.local/bin`, `${home}/.cargo/bin`] : [])]
+}
+
+/** Add those folders to PATH once at startup, so child processes (claude, uv, ffmpeg) are found as in a terminal. */
+export function widenPath() {
+  const dirs = extraToolDirs()
+  if (!dirs.length) return
+  const cur = (process.env.PATH ?? '').split(':').filter(Boolean)
+  process.env.PATH = [...cur, ...dirs.filter((d) => !cur.includes(d))].join(':')
+}
 
 let resolved: { ffmpeg: string; ffprobe: string } | null | undefined
 
@@ -13,11 +31,12 @@ export function ffmpegPaths(): { ffmpeg: string; ffprobe: string } | null {
   if (resolved !== undefined) return resolved
   const candidates: string[] = []
   if (process.env.FRAMEVANE_FFMPEG) candidates.push(process.env.FRAMEVANE_FFMPEG)
-  if (process.resourcesPath) candidates.push(join(process.resourcesPath, 'ffmpeg', 'ffmpeg.exe'))
+  if (process.resourcesPath) candidates.push(join(process.resourcesPath, 'ffmpeg', `ffmpeg${EXE}`))
   const where = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['ffmpeg'], { encoding: 'utf8' })
   if (where.status === 0) candidates.push(...where.stdout.split(/\r?\n/).filter(Boolean))
+  candidates.push(...extraToolDirs().map((d) => join(d, 'ffmpeg')))
   for (const ff of candidates) {
-    const probe = join(dirname(ff), process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe')
+    const probe = join(dirname(ff), `ffprobe${EXE}`)
     if (existsSync(ff) && existsSync(probe)) return (resolved = { ffmpeg: ff, ffprobe: probe })
   }
   return (resolved = null)
@@ -25,8 +44,18 @@ export function ffmpegPaths(): { ffmpeg: string; ffprobe: string } | null {
 
 function need() {
   const p = ffmpegPaths()
-  if (!p) throw new Error('FFmpeg was not found. Install it or set FRAMEVANE_FFMPEG to ffmpeg.exe.')
+  if (!p) throw new Error(process.platform === 'darwin' ? 'FFmpeg was not found. Install it (brew install ffmpeg) or set FRAMEVANE_FFMPEG.' : 'FFmpeg was not found. Install it or set FRAMEVANE_FFMPEG to ffmpeg.exe.')
   return p
+}
+
+/**
+ * H.264 encoder arguments for intermediate files (reverse, mezzanine, proxy): NVIDIA's encoder when there is one, Apple's
+ * VideoToolbox on a Mac, else x264. 'master' is for files we edit from, 'proxy' for preview-only copies.
+ */
+export function h264Args(quality: 'master' | 'proxy'): string[] {
+  if (hasEncoder('h264_nvenc')) return quality === 'master' ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '18'] : ['-c:v', 'h264_nvenc', '-preset', 'p3', '-cq', '24']
+  if (process.platform === 'darwin' && hasEncoder('h264_videotoolbox')) return ['-c:v', 'h264_videotoolbox', '-q:v', quality === 'master' ? '75' : '55', '-allow_sw', '1']
+  return quality === 'master' ? ['-c:v', 'libx264', '-preset', 'fast', '-crf', '17'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24']
 }
 
 export interface RunOptions {

@@ -7,6 +7,7 @@ import { useApp } from '../app/store'
 import { addText, cutWords, exportCaptions, fillerWords, importSrt, mainTrackWords, placeAudioOps } from './actions-m3'
 import { useEditor } from './Editor'
 import { TEXT_PRESETS, type TextPreset } from './textPresets'
+import { keys, isMac } from '../app/platform'
 
 const errText = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
 
@@ -173,7 +174,7 @@ export function TranscriptEditor() {
 
   const cut = async (list: TimelineWord[], what: string) => {
     if (!list.length) return
-    if (await cutWords(list)) toast({ tone: 'success', title: `Cut ${list.length} ${what}`, description: 'Ctrl+Z puts them back.' })
+    if (await cutWords(list)) toast({ tone: 'success', title: `Cut ${list.length} ${what}`, description: `${keys('Ctrl+Z')} puts them back.` })
   }
   const click = (i: number, e: React.MouseEvent) => {
     const w = words![i]!
@@ -230,7 +231,7 @@ export function TranscriptEditor() {
           })}
         </div>
       )}
-      <p className="text-xs text-muted">Click to jump · Shift+click to select a run · Ctrl+click to pick words · Delete to cut</p>
+      <p className="text-xs text-muted">Click to jump · Shift+click to select a run · {isMac() ? '⌘-click' : 'Ctrl+click'} to pick words · Delete to cut</p>
     </section>
   )
 }

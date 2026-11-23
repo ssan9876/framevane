@@ -5,7 +5,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import type { AssetRef } from '@framevane/doc'
 import type { MediaInfo } from '../shared/api'
 import { now, uuid7, type Db } from './db'
-import { hasEncoder, parseRate, probe, runFfmpeg, type ProbeResult } from './ffmpeg'
+import { h264Args, parseRate, probe, runFfmpeg, type ProbeResult } from './ffmpeg'
 import type { JobQueue } from './jobs'
 import type { AppPaths } from './paths'
 
@@ -149,7 +149,7 @@ export class Media {
             const seg = 2_000_000
             const parts: string[] = []
             const n = Math.max(1, Math.ceil((outUs - inUs) / seg))
-            const venc = hasEncoder('h264_nvenc') ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '18'] : ['-c:v', 'libx264', '-preset', 'fast', '-crf', '17']
+            const venc = h264Args('master')
             for (let i = 0; i < n; i++) {
               const a = inUs + i * seg
               const len = Math.min(seg, outUs - a)
@@ -351,7 +351,7 @@ export class Media {
     const args = isAudio
       ? ['-i', row.path, '-vn', '-c:a', 'pcm_s16le', out]
       : ['-i', row.path, '-map', '0:v:0', '-map', '0:a:0?',
-        ...(hasEncoder('h264_nvenc') ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '18'] : ['-c:v', 'libx264', '-preset', 'fast', '-crf', '17']),
+        ...h264Args('master'),
         '-pix_fmt', 'yuv420p', '-g', '30', '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart', out]
     await runFfmpeg(args, { signal, durationUs: row.duration_us ?? undefined, onProgress: progress })
     this.db.prepare(`UPDATE media_assets SET mezzanine_path = ?, updated_at = ? WHERE id = ?`).run(out, now(), row.id)
@@ -362,7 +362,7 @@ export class Media {
     const src = this.playablePath(row.id) ?? row.path
     const portrait = (row.height ?? 0) > (row.width ?? 0)
     await runFfmpeg(['-i', src, '-map', '0:v:0', '-an', '-vf', portrait ? 'scale=-2:1280' : 'scale=1280:-2',
-      ...(hasEncoder('h264_nvenc') ? ['-c:v', 'h264_nvenc', '-preset', 'p3', '-cq', '24'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24']),
+      ...h264Args('proxy'),
       '-pix_fmt', 'yuv420p', '-g', '15', '-movflags', '+faststart', out], { signal, durationUs: row.duration_us ?? undefined, onProgress: progress })
     this.db.prepare(`UPDATE media_assets SET proxy_path = ?, updated_at = ? WHERE id = ?`).run(out, now(), row.id)
   }
@@ -421,7 +421,7 @@ async function quickHash(path: string, size: number) {
   return h.digest('hex')
 }
 
-function describe(path: string, pr: ProbeResult) {
+export function describe(path: string, pr: ProbeResult) {
   const v = pr.streams.find((s) => s.codec_type === 'video' && !s.disposition?.attached_pic)
   const a = pr.streams.find((s) => s.codec_type === 'audio')
   const ext = extname(path).toLowerCase()

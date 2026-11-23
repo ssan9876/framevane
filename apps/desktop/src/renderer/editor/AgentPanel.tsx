@@ -4,6 +4,7 @@ import { AgentComposer, AgentNote, Button, ChatMessage, EmptyState, PanelHeader,
 import { formatUs } from '@framevane/doc'
 import type { AgentSettings } from '../../shared/api'
 import { useApp, type AgentRunView } from '../app/store'
+import { keys } from '../app/platform'
 
 const SUGGESTIONS = [
   'Cut the silences and add captions',
@@ -131,7 +132,7 @@ function RunView({ run }: { run: AgentRunView }) {
           onReview={() => { useApp.setState({ reviewRunId: run.runId }); useApp.getState().openDialog('review') }}
           onDiscard={() => void window.framevane.agent.review(run.runId, [], 'reject')} />
       )}
-      {(run.status === 'applied' || run.status === 'partially_applied') && run.proposal && <AgentNote>{run.status === 'applied' ? 'Edits applied. Undo with Ctrl+Z.' : 'Some edits applied. Undo with Ctrl+Z.'}</AgentNote>}
+      {(run.status === 'applied' || run.status === 'partially_applied') && run.proposal && <AgentNote>{run.status === 'applied' ? `Edits applied. Undo with ${keys('Ctrl+Z')}.` : `Some edits applied. Undo with ${keys('Ctrl+Z')}.`}</AgentNote>}
       {run.status === 'rejected' && <AgentNote>Edits discarded.</AgentNote>}
     </>
   )

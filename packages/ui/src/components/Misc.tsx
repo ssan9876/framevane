@@ -2,10 +2,23 @@ import { useState, type ReactNode, type DragEvent } from 'react'
 import { Upload } from 'lucide-react'
 import { cn } from '../cn'
 
+const IS_MAC = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || navigator.userAgent)
+
+/**
+ * A shortcut written the Windows way ("Ctrl+Shift+Z") as this computer says it: on a Mac "⌘⇧Z" (Ctrl → ⌘, Alt → ⌥,
+ * Shift → ⇧, Delete → ⌫). Shortcuts are written once, the Windows way, and every label goes through here.
+ */
+export function shortcutLabel(keys: string): string {
+  if (!IS_MAC) return keys
+  return keys
+    .replace(/\bCtrl\+/g, '⌘').replace(/\bAlt\+/g, '⌥').replace(/\bShift\+/g, '⇧')
+    .replace(/\bCtrl\b/g, '⌘').replace(/\bDelete\b/g, '⌫')
+}
+
 export function Kbd({ children }: { children: ReactNode }) {
   return (
     <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded-xs border border-border-strong bg-surface px-1 font-mono text-[10px] leading-none text-muted">
-      {children}
+      {typeof children === 'string' ? shortcutLabel(children) : children}
     </kbd>
   )
 }

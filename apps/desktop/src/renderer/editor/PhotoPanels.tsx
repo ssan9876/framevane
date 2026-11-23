@@ -83,7 +83,7 @@ const SHAPE_ICONS: Record<ShapeKind, { icon: React.ReactNode; name: string }> = 
   star: { icon: <Star />, name: 'Star' }, line: { icon: <Minus />, name: 'Line' }, arrow: { icon: <ArrowRight />, name: 'Arrow' },
 }
 
-/** Emoji stickers, drawn with Windows' colour emoji font. */
+/** Emoji stickers, drawn with the system colour emoji font (Segoe UI Emoji, Apple Color Emoji). */
 const EMOJI: [string, string][] = [
   ['😀', 'grinning face'], ['😂', 'tears of joy'], ['😍', 'heart eyes'], ['😎', 'sunglasses'], ['🤩', 'star-struck'], ['🥳', 'party face'], ['😮', 'surprised'], ['🤔', 'thinking'],
   ['👍', 'thumbs up'], ['👏', 'clapping'], ['🙌', 'raised hands'], ['👀', 'eyes'], ['💪', 'flexed arm'], ['🙏', 'folded hands'], ['👉', 'pointing right'], ['✌️', 'victory hand'],

@@ -117,7 +117,7 @@ export interface McpExportRequest extends ExportRequest { requestId: string; pro
 
 /* ── M3: fonts, voices, audio clean-up ── */
 export interface CustomFont { file: string; family: string; weight: number; style: 'normal' | 'italic'; url: string }
-export interface TtsVoice { id: string; engine: 'windows' | 'kokoro'; name: string; language: string; gender: 'female' | 'male' | 'neutral'; ready: boolean }
+export interface TtsVoice { id: string; engine: 'windows' | 'macos' | 'kokoro'; name: string; language: string; gender: 'female' | 'male' | 'neutral'; ready: boolean }
 export type AudioPreset = 'denoise-light' | 'denoise' | 'denoise-strong' | 'enhance' | 'normalize'
 
 /* ── M2: tool providers (MCP servers), agent library, batch ── */
@@ -166,10 +166,60 @@ export type AgentDefInput = Omit<AgentDefView, 'id' | 'builtin'>
 export interface BatchItem { projectId: string; name: string; status: 'queued' | 'running' | 'applied' | 'awaiting_review' | 'no_changes' | 'failed'; runId?: string; summary?: string; error?: string }
 export interface BatchEvent { batchId: string; items: BatchItem[]; done: boolean }
 
+/* ── templates: someone else's edit as slots for your clips ── */
+export type TemplateBrowser = 'chrome' | 'edge' | 'firefox' | 'safari' | 'brave'
+export interface TemplateCreateRequest {
+  /** A video file on this computer… */
+  path?: string
+  /** …or a post link (TikTok, Instagram, YouTube Shorts…), fetched with yt-dlp. */
+  link?: string
+  /** For posts that need a signed-in account: read that browser's cookies. */
+  cookiesFrom?: TemplateBrowser | null
+  /** Read on-screen text with the local AI (default true). */
+  readText?: boolean
+  name?: string
+}
+export interface TemplateSummary {
+  id: string
+  name: string
+  createdAt: number
+  width: number
+  height: number
+  durationUs: number
+  slots: number
+  texts: number
+  hasSound: boolean
+  coverUrl: string | null
+  source: { kind: 'file' | 'link'; url?: string; title?: string; fileName?: string }
+  warnings: string[]
+}
+export interface TemplateView extends TemplateSummary {
+  fps: { num: number; den: number }
+  referenceUrl: string | null
+  soundUrl: string | null
+  slotList: { id: string; startUs: number; durationUs: number; thumbUrl: string | null }[]
+  textList: { id: string; startUs: number; durationUs: number; text: string }[]
+}
+export interface TemplateUseRequest {
+  /** Clips and photos that fill the slots in order (repeating if there are fewer than slots). */
+  files: string[]
+  /** A particular file for slot i (null = from `files`). */
+  slotFiles?: (string | null)[]
+  /** The template's sound, your clips' own sound, or both (yours quieter). Default: the template's. */
+  sound?: 'template' | 'clips' | 'both'
+  /** Keep the template's on-screen text as editable text clips (default true). */
+  keepText?: boolean
+  name?: string
+}
+
 export interface ReelApi {
   app: {
-    info(): Promise<{ version: string; userData: string; projectsDir: string; ffmpeg: string | null; sidecar: 'unknown' | 'ready' | 'starting' | 'error'; gpu?: string }>
-    pickFiles(opts: { kind: 'media' | 'image' | 'subtitle' | 'font' | 'lut' }): Promise<string[]>
+    info(): Promise<{ version: string; userData: string; projectsDir: string; ffmpeg: string | null; sidecar: 'unknown' | 'ready' | 'starting' | 'error'; gpu?: string; platform: string }>
+    pickFiles(opts: { kind: 'media' | 'image' | 'subtitle' | 'font' | 'lut' | 'video' }): Promise<string[]>
+    /** process.platform of the computer ('win32', 'darwin', …), for shortcut labels and wording. */
+    platform: string
+    /** Commands from the macOS app menu ('settings'). */
+    onMenu(cb: (cmd: string) => void): () => void
     pickFolder(): Promise<string | null>
     writeTextFile(path: string, text: string): Promise<void>
     readTextFile(path: string): Promise<string>
@@ -236,6 +286,17 @@ export interface ReelApi {
   jobs: {
     onEvent(cb: (e: JobEvent) => void): () => void
     cancel(jobId: string): Promise<void>
+  }
+  templates: {
+    list(): Promise<TemplateSummary[]>
+    get(id: string): Promise<TemplateView>
+    /** Starts the analysis; resolves with its job id right away (progress arrives as job events). */
+    create(req: TemplateCreateRequest): Promise<{ jobId: string }>
+    /** Resolves when that analysis finishes (or rejects with why it failed). */
+    wait(jobId: string): Promise<TemplateSummary>
+    rename(id: string, name: string): Promise<TemplateSummary>
+    remove(id: string): Promise<void>
+    use(id: string, req: TemplateUseRequest): Promise<{ projectId: string; filled: number; slots: number }>
   }
   analysis: {
     transcript(projectId: string, assetId: string, opts?: { language?: string; force?: boolean }): Promise<Transcript>

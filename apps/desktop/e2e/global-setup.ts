@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-/** Edge-case media for the specs (generated once, never shipped). Seed media comes from scripts/make-seed-media.ps1. */
+/** Edge-case media for the specs (generated once, never shipped). Seed media comes from scripts/make-seed-media.ps1 (.sh on a Mac). */
 export const SEED = resolve(HERE, '../../../replica/seed-media')
 export const EDGE = join(SEED, 'edge')
 export const WEIRD_DIR = join(EDGE, 'folder with spaces & ünïcode')
@@ -28,6 +28,14 @@ export const files = {
   /** 10 s of a real person (C-SPAN floor speech, public domain in the US), for background removal and reframe. */
   person: join(SEED, 'person.mp4'),
   personStill: join(SEED, 'person.png'),
+  /** A 4 s vertical "post" to copy: cuts at 1.0, 2.0 and 3.2 s, a title (0–2 s), a boxed caption (2–4 s) and a tone. */
+  edit: join(EDGE, 'edit-to-copy.mp4'),
+}
+
+/** A bold system font for drawtext (Windows, macOS, Linux). */
+function boldFont() {
+  const candidates = ['C:/Windows/Fonts/arialbd.ttf', '/System/Library/Fonts/Supplemental/Arial Bold.ttf', '/Library/Fonts/Arial Bold.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf']
+  return candidates.find((f) => existsSync(f)) ?? null
 }
 
 const PERSON_URL = 'https://upload.wikimedia.org/wikipedia/commons/7/77/Bill_Posey_speaking%2C_2021-10-21.webm'
@@ -46,8 +54,11 @@ function ff(args: string[]) {
 
 export default function globalSetup() {
   if (!existsSync(files.talk)) {
-    const r = spawnSync('pwsh', ['-NoProfile', '-File', resolve(HERE, '../scripts/make-seed-media.ps1')], { stdio: 'inherit' })
-    if (r.status !== 0) throw new Error('make-seed-media.ps1 failed')
+    // Windows voices (PowerShell) or macOS voices (say) speak the seed script
+    const r = process.platform === 'win32'
+      ? spawnSync('pwsh', ['-NoProfile', '-File', resolve(HERE, '../scripts/make-seed-media.ps1')], { stdio: 'inherit' })
+      : spawnSync('bash', [resolve(HERE, '../scripts/make-seed-media.sh')], { stdio: 'inherit' })
+    if (r.status !== 0) throw new Error('making the seed media failed')
   }
   mkdirSync(WEIRD_DIR, { recursive: true })
   if (!existsSync(files.weird)) ff(['-i', files.talk, '-t', '8', '-c', 'copy', files.weird])
@@ -72,6 +83,23 @@ export default function globalSetup() {
     }
   }
   if (existsSync(files.person) && !existsSync(files.personStill)) ff(['-ss', '3', '-i', files.person, '-frames:v', '1', files.personStill])
+  if (!existsSync(files.edit)) {
+    const font = boldFont()
+    // inside a filtergraph a drive colon must be escaped (C\:/Windows/…)
+    const fontArg = font ? `fontfile='${font.replace(/:/g, '\\:')}'` : ''
+    const text = font
+      ? `,drawtext=${fontArg}:text='POV you finally':fontcolor=white:fontsize=84:x=(w-tw)/2:y=480:enable='lt(t,2)',drawtext=${fontArg}:text='Step 1':fontcolor=black:fontsize=96:box=1:boxcolor=white:boxborderw=24:x=(w-tw)/2:y=1400:enable='gte(t,2)'`
+      : ''
+    ff([
+      '-f', 'lavfi', '-i', 'testsrc2=s=1080x1920:r=30:d=1',
+      '-f', 'lavfi', '-i', 'smptebars=s=1080x1920:r=30:d=1',
+      '-f', 'lavfi', '-i', 'color=c=0xd04020:s=1080x1920:r=30:d=1.2',
+      '-f', 'lavfi', '-i', 'rgbtestsrc=s=1080x1920:r=30:d=0.8',
+      '-f', 'lavfi', '-i', 'sine=frequency=440:duration=4',
+      '-filter_complex', `[0][1][2][3]concat=n=4:v=1:a=0,format=yuv420p${text}[v]`,
+      '-map', '[v]', '-map', '4:a', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'aac', '-shortest', files.edit,
+    ])
+  }
   if (!existsSync(files.lut1d)) writeFileSync(files.lut1d, ['LUT_1D_SIZE 2', '0 0 0', '1 1 1', ''].join('\n'))
   if (!existsSync(files.fake)) writeFileSync(files.fake, 'This is a text file wearing an .mp4 name.\n')
   // a copy we can delete to test missing media

@@ -1,14 +1,18 @@
 # Framevane
 
-A free video and photo editor for Windows, with AI agents built in. Everything runs on your own computer: no account, no watermark, no paid tiers. Claude can edit alongside you, either in the app's agent panel or from Claude Code over MCP.
+A free video and photo editor for Windows and macOS, with AI agents built in. Everything runs on your own computer: no account, no watermark, no paid tiers. Claude can edit alongside you, either in the app's agent panel or from Claude Code over MCP.
 
 ## Download
 
-Get **Framevane-x.y.z-win-x64.zip** from [Releases](../../releases), unzip it anywhere, and run `Framevane.exe`. Nothing else needs installing.
+**Windows:** get **Framevane-x.y.z-win-x64.zip** from [Releases](../../releases), unzip it anywhere, and run `Framevane.exe`. Nothing else needs installing.
+
+**macOS:** get **Framevane-x.y.z-mac-arm64.dmg**, open it and drag Framevane into Applications. The app isn't notarized by Apple yet, so the first time you open it macOS blocks it: go to **System Settings → Privacy & Security** and click **Open Anyway** (or run `xattr -dr com.apple.quarantine /Applications/Framevane.app` in Terminal).
 
 - Windows 10 or 11, 64-bit. A graphics card is used when there is one (NVIDIA, AMD or Intel), but isn't required.
+- macOS 14 (Sonoma) or later on Apple Silicon (M1 or newer). Intel Macs aren't supported: the local AI's runtime has no Intel Mac build. On a Mac the local AI runs on the CPU.
 - The local AI (captions, voices, background removal, auto reframe) sets itself up the first time you use it. It downloads its Python packages (about 1.5 GB) and each model once. **Settings → AI models** shows and manages them.
 - The app isn't code-signed yet, so Windows SmartScreen may warn on first launch: **More info → Run anyway**.
+- Shortcuts are listed the Windows way in places; on a Mac, Ctrl is ⌘.
 
 ## What it does
 
@@ -22,6 +26,13 @@ Get **Framevane-x.y.z-win-x64.zip** from [Releases](../../releases), unzip it an
 - Audio: fades, noise reduction, voice enhancement, loudness, ducking under speech, voiceover recording, text to speech (Kokoro and Windows voices).
 - Export to MP4, MOV or WebM (H.264, HEVC, AV1, VP9) up to 4K60, plus GIF, audio only (MP3, M4A, WAV) and still frames, with ranges and custom bitrate.
 
+**Templates (copy an edit)**
+- Drop in a TikTok, Reel or Short you saved, or paste its link (Framevane fetches public posts with [yt-dlp](https://github.com/yt-dlp/yt-dlp); for posts that need an account it can use your browser's sign-in).
+- Framevane finds every cut, so each shot becomes a slot with the same timing. It reads the on-screen text with local OCR (position, size, colour, text boxes) and keeps the sound.
+- Templates stay in a library on the home screen. **Use** one, drop your clips in, and you get a normal project: your clips are cut to the original's timing and scaled to fill the frame, with the template's sound and editable text. Clips that are too short are slowed down to fit, and fewer clips than slots repeat.
+- Claude Code can do the same over MCP: `make_template`, `list_templates`, `use_template`.
+- Only use videos you have permission to reuse.
+
 **Photo**
 - Layers: images, text, shapes and emoji stickers; reorder, hide, lock.
 - Crop, resize, rotate and flip; filters and colour; background removal.
@@ -34,7 +45,7 @@ Get **Framevane-x.y.z-win-x64.zip** from [Releases](../../releases), unzip it an
 
 ## Build from source
 
-Requirements: Node 24, pnpm 9, [uv](https://docs.astral.sh/uv/), and FFmpeg on `PATH` for development.
+Requirements: Node 24, pnpm 9, [uv](https://docs.astral.sh/uv/), and FFmpeg on `PATH` for development (on a Mac: `brew install node pnpm uv ffmpeg`).
 
 ```bash
 pnpm install
@@ -43,13 +54,16 @@ node scripts/build.mjs        # build main, preload and renderer
 pnpm start                    # run the app
 npx playwright test           # end-to-end tests (Electron)
 cd ../../packages/doc && npx vitest run   # unit tests
-cd apps/desktop && node scripts/package.mjs   # release zip in apps/desktop/release/
+cd apps/desktop && node scripts/package.mjs   # release for this OS in apps/desktop/release/ (Windows zip, or Mac .dmg + .zip)
 ```
+
+CI: `.github/workflows/macos.yml` runs the unit tests, the e2e suite and the Mac packaging on GitHub's Apple Silicon runners, and uploads the .dmg.
 
 Layout: `apps/desktop` (Electron app), `packages/doc` (the project document, ops, timeline maths), `packages/ui` (design system), `sidecar` (local AI over MCP, Python via uv), `replica/` (planning and test docs).
 
 ## Third-party software
 
-- The release bundles **FFmpeg** (a GPL build; its licence and source pointers are in `resources/ffmpeg`) and **uv** (Apache-2.0 / MIT).
+- The release bundles **FFmpeg** (GPL builds: [BtbN](https://github.com/BtbN/FFmpeg-Builds) on Windows, [Martin Riedl](https://ffmpeg.martin-riedl.de) on macOS; licence and source pointers are in `resources/ffmpeg`) and **uv** (Apache-2.0 / MIT).
+- Templates read on-screen text with [RapidOCR](https://github.com/RapidAI/RapidOCR) (Apache-2.0; PaddleOCR models) and fetch links with yt-dlp (Unlicense), both installed by uv when first used.
 - AI models are downloaded on first use, not bundled: Whisper large-v3 turbo (MIT), Kokoro (Apache-2.0), BiRefNet (MIT), and Robust Video Matting (**GPL-3.0**).
 - Fonts bundled from Fontsource are under the SIL Open Font License or Apache-2.0.

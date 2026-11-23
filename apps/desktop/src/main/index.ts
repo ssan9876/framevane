@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, webContents } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, webContents, type MenuItemConstructorOptions } from 'electron'
 import { mkdir, open as fsOpen, readFile, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AgentDefInput, AudioPreset, AgentEvent, BatchEvent, DocEvent, ExternalActivity, JobEvent, MediaInfo, ProviderInput, ToolPermission } from '../shared/api'
@@ -9,7 +9,7 @@ import { ToolRegistry } from './tool-registry'
 import { EditorMcp, type UiState } from './editor-mcp'
 import { Analysis } from './analysis'
 import { openDb, uuid7 } from './db'
-import { ffmpegPaths, runFfmpeg } from './ffmpeg'
+import { ffmpegPaths, runFfmpeg, widenPath } from './ffmpeg'
 import { JobQueue } from './jobs'
 import { defaultSidecarDir, McpHub } from './mcp-hub'
 import { Media } from './media'
@@ -23,8 +23,12 @@ import { createPhotoProject } from './photo'
 import type { Follow, ReframeRatio } from '@framevane/doc'
 import { Tts } from './tts'
 import { handleMediaProtocol, registerSchemePrivileges } from './protocol'
+import { Templates } from './templates'
+import type { TemplateCreateRequest, TemplateSummary, TemplateUseRequest } from '../shared/api'
 
 app.setName('Framevane')
+// a Mac app started from the Finder gets a bare PATH; add Homebrew's and ~/.local/bin so claude, uv and ffmpeg are found
+widenPath()
 // isolated profiles for tests and side-by-side dev
 if (process.env.FRAMEVANE_USER_DATA) app.setPath('userData', process.env.FRAMEVANE_USER_DATA)
 registerSchemePrivileges()
@@ -63,7 +67,8 @@ async function main() {
   const storage = new Storage(db, paths, hub)
   const ai = new Ai(hub, media, jobs, paths, (assetId: string) => broadcast('ai:matte', assetId))
   const tts = new Tts(paths.cacheDir, hub)
-  handleMediaProtocol(media, fonts, ai)
+  const templates = new Templates(join(paths.userData, 'templates'), jobs, hub, media, projects)
+  handleMediaProtocol(media, fonts, ai, templates)
 
   /* ── Framevane as an MCP server (Claude Code connects here) ── */
   let ui: UiState = { projectId: null, playheadUs: 0, selection: [] }
@@ -84,7 +89,7 @@ async function main() {
   agent.luts = luts
   agent.ai = ai
   const editorMcp = new EditorMcp({
-    db, projects, media, analysis, tts, luts, ai,
+    db, projects, media, analysis, tts, luts, ai, templates,
     emitActivity: (a: ExternalActivity) => broadcast('mcp:activity', a),
     ui: () => ui,
     openInUi: async (projectId) => {
@@ -108,9 +113,9 @@ async function main() {
   /* ── app ── */
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(), userData: paths.userData, projectsDir: paths.projectsDir,
-    ffmpeg: ffmpegPaths()?.ffmpeg ?? null, sidecar: hub.sidecarStatus,
+    ffmpeg: ffmpegPaths()?.ffmpeg ?? null, sidecar: hub.sidecarStatus, platform: process.platform,
   }))
-  ipcMain.handle('app:pickFiles', async (e, opts: { kind: 'media' | 'image' | 'subtitle' | 'font' | 'lut' }) => {
+  ipcMain.handle('app:pickFiles', async (e, opts: { kind: 'media' | 'image' | 'subtitle' | 'font' | 'lut' | 'video' }) => {
     // test hook: e2e runs can't click native dialogs
     if (process.env.FRAMEVANE_TEST_PICK_FILES) return process.env.FRAMEVANE_TEST_PICK_FILES.split(';').filter(Boolean)
     const win = BrowserWindow.fromWebContents(e.sender)!
@@ -124,6 +129,8 @@ async function main() {
         ? [{ name: '3D LUTs', extensions: ['cube'] }]
         : opts.kind === 'font'
         ? [{ name: 'Fonts', extensions: ['ttf', 'otf', 'woff', 'woff2'] }]
+        : opts.kind === 'video'
+        ? [{ name: 'Videos', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi'] }]
         : [{ name: 'Media', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi', 'mts', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'png', 'jpg', 'jpeg', 'webp', 'gif'] }, { name: 'All files', extensions: ['*'] }],
     })
     return r.canceled ? [] : r.filePaths
@@ -197,6 +204,21 @@ async function main() {
   ipcMain.handle('doc:apply', (_e, id: string, base: number, ops: unknown[]) => projects.apply(id, base, ops as never))
   ipcMain.handle('doc:undo', (_e, id: string) => projects.undo(id))
   ipcMain.handle('doc:redo', (_e, id: string) => projects.redo(id))
+
+  /* ── templates ── */
+  const templateJobs = new Map<string, Promise<TemplateSummary>>()
+  ipcMain.handle('templates:list', () => templates.list())
+  ipcMain.handle('templates:get', (_e, id: string) => templates.get(id))
+  ipcMain.handle('templates:create', (_e, req: TemplateCreateRequest) => {
+    const { jobId, done } = templates.create(req)
+    templateJobs.set(jobId, done)
+    done.catch(() => {}).finally(() => setTimeout(() => templateJobs.delete(jobId), 60_000))
+    return { jobId }
+  })
+  ipcMain.handle('templates:wait', (_e, jobId: string) => templateJobs.get(jobId) ?? Promise.reject(new Error('That analysis is no longer running.')))
+  ipcMain.handle('templates:rename', (_e, id: string, name: string) => templates.rename(id, name))
+  ipcMain.handle('templates:remove', (_e, id: string) => templates.remove(id))
+  ipcMain.handle('templates:use', (_e, id: string, req: TemplateUseRequest) => templates.use(id, req))
 
   /* ── media, jobs, analysis ── */
   ipcMain.handle('media:import', (_e, projectId: string, files: string[]) => media.import(projectId, files))
@@ -304,9 +326,30 @@ async function main() {
   ipcMain.handle('tools:setToolPermission', (_e, id: string, tool: string, p: ToolPermission) => registry.setToolPermission(id, tool, p))
   ipcMain.handle('tools:setToolCostsMoney', (_e, id: string, tool: string, on: boolean) => registry.setToolCostsMoney(id, tool, on))
 
+  if (process.platform === 'darwin') Menu.setApplicationMenu(macMenu())
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
   app.on('before-quit', () => { projects.closeAll(); void hub.closeAll(); void editorMcp.stop() })
+}
+
+/**
+ * The macOS menu bar. Edit uses the standard roles so ⌘C/⌘V/⌘Z work in text fields; in the timeline the editor's own
+ * shortcuts run first (the page handles the key before the menu does), so ⌘Z there is Framevane's undo.
+ */
+function macMenu() {
+  const send = (cmd: string) => () => BrowserWindow.getFocusedWindow()?.webContents.send('menu:command', cmd)
+  const template: MenuItemConstructorOptions[] = [
+    { label: 'Framevane', submenu: [
+      { role: 'about' }, { type: 'separator' },
+      { label: 'Settings…', accelerator: 'Cmd+,', click: send('settings') }, { type: 'separator' },
+      { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' },
+    ] },
+    { role: 'editMenu' },
+    { label: 'View', submenu: [{ role: 'togglefullscreen' }, ...(isDev || process.env.FRAMEVANE_DEVTOOLS === '1' ? [{ type: 'separator' as const }, { role: 'reload' as const }, { role: 'toggleDevTools' as const }] : [])] },
+    { role: 'windowMenu' },
+    { role: 'help', submenu: [{ label: 'Framevane on GitHub', click: () => void shell.openExternal('https://github.com/ssan9876/framevane') }] },
+  ]
+  return Menu.buildFromTemplate(template)
 }
 
 function createWindow() {

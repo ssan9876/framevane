@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useState, type ReactNode } from
 import { Tooltip as RTooltip, Dialog as RDialog, Popover as RPopover, ContextMenu as RContextMenu, DropdownMenu as RDropdown, Toast as RToast } from 'radix-ui'
 import { X, CheckCircle2, AlertTriangle, Info, XCircle } from 'lucide-react'
 import { cn } from '../cn'
-import { Kbd } from './Misc'
+import { Kbd, shortcutLabel } from './Misc'
 
 const popSurface = 'z-[var(--fv-z-popover)] rounded-md bg-surface-2 shadow-pop animate-[framevane-pop-in_var(--fv-dur-fast)_var(--fv-ease)]'
 
@@ -106,7 +106,7 @@ function renderItems(Item: typeof RContextMenu.Item, Sep: typeof RContextMenu.Se
       <Item className={cn(itemCls, it.danger && 'text-danger')} disabled={it.disabled} onSelect={it.onSelect}>
         {it.icon}
         <span className="flex-1">{it.label}</span>
-        {it.shortcut && <span className="text-xs text-muted">{it.shortcut}</span>}
+        {it.shortcut && <span className="text-xs text-muted">{shortcutLabel(it.shortcut)}</span>}
       </Item>
     </div>
   ))

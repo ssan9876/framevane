@@ -3,6 +3,7 @@ import { Button, Checkbox, Dialog, OpRow, useToast } from '@framevane/ui'
 import { formatUs, projectDurationUs, type Project } from '@framevane/doc'
 import { useApp } from '../app/store'
 import { Player } from '../engine/player'
+import { keys } from '../app/platform'
 
 /** S29 · Review the agent's proposed edits: include/exclude each one, preview the result, apply or discard. */
 export function ReviewDialog() {
@@ -35,7 +36,7 @@ export function ReviewDialog() {
     const r = await window.framevane.agent.review(runId, [...included], 'apply')
     setBusy(false)
     if (r.ok) {
-      toast({ tone: 'success', title: `Applied ${r.applied} edit${r.applied === 1 ? '' : 's'}`, description: r.conflicted ? `${r.conflicted} no longer fit the timeline and were skipped.` : 'Undo with Ctrl+Z.', action: { label: 'Undo', onClick: () => void window.framevane.doc.undo(doc.id) } })
+      toast({ tone: 'success', title: `Applied ${r.applied} edit${r.applied === 1 ? '' : 's'}`, description: r.conflicted ? `${r.conflicted} no longer fit the timeline and were skipped.` : `Undo with ${keys('Ctrl+Z')}.`, action: { label: 'Undo', onClick: () => void window.framevane.doc.undo(doc.id) } })
       close()
     } else if (r.conflicted) {
       setConflict(r.message ?? 'The timeline changed after the agent started.')

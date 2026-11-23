@@ -304,6 +304,25 @@ async def track_subject(path: str, ctx: Context, start: float = 0.0, end: float 
     return await _threaded(ctx, work, "Finding the subject")
 
 
+_ocr_lock = threading.Lock()
+
+
+@mcp.tool()
+async def read_text(path: str, times: list[float], ctx: Context, max_side: int = 1280, min_score: float = 0.6) -> dict:
+    """Read the on-screen text in a video at the given times (source seconds). Returns {width, height, samples: [{t,
+    items: [{text, score, box: [x0, y0, x1, y1] (0..1 of the upright frame), color, background}]}]}; background is the
+    colour of a solid box behind the line, or null."""
+    if not Path(path).is_file():
+        raise ValueError(f"File not found: {path}")
+    from . import ocr
+
+    def work(progress: Callable[[float], None], cancelled: Callable[[], bool]) -> dict:
+        with _ocr_lock:
+            return ocr.read_text(path, times[:2000], max(320, min(2048, max_side)), min_score, progress, cancelled)
+
+    return await _threaded(ctx, work, "Reading on-screen text")
+
+
 def main() -> None:
     log(f"starting (models in {MODELS_DIR})")
     mcp.run("stdio")
