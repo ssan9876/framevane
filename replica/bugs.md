@@ -13,6 +13,7 @@ Only reproduced bugs are listed. Each one has a test that failed before the fix 
 | BUG-006 | S3 | Tabs in Settings and the inspector point aria-controls at panels that don't exist | fixed in 16aa598 |
 | BUG-007 | S3 | Inspector slider thumbs have no accessible name | fixed in 16aa598 |
 | BUG-008 | S4 | Home requests project covers before their thumbnails exist (404) | fixed in 16aa598 |
+| BUG-015 | S4 | Clearing thumbnails while a clip is being prepared records a deleted thumbnail (404) | fixed on feat/templates-and-macos |
 | BUG-014 | S3 | Auto reframe frames the gap between two people instead of the speaker | fixed in M5 (before release) |
 | BUG-013 | S2 | Chroma key leaves a real green screen in place at the default settings | fixed in M4 (before release) |
 | BUG-012 | S3 | Agent library tool checkboxes are too small and too close together to hit reliably (WCAG 2.5.8) | fixed in M3 |
@@ -187,6 +188,22 @@ Evidence: found while building M1. The on-canvas drag sends x then y, and x came
 Suspected cause: zod's `.partial()` keeps field defaults, so a patch `{y: 100}` parsed to `{x: 0, y: 100, scale: 1, …}`.
 Fix: `patchOf()` builds patch schemas without defaults. It's used for transform and caption-style patches, and covered by two regression tests.
 Status: fixed in b26aae5
+
+---
+
+### BUG-015: Clearing thumbnails while a clip is being prepared records a deleted thumbnail (404)
+- Severity: S4 (a missing thumbnail and a console error; it comes back after the project is reopened)
+- Build: v0.1.0; found on macOS CI (Apple Silicon runner), where preparing is slower
+
+Steps
+1. Import talk.mp4 into a new project and, while it is still being prepared, Settings → Performance → Clear "Thumbnails and waveforms".
+
+Expected: the cache is empty and the thumbnail is made again later.
+Actual: the media card asks for `framevane-media://thumb/<id>` and gets a 404.
+Evidence: m6-export-settings.spec.ts › projects folder, AI device…, caches with sizes and clearing (it clears as soon as the poster exists).
+Cause: making thumbnails is two FFmpeg steps (poster, then filmstrip) and the path is stored at the end. A clear in between deleted the poster, the filmstrip was written after it, and the job stored the deleted poster's path.
+Fix: previews (thumbnails and waveform peaks) are stored only if all their files still exist, checked and written synchronously so a clear can't land in between; leftovers are removed and made again the next time the media is listed.
+Status: fix committed; waiting on the macOS CI run to confirm
 
 ---
 
