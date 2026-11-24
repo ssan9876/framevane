@@ -1,4 +1,4 @@
-import { rmSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { clips, expect, isBlank, newProjectFromFiles, previewPixel, projectDuration, test } from '../fixtures'
 import { EDGE, files } from '../global-setup'
@@ -96,6 +96,23 @@ test.describe('F01 create a project and import media', () => {
       await newProjectFromFiles(page)
       await expect(clips(page)).toHaveCount(1)
       await expect.poll(async () => isBlank(await previewPixel(page)), { timeout: 20_000 }).toBe(false)
+    })
+  })
+
+  test.describe('HEVC on a PC that cannot decode it', () => {
+    // as if WebCodecs had no HEVC (Windows without hardware HEVC decoding): the file gets a playable H.264 copy
+    test.use({ pickFiles: [files.hevc10], reelEnv: { FRAMEVANE_TEST_UNDECODABLE: 'hevc' } })
+    test('F01-E11 HEVC still previews, through a converted copy', async ({ framevane }) => {
+      const { page } = framevane
+      await newProjectFromFiles(page)
+      await expect(clips(page)).toHaveCount(1)
+      await expect.poll(async () => isBlank(await previewPixel(page)), { timeout: 60_000 }).toBe(false)
+      // the preview works on this PC either way; the converted copy existing is what shows the fallback ran
+      const assetId = await page.evaluate(async () => {
+        const id = (await window.framevane.projects.list())[0]!.id
+        return (await window.framevane.media.list(id))[0]!.asset.id
+      })
+      expect(existsSync(join(framevane.root, 'userdata', 'cache', 'mezzanine', `${assetId}.mp4`))).toBe(true)
     })
   })
 

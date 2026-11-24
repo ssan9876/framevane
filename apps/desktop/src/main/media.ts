@@ -52,6 +52,23 @@ export class Media {
   constructor(private db: Db, private paths: AppPaths, private jobs: JobQueue, private notify: (projectId: string, m: MediaInfo) => void) {}
 
   /**
+   * Video codecs this PC's WebCodecs can't decode after all, as the renderer measured them at startup. The codec list
+   * above is what Chromium supports in general; HEVC in particular needs hardware decoding on Windows, so on a PC
+   * without it an HEVC file imported with a blank preview and no mezzanine. Those files now get a mezzanine.
+   */
+  private undecodable = new Set<string>()
+  setUndecodable(codecs: string[]) {
+    // tests can add codecs, to check the fallback on a PC that can decode them (FRAMEVANE_TEST_UNDECODABLE=hevc,...)
+    const forced = (process.env.FRAMEVANE_TEST_UNDECODABLE ?? '').split(',').filter(Boolean)
+    this.undecodable = new Set([...codecs, ...forced])
+  }
+
+  /** Whether the renderer can decode the original (else it plays the mezzanine). */
+  private playable(r: AssetRow): boolean {
+    return !!r.webcodecs_ok && !(r.video_codec && this.undecodable.has(r.video_codec))
+  }
+
+  /**
    * Download a media file from an http(s) URL into the cache (for agents that get a link back from a generation
    * service). Only video, audio and image responses are kept, up to 2 GB.
    */
@@ -117,7 +134,7 @@ export class Media {
   playablePath(assetId: string): string | null {
     const r = this.get(assetId)
     if (!r) return null
-    return r.webcodecs_ok ? r.path : r.mezzanine_path
+    return this.playable(r) ? r.path : r.mezzanine_path
   }
 
   /** Low-resolution stand-in for preview (never used for export). */
@@ -277,7 +294,7 @@ export class Media {
 
   private prepare(projectId: string, row: AssetRow) {
     if (row.status === 'unsupported') return
-    const needMezz = !row.webcodecs_ok && !row.mezzanine_path && row.kind !== 'image'
+    const needMezz = !this.playable(row) && !row.mezzanine_path && row.kind !== 'image'
     const needThumbs = !row.thumbs_path && row.kind !== 'audio'
     const needPeaks = !row.waveform_path && (row.has_audio === 1 || row.kind === 'audio')
     const needProxy = row.kind === 'video' && !row.proxy_path && Math.max(row.width ?? 0, row.height ?? 0) > PROXY_ABOVE
@@ -405,7 +422,7 @@ export class Media {
       hasVideo: r.kind === 'video' || r.kind === 'image',
       hasAudio: r.has_audio === 1,
     }
-    const ready = r.status === 'ok' && (r.webcodecs_ok === 1 || !!r.mezzanine_path || r.kind === 'image')
+    const ready = r.status === 'ok' && (this.playable(r) || !!r.mezzanine_path || r.kind === 'image')
     return {
       asset,
       hasProxy: !!(r.proxy_path && existsSync(r.proxy_path)),

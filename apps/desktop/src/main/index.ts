@@ -227,6 +227,7 @@ async function main() {
   ipcMain.handle('media:relink', (_e, projectId: string, assetId: string, newPath: string) => media.relink(projectId, assetId, newPath))
   ipcMain.handle('media:processAudio', (_e, projectId: string, assetId: string, preset: AudioPreset) => media.processAudio(projectId, assetId, preset))
   ipcMain.handle('media:saveRecording', (_e, projectId: string, data: Uint8Array) => media.saveRecording(projectId, data, projects.dirOf(projectId)))
+  ipcMain.handle('media:setUndecodable', (_e, codecs: unknown) => media.setUndecodable(Array.isArray(codecs) ? codecs.filter((c): c is string => typeof c === 'string') : []))
   ipcMain.handle('ai:models', () => ai.models())
   ipcMain.handle('ai:installModel', (_e, id: string) => ai.installModel(id))
   ipcMain.handle('ai:removeModel', (_e, id: string) => ai.removeModel(id))

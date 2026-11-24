@@ -47,10 +47,34 @@ function AppCommands() {
   return null
 }
 
+/**
+ * Which video codecs this PC's WebCodecs can actually decode (HEVC needs hardware decoding on Windows, for one). If
+ * any listed profile fails, the codec counts as undecodable and its files get a mezzanine. HEVC is checked at 8 and
+ * 10 bits (phones record 10-bit HEVC); VP9 and AV1 at 8 bits only, so a PC without 10-bit support for those doesn't
+ * convert every ordinary file. Keys are ffprobe's codec names.
+ */
+const DECODE_CHECKS: Record<string, string[]> = {
+  h264: ['avc1.640028'],
+  hevc: ['hvc1.1.6.L120.B0', 'hvc1.2.4.L120.B0'],
+  vp9: ['vp09.00.40.08'],
+  av1: ['av01.0.08M.08'],
+  vp8: ['vp8'],
+}
+async function reportUndecodable() {
+  const undecodable: string[] = []
+  for (const [codec, strings] of Object.entries(DECODE_CHECKS)) {
+    const ok = await Promise.all(strings.map((s) => VideoDecoder.isConfigSupported({ codec: s, codedWidth: 1920, codedHeight: 1080 }).then((r) => !!r.supported).catch(() => false)))
+    if (ok.includes(false)) undecodable.push(codec)
+  }
+  if (undecodable.length) console.info(`[media] this PC can't decode ${undecodable.join(', ')} in the preview; those files get a playable copy`)
+  await window.framevane.media.setUndecodable(undecodable)
+}
+
 export function App() {
   const route = useApp((s) => s.route)
   const dialog = useApp((s) => s.dialog)
   useEffect(() => connectEvents(), [])
+  useEffect(() => { void reportUndecodable().catch(() => {}) }, [])
   return (
     <TooltipProvider>
       <ToastProvider>

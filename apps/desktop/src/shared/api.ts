@@ -251,6 +251,8 @@ export interface ReelApi {
     processAudio(projectId: string, assetId: string, preset: AudioPreset): Promise<MediaInfo>
     /** A voiceover recorded in the window (WebM/Opus bytes), saved with the project and imported. */
     saveRecording(projectId: string, data: Uint8Array): Promise<MediaInfo>
+    /** Video codecs (ffprobe names) this PC's WebCodecs can't decode, measured by the renderer at startup. */
+    setUndecodable(codecs: string[]): Promise<void>
     onChange(cb: (m: MediaInfo) => void): () => void
   }
   ai: {

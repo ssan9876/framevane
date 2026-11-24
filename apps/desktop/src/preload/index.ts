@@ -45,6 +45,7 @@ const api = {
     relink: inv('media:relink') as ReelApi['media']['relink'],
     processAudio: inv('media:processAudio') as ReelApi['media']['processAudio'],
     saveRecording: inv('media:saveRecording') as ReelApi['media']['saveRecording'],
+    setUndecodable: inv('media:setUndecodable') as ReelApi['media']['setUndecodable'],
     onChange: on('media:change'),
   },
   ai: {

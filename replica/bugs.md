@@ -13,6 +13,7 @@ Only reproduced bugs are listed. Each one has a test that failed before the fix 
 | BUG-006 | S3 | Tabs in Settings and the inspector point aria-controls at panels that don't exist | fixed in 16aa598 |
 | BUG-007 | S3 | Inspector slider thumbs have no accessible name | fixed in 16aa598 |
 | BUG-008 | S4 | Home requests project covers before their thumbnails exist (404) | fixed in 16aa598 |
+| BUG-017 | S2 | HEVC footage shows a blank preview on PCs without HEVC decoding | fixed on feat/templates-and-macos |
 | BUG-016 | S2 | Reverse, proxies and legacy-format conversion fail on PCs without an NVIDIA GPU | fixed on feat/templates-and-macos |
 | BUG-015 | S4 | Clearing thumbnails while a clip is being prepared records a deleted thumbnail (404) | fixed on feat/templates-and-macos |
 | BUG-014 | S3 | Auto reframe frames the gap between two people instead of the speaker | fixed in M5 (before release) |
@@ -189,6 +190,22 @@ Evidence: found while building M1. The on-canvas drag sends x then y, and x came
 Suspected cause: zod's `.partial()` keeps field defaults, so a patch `{y: 100}` parsed to `{x: 0, y: 100, scale: 1, …}`.
 Fix: `patchOf()` builds patch schemas without defaults. It's used for transform and caption-style patches, and covered by two regression tests.
 Status: fixed in b26aae5
+
+---
+
+### BUG-017: HEVC footage shows a blank preview on PCs without HEVC decoding
+- Severity: S2 (common phone footage can't be previewed or edited by eye; no workaround in the UI)
+- Build: v0.1.0; found on the GPU-less Windows CI runner (windows-2025)
+
+Steps
+1. On a Windows PC without hardware HEVC decoding, import an HEVC video (e.g. 10-bit from a phone).
+
+Expected: the clip previews (from a playable copy if need be).
+Actual: the preview stays black; no copy is made.
+Evidence: f01-import.spec.ts › F01-E4 HEVC 10-bit decodes in the preview (Windows CI run 45329315204).
+Cause: whether the renderer can decode a file came from a fixed codec list in media.ts (h264, hevc, vp9, av1, vp8). Chromium on Windows decodes HEVC only with hardware support, so the list was wrong there.
+Fix: at startup the renderer asks WebCodecs (`VideoDecoder.isConfigSupported`, HEVC at 8 and 10 bits) and reports codecs it can't decode; those files get the H.264 mezzanine like other unsupported formats. New test F01-E11 forces HEVC off (FRAMEVANE_TEST_UNDECODABLE) and checks the copy is made and previews.
+Status: fix committed; waiting on CI
 
 ---
 
