@@ -53,8 +53,8 @@ function need() {
  * VideoToolbox on a Mac, else x264. 'master' is for files we edit from, 'proxy' for preview-only copies.
  */
 export function h264Args(quality: 'master' | 'proxy'): string[] {
-  if (hasEncoder('h264_nvenc')) return quality === 'master' ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '18'] : ['-c:v', 'h264_nvenc', '-preset', 'p3', '-cq', '24']
-  if (process.platform === 'darwin' && hasEncoder('h264_videotoolbox')) return ['-c:v', 'h264_videotoolbox', '-q:v', quality === 'master' ? '75' : '55', '-allow_sw', '1']
+  if (encoderWorks('h264_nvenc')) return quality === 'master' ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '18'] : ['-c:v', 'h264_nvenc', '-preset', 'p3', '-cq', '24']
+  if (process.platform === 'darwin' && encoderWorks('h264_videotoolbox')) return ['-c:v', 'h264_videotoolbox', '-q:v', quality === 'master' ? '75' : '55', '-allow_sw', '1']
   return quality === 'master' ? ['-c:v', 'libx264', '-preset', 'fast', '-crf', '17'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24']
 }
 
@@ -146,4 +146,23 @@ export function hasEncoder(name: string): boolean {
     encoders = new Set([...r.stdout.matchAll(/^\s*[VAS][.A-Z]{5}\s+(\S+)/gm)].map((m) => m[1]!))
   }
   return encoders.has(name)
+}
+
+/**
+ * Whether a (hardware) encoder actually runs here, not just whether it's compiled in: the bundled FFmpeg builds include
+ * h264_nvenc everywhere, and on a PC without an NVIDIA GPU it fails to open ("Cannot load nvcuda.dll"), which made
+ * every reverse, proxy and legacy-format conversion fail on AMD, Intel and ARM machines. Checked once with a tiny
+ * encode and cached.
+ */
+const working = new Map<string, boolean>()
+export function encoderWorks(name: string): boolean {
+  if (!hasEncoder(name)) return false
+  let ok = working.get(name)
+  if (ok === undefined) {
+    const r = spawnSync(need().ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=black:s=256x256:r=30:d=0.2', '-pix_fmt', 'yuv420p', '-c:v', name, '-f', 'null', '-'], { encoding: 'utf8', windowsHide: true, timeout: 20_000 })
+    ok = r.status === 0
+    if (!ok) console.warn(`[ffmpeg] ${name} is built in but doesn't run here; using libx264 (${(r.stderr || r.error?.message || '').trim().split(/\r?\n/)[0]})`)
+    working.set(name, ok)
+  }
+  return ok
 }
