@@ -65,7 +65,7 @@ Layout: `apps/desktop` (Electron app), `packages/doc` (the project document, ops
 
 ## Third-party software
 
-- The release bundles **FFmpeg** (GPL builds: [BtbN](https://github.com/BtbN/FFmpeg-Builds) on Windows, [Martin Riedl](https://ffmpeg.martin-riedl.de) on macOS; licence and source pointers are in `resources/ffmpeg`) and **uv** (Apache-2.0 / MIT).
+- The release bundles **FFmpeg** (GPL v3 builds: [Gyan](https://www.gyan.dev/ffmpeg/builds/) on Windows, [Martin Riedl](https://ffmpeg.martin-riedl.de) on macOS; licence and source pointers are in `resources/ffmpeg`) and **uv** (Apache-2.0 / MIT).
 - Templates read on-screen text with [RapidOCR](https://github.com/RapidAI/RapidOCR) (Apache-2.0; PaddleOCR models) and fetch links with yt-dlp (Unlicense), both installed by uv when first used.
 - AI models are downloaded on first use, not bundled: Whisper large-v3 turbo (MIT), Kokoro (Apache-2.0), BiRefNet (MIT), and Robust Video Matting (**GPL-3.0**).
 - Fonts bundled from Fontsource are under the SIL Open Font License or Apache-2.0.

@@ -52,13 +52,14 @@ const BIN = MAC
     uv: { name: 'uv', url: 'https://github.com/astral-sh/uv/releases/download/0.11.28/uv-aarch64-apple-darwin.tar.gz', sha256: '33540eb7c883ab857eff79bd5ac2aa31fe27b595abecb4a9c003a2c998447232' },
   }
   : {
-    // BtbN prunes old autobuilds, so this URL stops working after a while; a cached copy in vendor/ still verifies
+    // Gyan's shared GPL v3 build of the FFmpeg 9.1 release (exe + DLLs, like the BtbN autobuild this replaced, which
+    // BtbN pruned: its URL went 404). Gyan keeps tagged releases. The SHA-256 is the one GitHub publishes for the asset.
     ffmpeg: [{
       name: 'ffmpeg',
-      url: 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-28-13-06/ffmpeg-n9.0.2-14-gebafaee10a-win64-gpl-shared-9.0.zip',
-      sha256: '7997f62b2b20e386620ff25d70edc92763341e2d28bdadadfb9d5ac4f109332f',
+      url: 'https://github.com/GyanD/codexffmpeg/releases/download/9.1/ffmpeg-9.1-full_build-shared.zip',
+      sha256: 'd010a19b78d5eae62dca8d4c7f195acd56dae8ed6fb85f72821edd9437da2898',
     }],
-    ffmpegSource: 'https://github.com/BtbN/FFmpeg-Builds (build scripts) and https://git.ffmpeg.org/ffmpeg.git at n9.0.2-14-gebafaee10a (source)',
+    ffmpegSource: 'https://www.gyan.dev/ffmpeg/builds/ and https://github.com/GyanD/codexffmpeg (Windows x64 shared release build of FFmpeg 9.1, --enable-gpl --enable-version3) and https://git.ffmpeg.org/ffmpeg.git at n9.1 (source)',
     uv: { name: 'uv', url: 'https://github.com/astral-sh/uv/releases/download/0.11.28/uv-x86_64-pc-windows-msvc.zip', sha256: '0a23463216d09c6a72ff80ef5dc5a795f07dc1575cb84d24596c2f124a441b7b' },
   }
 
@@ -115,7 +116,11 @@ if (MAC) {
 } else {
   const ffRoot = join(ffDirs[0], readdirSync(ffDirs[0])[0])
   for (const f of readdirSync(join(ffRoot, 'bin'))) if (/\.(exe|dll)$/i.test(f) && f !== 'ffplay.exe') cpSync(join(ffRoot, 'bin', f), res(`ffmpeg/${f}`))
-  cpSync(join(ffRoot, 'LICENSE.txt'), res('ffmpeg/LICENSE.txt'))
+  // the build's own licence text (Gyan names it LICENSE, BtbN LICENSE.txt); shipped as LICENSE.txt either way
+  const license = ['LICENSE.txt', 'LICENSE'].map((f) => join(ffRoot, f)).find((p) => existsSync(p))
+  if (!license) throw new Error('the FFmpeg download has no LICENSE file')
+  cpSync(license, res('ffmpeg/LICENSE.txt'))
+  if (!existsSync(res('ffmpeg/ffmpeg.exe')) || !existsSync(res('ffmpeg/ffprobe.exe'))) throw new Error('ffmpeg.exe or ffprobe.exe missing from the download')
   for (const f of readdirSync(uvDir)) cpSync(join(uvDir, f), res(`uv/${f}`), { recursive: true })
 }
 writeFileSync(res('ffmpeg/SOURCE.txt'), `FFmpeg ${BIN.ffmpeg.map((s) => s.url.split('/').slice(-2).join('/')).join(', ')}\nLicensed under the GPL (see LICENSE.txt). Source: ${BIN.ffmpegSource}\n`)

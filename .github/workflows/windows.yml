@@ -1,5 +1,5 @@
-# Windows (x64): unit tests, typecheck, build and the full Electron e2e suite. Artifacts: the Playwright results when
-# something fails. Release packaging isn't here yet: package.mjs pins a BtbN FFmpeg build that BtbN has since pruned.
+# Windows (x64): unit tests, typecheck, build, the full Electron e2e suite, then the portable .zip release and its
+# smoke test. Artifacts: the release, and the Playwright results when something fails.
 name: Windows
 
 on:
@@ -100,3 +100,21 @@ jobs:
           name: e2e-results-windows
           path: apps/desktop/test-results
           retention-days: 7
+
+      - name: Package (.zip)
+        if: ${{ !cancelled() }}
+        working-directory: apps/desktop
+        run: node scripts/package.mjs
+      - name: Smoke-test the release
+        if: ${{ !cancelled() }}
+        working-directory: apps/desktop
+        run: node scripts/smoke-release.mjs (Get-ChildItem release/Framevane-*-win-x64.zip).FullName
+      - name: Upload the release
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Framevane-win-x64
+          path: |
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.sha256
+          retention-days: 14
