@@ -65,11 +65,26 @@ test.describe('F10 export', () => {
     test('F10-E5 + E6 HEVC with emoji in the file name', async ({ framevane }) => {
       const { page } = framevane
       await newProjectFromFiles(page)
-      await exportWith(page, { name: 'Promo 🎉 final', codec: 'HEVC (H.265)', res: '720p' })
+      // HEVC encoding needs hardware support (none on a GPU-less CI runner): there the option is marked unavailable,
+      // like AV1 in the M6 test, and the emoji file name is still checked with H.264
+      await page.getByRole('button', { name: 'Export', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: 'Export', exact: true })
+      await expect(dialog.locator('[data-codecs="checked"]')).toBeAttached({ timeout: 30_000 })
+      await dialog.getByRole('combobox', { name: 'Codec' }).click()
+      const hevcOption = page.getByRole('option', { name: /^HEVC/ })
+      const hevc = await hevcOption.getAttribute('aria-disabled') !== 'true' && await hevcOption.getAttribute('data-disabled') === null
+      if (!hevc) {
+        await expect(hevcOption).toContainText('not on this PC')
+        test.info().annotations.push({ type: 'note', description: 'HEVC encode not available on this machine; exported H.264' })
+      }
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+      await exportWith(page, { name: 'Promo 🎉 final', codec: hevc ? 'HEVC (H.265)' : 'H.264', res: '720p' })
       await done(page)
       const file = join(framevane.exportsDir, 'Promo 🎉 final.mp4')
       expect(existsSync(file)).toBe(true)
-      expect(ffprobe(file).streams.find((s) => s.codec_type === 'video')!.codec_name).toBe('hevc')
+      expect(ffprobe(file).streams.find((s) => s.codec_type === 'video')!.codec_name).toBe(hevc ? 'hevc' : 'h264')
     })
   })
 

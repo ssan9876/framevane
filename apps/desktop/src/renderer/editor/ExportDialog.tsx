@@ -99,7 +99,8 @@ export function ExportDialog() {
         <TextField label="File name" value={name} onChange={(e) => setName(e.target.value)} disabled={busy} />
         <Select label="Format" value={format} onValueChange={(v) => setFormat(v as ExportFormat)} options={FORMATS} disabled={busy} width={260} />
         {(kind === 'video' || kind === 'image') && (
-          <div className="grid grid-cols-2 gap-3">
+          // data-codecs: whether this PC's encoders have been checked yet (tests wait for it before reading the codec list)
+          <div className="grid grid-cols-2 gap-3" data-codecs={available ? 'checked' : 'checking'}>
             <Select label="Resolution" value={res} onValueChange={setRes} options={RESOLUTIONS} disabled={busy} width={130} />
             {kind === 'video' && <Select label="Frame rate" value={fps} onValueChange={setFps} options={['24', '25', '30', '50', '60'].map((v) => ({ value: v, label: `${v} fps` }))} disabled={busy} width={100} />}
             {kind === 'video' && (

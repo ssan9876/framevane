@@ -186,7 +186,10 @@ test.describe('M1 relink', () => {
     await newProjectFromFiles(page)
     await expect(clips(page)).toHaveCount(1)
     await page.getByRole('button', { name: 'Projects' }).click()
-    rmSync(files.relink)
+    // Windows can't delete a file while it's open, and just after import the preparation job (thumbnails, waveform)
+    // can still be reading it (EPERM on Windows CI): retry for a few seconds. A file the app kept open for good would
+    // still fail here, which is the bug this would catch.
+    rmSync(files.relink, { maxRetries: 20, retryDelay: 250 })
     await page.getByRole('button', { name: /^Open / }).click()
     await expect(page.getByRole('button', { name: 'Locate relink-me.mp4' })).toBeVisible()
     copyFileSync(files.broll, files.relink) // "found it again" (the test picker returns this path)
