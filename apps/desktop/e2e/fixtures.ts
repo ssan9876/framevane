@@ -56,6 +56,8 @@ export const test = base.extend<Options & { framevane: Framevane }>({
       }
       const page = await app.firstWindow()
       page.on('console', (m) => {
+        // everything the renderer logs goes into main-process.log too, timed alongside the main process's lines
+        mainLog.push(`+${((Date.now() - t0) / 1000).toFixed(1)}s [renderer:${m.type()}] ${m.text()}`)
         if (m.type() !== 'error') return
         const text = m.text()
         if (/Download the React DevTools|Electron Security Warning/.test(text)) return

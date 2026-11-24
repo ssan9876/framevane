@@ -92,18 +92,25 @@ export function VoiceoverRecorder() {
         stream.getTracks().forEach((t) => t.stop())
         player.pause()
         setSaving(true)
+        // each step is logged: saving once hung (macOS and Windows CI, no error); the e2e log shows where
+        console.info(`[voiceover] stopped: ${chunks.length} chunks`)
         try {
           const bytes = new Uint8Array(await new Blob(chunks, { type: 'audio/webm' }).arrayBuffer())
           if (bytes.byteLength < 200) throw new Error('Nothing was recorded. Check the microphone.')
+          console.info(`[voiceover] saving ${bytes.byteLength} bytes`)
           const m = await window.framevane.media.saveRecording(doc.id, bytes)
+          console.info('[voiceover] saved; placing it on the timeline')
           const cur = useApp.getState().doc!
-          if (await useApp.getState().apply(placeAudioOps(cur, m, atUs))) toast({ tone: 'success', title: 'Voiceover added', description: `${formatUs(m.asset.durationUs ?? 0)} at ${formatUs(atUs)}` })
+          const placed = await useApp.getState().apply(placeAudioOps(cur, m, atUs))
+          console.info(`[voiceover] placed: ${placed}`)
+          if (placed) toast({ tone: 'success', title: 'Voiceover added', description: `${formatUs(m.asset.durationUs ?? 0)} at ${formatUs(atUs)}` })
         } catch (e) {
           toast({ tone: 'error', title: "The recording couldn't be saved", description: errText(e) })
         } finally { setSaving(false) }
       }
       recorder.current = r
       r.start(250)
+      console.info(`[voiceover] recording (${stream.getAudioTracks()[0]?.label ?? 'no track'})`)
       setElapsed(0)
       setRec({ startedAt: Date.now(), atUs })
       if (playAlong) void player.play(atUs)
@@ -112,6 +119,7 @@ export function VoiceoverRecorder() {
     }
   }
   function stop() {
+    console.info(`[voiceover] stop clicked (recorder ${recorder.current?.state ?? 'missing'})`)
     recorder.current?.stop()
     recorder.current = null
     setRec(null)
