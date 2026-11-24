@@ -1,0 +1,101 @@
+# Windows (x64): unit tests, typecheck, build and the full Electron e2e suite. Artifacts: the Playwright results when
+# something fails. Release packaging isn't here yet: package.mjs pins a BtbN FFmpeg build that BtbN has since pruned.
+name: Windows
+
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 240
+    env:
+      # the AI models (Whisper, mattes, Kokoro) are cached between runs
+      FRAMEVANE_MODELS_DIR: ${{ github.workspace }}\.models
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.11.28
+      # a release build from Gyan (kept, unlike BtbN's autobuilds), checksum-pinned; it has drawtext for the test media
+      # and h264_nvenc built in, which this GPU-less runner can't run (the BUG-016 fallback to libx264 gets exercised)
+      - name: FFmpeg for the tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
+          Invoke-WebRequest -Uri 'https://github.com/GyanD/codexffmpeg/releases/download/9.1/ffmpeg-9.1-essentials_build.zip' -OutFile $zip
+          $sum = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          if ($sum -ne 'b9bbbb3acece000cbeec994f856649354e52c773807841e78908374b24d658fd') { throw "ffmpeg.zip checksum $sum doesn't match" }
+          Expand-Archive $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'ffmpeg')
+          $bin = (Get-ChildItem (Join-Path $env:RUNNER_TEMP 'ffmpeg') -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
+          Add-Content $env:GITHUB_PATH $bin
+          & "$bin\ffmpeg.exe" -hide_banner -version | Select-Object -First 1
+          if (-not (& "$bin\ffmpeg.exe" -hide_banner -filters | Select-String -SimpleMatch ' drawtext ')) { throw 'this FFmpeg has no drawtext' }
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Unit tests (packages/doc)
+        run: pnpm --filter @framevane/doc test
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Build
+        working-directory: apps/desktop
+        run: node scripts/build.mjs
+
+      # restore and save are separate steps so the caches are saved even when a test fails
+      - name: Restore AI models
+        id: models
+        uses: actions/cache/restore@v4
+        with:
+          path: .models
+          key: models-win-${{ hashFiles('sidecar/framevane_sidecar/models.py', 'apps/desktop/src/main/tts.ts') }}
+          restore-keys: models-win-
+      - name: Restore seed media
+        id: seed
+        uses: actions/cache/restore@v4
+        with:
+          path: replica/seed-media
+          key: seed-media-win-${{ hashFiles('apps/desktop/scripts/make-seed-media.ps1', 'apps/desktop/e2e/global-setup.ts') }}
+
+      - name: E2E (Playwright + Electron)
+        working-directory: apps/desktop
+        run: npx playwright test --reporter=list,github
+      # (a missing folder only means nothing was downloaded: never fail the job over a cache)
+      - name: Save AI models
+        if: ${{ !cancelled() && steps.models.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .models
+          key: ${{ steps.models.outputs.cache-primary-key }}
+      - name: Save seed media
+        if: ${{ !cancelled() && steps.seed.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: replica/seed-media
+          key: ${{ steps.seed.outputs.cache-primary-key }}
+      - name: Upload e2e results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-windows
+          path: apps/desktop/test-results
+          retention-days: 7
