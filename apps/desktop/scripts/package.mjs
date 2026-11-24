@@ -1,6 +1,7 @@
 // Build a release for this computer's platform:
 //   Windows → release/Framevane-<version>-win-x64.zip (portable folder)
-//   macOS   → release/Framevane-<version>-mac-arm64.dmg and .zip (Framevane.app, Apple Silicon, ad-hoc signed)
+//   macOS   → release/Framevane-<version>-mac-arm64.dmg and .zip (Framevane.app, Apple Silicon; Developer ID signed and
+//             notarized when the signing env vars below are set, else ad-hoc signed)
 // (+ .sha256 next to each). Bundles pinned, checksum-verified FFmpeg and uv, plus the local-AI sidecar source.
 // The Mac build must run on a Mac (the app bundle's symlinks and code signature can't be made on Windows).
 import { packager } from '@electron/packager'
@@ -21,6 +22,20 @@ const version = pkg.version
 const MAC = process.platform === 'darwin'
 if (!MAC && process.platform !== 'win32') throw new Error('Releases are built on Windows or macOS')
 if (MAC && process.arch !== 'arm64') throw new Error('The Mac release is Apple Silicon only (the local AI has no Intel Mac build); run this on an arm64 Mac')
+
+/**
+ * Mac signing. With MAC_SIGN_IDENTITY (a "Developer ID Application: …" certificate in the keychain) every binary in
+ * the app is signed with it, hardened runtime and build/entitlements.mac.plist; with ASC_KEY_PATH, ASC_KEY_ID and
+ * ASC_ISSUER_ID (an App Store Connect API key) the app and the .dmg are also notarized by Apple and stapled, so they
+ * open without Gatekeeper warnings. Without them the build is ad-hoc signed (Apple Silicon only runs signed code),
+ * as on pull requests from forks, which get no secrets.
+ */
+const SIGN_ID = MAC ? process.env.MAC_SIGN_IDENTITY?.trim() || null : null
+const NOTARY = SIGN_ID && process.env.ASC_KEY_PATH && process.env.ASC_KEY_ID && process.env.ASC_ISSUER_ID
+  ? { appleApiKey: process.env.ASC_KEY_PATH, appleApiKeyId: process.env.ASC_KEY_ID, appleApiIssuer: process.env.ASC_ISSUER_ID }
+  : null
+const ENTITLEMENTS = join(APP, 'build', 'entitlements.mac.plist')
+if (MAC) console.log(SIGN_ID ? `signing as ${SIGN_ID}${NOTARY ? ', notarizing with Apple' : ' (not notarizing: no App Store Connect API key)'}` : 'ad-hoc signing (no MAC_SIGN_IDENTITY)')
 
 /**
  * Pinned third-party binaries with their SHA-256 (taken from each release's own checksum file when it was pinned, kept
@@ -154,6 +169,10 @@ const [appDir] = await packager({
         NSDownloadsFolderUsageDescription: 'Framevane opens the media you choose from Downloads.',
         LSMinimumSystemVersion: '14.0',
       },
+      // Developer ID: @electron/osx-sign signs every Mach-O in the bundle (Electron's helpers and frameworks, and the
+      // bundled ffmpeg, ffprobe, uv and uvx) inside out; @electron/notarize then submits the app and staples it
+      ...(SIGN_ID ? { osxSign: { identity: SIGN_ID, optionsForFile: () => ({ hardenedRuntime: true, entitlements: ENTITLEMENTS }) } } : {}),
+      ...(NOTARY ? { osxNotarize: NOTARY } : {}),
     }
     : { win32metadata: { CompanyName: 'Framevane', ProductName: 'Framevane', FileDescription: 'Framevane video and photo editor' } }),
 })
@@ -171,19 +190,27 @@ console.log('5/5 archive')
 const outputs = []
 if (MAC) {
   const bundle = join(appDir, 'Framevane.app')
-  // ad-hoc signature: Apple Silicon only runs signed code. Inner tools first, then the bundle.
-  for (const f of ['ffmpeg/ffmpeg', 'ffmpeg/ffprobe', 'uv/uv', 'uv/uvx']) {
-    const p = join(bundle, 'Contents', 'Resources', f)
-    if (existsSync(p)) run('codesign', ['--force', '--sign', '-', '--timestamp=none', p])
+  if (!SIGN_ID) {
+    // ad-hoc signature: Apple Silicon only runs signed code. Inner tools first, then the bundle.
+    for (const f of ['ffmpeg/ffmpeg', 'ffmpeg/ffprobe', 'uv/uv', 'uv/uvx']) {
+      const p = join(bundle, 'Contents', 'Resources', f)
+      if (existsSync(p)) run('codesign', ['--force', '--sign', '-', '--timestamp=none', p])
+    }
+    run('codesign', ['--force', '--deep', '--sign', '-', '--timestamp=none', bundle])
   }
-  run('codesign', ['--force', '--deep', '--sign', '-', '--timestamp=none', bundle])
-  run('codesign', ['--verify', '--deep', '--strict', bundle])
+  run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', bundle])
+  // what Gatekeeper will say when someone downloads it (accepted only once notarized and stapled)
+  if (NOTARY) run('spctl', ['--assess', '--type', 'execute', '--verbose=2', bundle])
   const readmeText = readme([
     `Framevane ${version} for macOS (Apple Silicon, macOS 14 or later) — a free video and photo editor with built-in AI agents.`,
     '',
-    'Drag Framevane into Applications. The app isn\'t notarized by Apple yet, so the first time:',
-    '  open it, then System Settings → Privacy & Security → "Framevane was blocked" → Open Anyway,',
-    '  or in Terminal: xattr -dr com.apple.quarantine /Applications/Framevane.app',
+    ...(NOTARY
+      ? ['Drag Framevane into Applications and open it.']
+      : [
+        'Drag Framevane into Applications. This build isn\'t notarized by Apple, so the first time:',
+        '  open it, then System Settings → Privacy & Security → "Framevane was blocked" → Open Anyway,',
+        '  or in Terminal: xattr -dr com.apple.quarantine /Applications/Framevane.app',
+      ]),
     'Your projects go to Documents/Framevane Projects.',
     '',
     ...common,
@@ -200,6 +227,13 @@ if (MAC) {
   writeFileSync(join(dmgDir, 'Read me.txt'), readmeText)
   const dmg = join(RELEASE, `Framevane-${version}-mac-arm64.dmg`)
   run('hdiutil', ['create', '-volname', 'Framevane', '-srcfolder', dmgDir, '-ov', '-format', 'UDZO', dmg])
+  if (SIGN_ID) run('codesign', ['--force', '--sign', SIGN_ID, '--timestamp', dmg])
+  if (NOTARY) {
+    // the disk image is notarized and stapled too, so opening the download itself raises no warning
+    run('xcrun', ['notarytool', 'submit', dmg, '--key', NOTARY.appleApiKey, '--key-id', NOTARY.appleApiKeyId, '--issuer', NOTARY.appleApiIssuer, '--wait'])
+    run('xcrun', ['stapler', 'staple', dmg])
+    run('xcrun', ['stapler', 'validate', dmg])
+  }
   outputs.push(dmg)
 } else {
   writeFileSync(join(appDir, 'README.txt'), readme([
