@@ -1,6 +1,6 @@
 import { test as base, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
-import { spawnSync } from 'node:child_process'
+import { spawnSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -51,7 +51,9 @@ export const test = base.extend<Options & { framevane: Framevane }>({
     const t0 = Date.now()
     const start = async () => {
       const app = await electron.launch({ args: [resolve(HERE, '..')], env })
-      for (const s of [app.process().stdout, app.process().stderr]) {
+      // kept now: once the app is closed, Playwright's app.process() no longer works
+      const proc = app.process()
+      for (const s of [proc.stdout, proc.stderr]) {
         s?.on('data', (d: Buffer) => { for (const line of d.toString('utf8').split(/\r?\n/)) if (line) mainLog.push(`+${((Date.now() - t0) / 1000).toFixed(1)}s ${line}`) })
       }
       const page = await app.firstWindow()
@@ -67,14 +69,14 @@ export const test = base.extend<Options & { framevane: Framevane }>({
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
       page.on('response', (r) => { if (r.status() >= 400) failedRequests.push({ url: r.url(), status: r.status() }) })
       await page.getByRole('heading', { name: 'What are we making?' }).waitFor()
-      return { app, page }
+      return { app, page, proc }
     }
 
     // Close our end of the app's output pipes once it has exited. On Windows a closed or killed app's child processes
     // (FFmpeg, the AI sidecar, Chromium helpers) can outlive it and keep those pipes open, and with the log listeners
     // above still attached the worker never exits ("Worker teardown timeout" after every Windows CI run).
-    const release = (app: ElectronApplication) => {
-      for (const s of [app.process().stdout, app.process().stderr]) { s?.removeAllListeners('data'); s?.destroy() }
+    const release = (proc: ChildProcess) => {
+      for (const s of [proc.stdout, proc.stderr]) { s?.removeAllListeners('data'); s?.destroy() }
     }
     let cur = await start()
     const framevane: Framevane = {
@@ -85,10 +87,10 @@ export const test = base.extend<Options & { framevane: Framevane }>({
       root,
       exportsDir,
       async relaunch(opts = {}) {
-        if (opts.kill) cur.app.process().kill('SIGKILL')
+        if (opts.kill) cur.proc.kill('SIGKILL')
         else await cur.app.close()
         await new Promise((r) => setTimeout(r, 500))
-        release(cur.app)
+        release(cur.proc)
         cur = await start()
         return cur.page
       },
@@ -100,7 +102,7 @@ export const test = base.extend<Options & { framevane: Framevane }>({
       try { writeFileSync(testInfo.outputPath('main-process.log'), mainLog.join('\n')) } catch { /* best effort */ }
     }
     await cur.app.close().catch(() => {})
-    release(cur.app)
+    release(cur.proc)
     // each test's profile, projects and exports live in a temp folder: remove it (set FRAMEVANE_KEEP_TEST_DIRS=1 to inspect)
     // best effort: a killed app's helpers can still hold files; the global teardown sweeps what's left
     if (!process.env.FRAMEVANE_KEEP_TEST_DIRS) { try { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }) } catch { /* swept later */ } }
