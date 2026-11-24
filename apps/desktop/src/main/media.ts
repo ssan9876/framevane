@@ -231,13 +231,15 @@ export class Media {
     const dir = join(projectDir, 'recordings')
     await mkdir(dir, { recursive: true })
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-    const raw = join(dir, `voiceover-${stamp}.webm`)
+    // the renderer sends WAV it decoded itself, or the recorder's WebM if it couldn't (see VoiceoverRecorder)
+    const isWav = data.byteLength > 12 && String.fromCharCode(...data.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...data.subarray(8, 12)) === 'WAVE'
+    const raw = join(dir, `voiceover-${stamp}.${isWav ? 'wav' : 'webm'}`)
     const out = join(dir, `Voiceover ${stamp.replace('T', ' ')}.m4a`)
     await writeFile(raw, data)
     // each step is logged, and FFmpeg's own output too: this conversion stalled on macOS and Windows CI (FFmpeg never
     // exited, so the voiceover panel spun forever). It now gives up after 60 s with FFmpeg's last lines as the error.
     const t0 = Date.now()
-    console.info(`[media] recording: ${data.byteLength} bytes, converting`)
+    console.info(`[media] recording: ${data.byteLength} bytes of ${isWav ? 'WAV' : 'WebM'}, converting`)
     try {
       await runFfmpeg(['-i', raw, '-vn', '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out], {
         timeoutMs: 60_000,

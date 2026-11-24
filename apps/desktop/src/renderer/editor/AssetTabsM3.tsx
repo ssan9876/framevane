@@ -57,6 +57,34 @@ export function TextTab() {
 }
 
 /** S05 · Record a voiceover at the playhead (optionally while the timeline plays). */
+/** Decode a recording with Chromium's own decoder and write it as 16-bit PCM WAV (at the decoder's sample rate). */
+async function toWav(webm: Uint8Array): Promise<Uint8Array> {
+  const ctx = new AudioContext()
+  try {
+    const buf = await ctx.decodeAudioData(webm.slice().buffer)
+    const ch = buf.numberOfChannels
+    const frames = buf.length
+    const out = new DataView(new ArrayBuffer(44 + frames * ch * 2))
+    const text = (at: number, s: string) => { for (let i = 0; i < s.length; i++) out.setUint8(at + i, s.charCodeAt(i)) }
+    text(0, 'RIFF'); out.setUint32(4, 36 + frames * ch * 2, true); text(8, 'WAVE')
+    text(12, 'fmt '); out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, ch, true)
+    out.setUint32(24, buf.sampleRate, true); out.setUint32(28, buf.sampleRate * ch * 2, true); out.setUint16(32, ch * 2, true); out.setUint16(34, 16, true)
+    text(36, 'data'); out.setUint32(40, frames * ch * 2, true)
+    const data = Array.from({ length: ch }, (_, c) => buf.getChannelData(c))
+    let at = 44
+    for (let i = 0; i < frames; i++) {
+      for (let c = 0; c < ch; c++) {
+        const v = Math.max(-1, Math.min(1, data[c]![i]!))
+        out.setInt16(at, v < 0 ? v * 0x8000 : v * 0x7fff, true)
+        at += 2
+      }
+    }
+    return new Uint8Array(out.buffer)
+  } finally {
+    void ctx.close()
+  }
+}
+
 export function VoiceoverRecorder() {
   const doc = useApp((s) => s.doc)
   const { player } = useEditor()
@@ -95,9 +123,13 @@ export function VoiceoverRecorder() {
         // each step is logged: saving once hung (macOS and Windows CI, no error); the e2e log shows where
         console.info(`[voiceover] stopped: ${chunks.length} chunks`)
         try {
-          const bytes = new Uint8Array(await new Blob(chunks, { type: 'audio/webm' }).arrayBuffer())
-          if (bytes.byteLength < 200) throw new Error('Nothing was recorded. Check the microphone.')
-          console.info(`[voiceover] saving ${bytes.byteLength} bytes`)
+          const webm = new Uint8Array(await new Blob(chunks, { type: 'audio/webm' }).arrayBuffer())
+          if (webm.byteLength < 200) throw new Error('Nothing was recorded. Check the microphone.')
+          // FFmpeg stalls on MediaRecorder's WebM (no duration; it decoded 0.49 s and then made no progress on macOS
+          // and Windows CI), so Chromium decodes it here and the main process gets plain WAV. If that fails, the WebM
+          // goes as before (the conversion then gives up after 60 s rather than hanging).
+          const bytes = await toWav(webm).catch((e) => { console.warn(`[voiceover] couldn't decode the recording here: ${errText(e)}`); return webm })
+          console.info(`[voiceover] saving ${bytes.byteLength} bytes (${bytes === webm ? 'webm' : 'wav'})`)
           const m = await window.framevane.media.saveRecording(doc.id, bytes)
           console.info('[voiceover] saved; placing it on the timeline')
           const cur = useApp.getState().doc!
