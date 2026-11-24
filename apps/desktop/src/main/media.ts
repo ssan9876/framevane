@@ -217,12 +217,17 @@ export class Media {
     const raw = join(dir, `voiceover-${stamp}.webm`)
     const out = join(dir, `Voiceover ${stamp.replace('T', ' ')}.m4a`)
     await writeFile(raw, data)
+    // each step is logged: saving once hung on macOS CI with no error, and this shows where next time
+    const t0 = Date.now()
+    console.info(`[media] recording: ${data.byteLength} bytes, converting`)
     try {
       await runFfmpeg(['-i', raw, '-vn', '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out])
     } finally {
       await rm(raw, { force: true })
     }
+    console.info(`[media] recording: converted in ${Date.now() - t0} ms, importing`)
     const [info] = await this.import(projectId, [out])
+    console.info(`[media] recording: imported in ${Date.now() - t0} ms`)
     return info!
   }
 

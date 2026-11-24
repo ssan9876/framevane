@@ -55,10 +55,9 @@ test.describe('accessibility and keyboard', () => {
     await expect(tc).toHaveAttribute('aria-label', /Preview at 00:00:29:0[34]/)
     await page.keyboard.press('Home')
     await page.keyboard.press('Space')
-    await page.waitForTimeout(1200)
+    // playing moves the playhead; a slow machine can take more than a second to start, so wait for it to move
+    await expect(tc).not.toHaveAttribute('aria-label', 'Preview at 00:00:00:00', { timeout: 15_000 })
     await page.keyboard.press('Space')
-    const label = await tc.getAttribute('aria-label')
-    expect(label).not.toBe('Preview at 00:00:00:00')
   })
 
   test('F05-H1 + E1 music on its own track, quieter after −20 dB', async ({ framevane }) => {

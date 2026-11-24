@@ -3,8 +3,9 @@
 name: macOS
 
 on:
+  # pushes to a branch with an open PR are tested by the pull_request run; pushing to feat/** too ran everything twice
   push:
-    branches: [main, 'feat/**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
     inputs:
