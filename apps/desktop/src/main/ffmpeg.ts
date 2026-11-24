@@ -64,6 +64,10 @@ export interface RunOptions {
   onProgress?: (p: number) => void
   durationUs?: number
   stdout?: (chunk: Buffer) => void
+  /** Each chunk of FFmpeg's log as it arrives (for diagnosing a run that stalls). */
+  onStderr?: (text: string) => void
+  /** Stop FFmpeg after this long and reject with its last log lines, instead of waiting forever. */
+  timeoutMs?: number
 }
 
 export function runFfmpeg(args: string[], opts: RunOptions = {}): Promise<{ stderr: string }> {
@@ -75,6 +79,7 @@ export function runFfmpeg(args: string[], opts: RunOptions = {}): Promise<{ stde
     p.stderr.setEncoding('utf8')
     p.stderr.on('data', (s: string) => {
       stderr = (stderr + s).slice(-200_000)
+      opts.onStderr?.(s)
       if (opts.onProgress && opts.durationUs) {
         const m = /out_time_us=(\d+)/g
         let last: RegExpExecArray | null = null
@@ -86,10 +91,14 @@ export function runFfmpeg(args: string[], opts: RunOptions = {}): Promise<{ stde
     else p.stdout.resume()
     const abort = () => p.kill('SIGKILL')
     opts.signal?.addEventListener('abort', abort, { once: true })
+    let timedOut = false
+    const timer = opts.timeoutMs ? setTimeout(() => { timedOut = true; p.kill('SIGKILL') }, opts.timeoutMs) : null
     p.on('error', reject)
     p.on('close', (code) => {
+      if (timer) clearTimeout(timer)
       opts.signal?.removeEventListener('abort', abort)
-      if (opts.signal?.aborted) reject(new Error('cancelled'))
+      if (timedOut) reject(new Error(`ffmpeg took longer than ${Math.round(opts.timeoutMs! / 1000)} s and was stopped: ${stderr.split(/\r?\n/).filter(Boolean).slice(-4).join(' | ')}`))
+      else if (opts.signal?.aborted) reject(new Error('cancelled'))
       else if (code === 0) resolve({ stderr })
       else reject(new Error(`ffmpeg exited with ${code}: ${stderr.split(/\r?\n/).filter(Boolean).slice(-4).join(' | ')}`))
     })

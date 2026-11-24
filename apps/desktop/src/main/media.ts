@@ -234,11 +234,15 @@ export class Media {
     const raw = join(dir, `voiceover-${stamp}.webm`)
     const out = join(dir, `Voiceover ${stamp.replace('T', ' ')}.m4a`)
     await writeFile(raw, data)
-    // each step is logged: saving once hung on macOS CI with no error, and this shows where next time
+    // each step is logged, and FFmpeg's own output too: this conversion stalled on macOS and Windows CI (FFmpeg never
+    // exited, so the voiceover panel spun forever). It now gives up after 60 s with FFmpeg's last lines as the error.
     const t0 = Date.now()
     console.info(`[media] recording: ${data.byteLength} bytes, converting`)
     try {
-      await runFfmpeg(['-i', raw, '-vn', '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out])
+      await runFfmpeg(['-i', raw, '-vn', '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out], {
+        timeoutMs: 60_000,
+        onStderr: (text) => { for (const line of text.split('\n')) if (line.trim()) console.info(`[media] recording ffmpeg: ${line.trim()}`) },
+      })
     } finally {
       await rm(raw, { force: true })
     }
