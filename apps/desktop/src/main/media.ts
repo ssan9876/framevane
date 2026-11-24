@@ -233,13 +233,24 @@ export class Media {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     // the renderer sends WAV it decoded itself, or the recorder's WebM if it couldn't (see VoiceoverRecorder)
     const isWav = data.byteLength > 12 && String.fromCharCode(...data.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...data.subarray(8, 12)) === 'WAVE'
-    const raw = join(dir, `voiceover-${stamp}.${isWav ? 'wav' : 'webm'}`)
-    const out = join(dir, `Voiceover ${stamp.replace('T', ' ')}.m4a`)
-    await writeFile(raw, data)
-    // each step is logged, and FFmpeg's own output too: this conversion stalled on macOS and Windows CI (FFmpeg never
-    // exited, so the voiceover panel spun forever). It now gives up after 60 s with FFmpeg's last lines as the error.
     const t0 = Date.now()
-    console.info(`[media] recording: ${data.byteLength} bytes of ${isWav ? 'WAV' : 'WebM'}, converting`)
+    const name = `Voiceover ${stamp.replace('T', ' ')}`
+    if (isWav) {
+      // WAV (16-bit PCM) is kept as it is: the editor plays it natively, and converting it to M4A stalled in FFmpeg on
+      // macOS and Windows CI (it encoded 0.49 s, then made no progress), which left the voiceover panel spinning
+      const wav = join(dir, `${name}.wav`)
+      await writeFile(wav, data)
+      console.info(`[media] recording: saved ${data.byteLength} bytes of WAV, importing`)
+      const [info] = await this.import(projectId, [wav])
+      console.info(`[media] recording: imported in ${Date.now() - t0} ms`)
+      return info!
+    }
+    const raw = join(dir, `voiceover-${stamp}.webm`)
+    const out = join(dir, `${name}.m4a`)
+    await writeFile(raw, data)
+    // the WebM fallback still goes through FFmpeg: each step and FFmpeg's own output are logged, and it gives up after
+    // 60 s with FFmpeg's last lines as the error instead of waiting forever
+    console.info(`[media] recording: ${data.byteLength} bytes of WebM, converting`)
     try {
       await runFfmpeg(['-i', raw, '-vn', '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out], {
         timeoutMs: 60_000,

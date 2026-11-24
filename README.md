@@ -6,7 +6,7 @@ A free video and photo editor for Windows and macOS, with AI agents built in. Ev
 
 **Windows:** get **Framevane-x.y.z-win-x64.zip** from [Releases](../../releases), unzip it anywhere, and run `Framevane.exe`. Nothing else needs installing.
 
-**macOS:** get **Framevane-x.y.z-mac-arm64.dmg**, open it and drag Framevane into Applications. The app isn't notarized by Apple yet, so the first time you open it macOS blocks it: go to **System Settings → Privacy & Security** and click **Open Anyway** (or run `xattr -dr com.apple.quarantine /Applications/Framevane.app` in Terminal).
+**macOS:** get **Framevane-x.y.z-mac-arm64.dmg**, open it and drag Framevane into Applications. It's signed with a Developer ID and notarized by Apple, so it opens like any other app.
 
 - Windows 10 or 11, 64-bit. A graphics card is used when there is one (NVIDIA, AMD or Intel), but isn't required.
 - macOS 14 (Sonoma) or later on Apple Silicon (M1 or newer). Intel Macs aren't supported: the local AI's runtime has no Intel Mac build. On a Mac the local AI runs on the CPU.
@@ -57,7 +57,9 @@ cd ../../packages/doc && npx vitest run   # unit tests
 cd apps/desktop && node scripts/package.mjs   # release for this OS in apps/desktop/release/ (Windows zip, or Mac .dmg + .zip)
 ```
 
-CI: `.github/workflows/macos.yml` runs the unit tests, the e2e suite and the Mac packaging on GitHub's Apple Silicon runners, and uploads the .dmg.
+CI: `.github/workflows/macos.yml` runs the unit tests, the e2e suite and the Mac packaging on GitHub's Apple Silicon runners, and uploads the .dmg; `.github/workflows/windows.yml` runs the unit tests and the e2e suite on Windows.
+
+Mac signing: with the repository secrets `MAC_CERT_P12` / `MAC_CERT_PASSWORD` (a Developer ID Application certificate as base64 .p12) and `ASC_KEY_P8` / `ASC_KEY_ID` / `ASC_ISSUER_ID` (an App Store Connect API key), the Mac release is signed with that Developer ID (hardened runtime, `build/entitlements.mac.plist`), notarized and stapled. Without them, as on pull requests from forks, it's ad-hoc signed and Gatekeeper asks users to approve it once (System Settings → Privacy & Security → Open Anyway). Locally, `package.mjs` reads `MAC_SIGN_IDENTITY` and `ASC_KEY_PATH` / `ASC_KEY_ID` / `ASC_ISSUER_ID` instead.
 
 Layout: `apps/desktop` (Electron app), `packages/doc` (the project document, ops, timeline maths), `packages/ui` (design system), `sidecar` (local AI over MCP, Python via uv), `replica/` (planning and test docs).
 
