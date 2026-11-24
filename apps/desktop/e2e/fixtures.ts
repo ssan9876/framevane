@@ -70,6 +70,12 @@ export const test = base.extend<Options & { framevane: Framevane }>({
       return { app, page }
     }
 
+    // Close our end of the app's output pipes once it has exited. On Windows a closed or killed app's child processes
+    // (FFmpeg, the AI sidecar, Chromium helpers) can outlive it and keep those pipes open, and with the log listeners
+    // above still attached the worker never exits ("Worker teardown timeout" after every Windows CI run).
+    const release = (app: ElectronApplication) => {
+      for (const s of [app.process().stdout, app.process().stderr]) { s?.removeAllListeners('data'); s?.destroy() }
+    }
     let cur = await start()
     const framevane: Framevane = {
       get app() { return cur.app },
@@ -82,6 +88,7 @@ export const test = base.extend<Options & { framevane: Framevane }>({
         if (opts.kill) cur.app.process().kill('SIGKILL')
         else await cur.app.close()
         await new Promise((r) => setTimeout(r, 500))
+        release(cur.app)
         cur = await start()
         return cur.page
       },
@@ -93,6 +100,7 @@ export const test = base.extend<Options & { framevane: Framevane }>({
       try { writeFileSync(testInfo.outputPath('main-process.log'), mainLog.join('\n')) } catch { /* best effort */ }
     }
     await cur.app.close().catch(() => {})
+    release(cur.app)
     // each test's profile, projects and exports live in a temp folder: remove it (set FRAMEVANE_KEEP_TEST_DIRS=1 to inspect)
     // best effort: a killed app's helpers can still hold files; the global teardown sweeps what's left
     if (!process.env.FRAMEVANE_KEEP_TEST_DIRS) { try { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }) } catch { /* swept later */ } }
