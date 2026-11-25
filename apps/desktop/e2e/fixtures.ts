@@ -26,7 +26,39 @@ export interface Framevane {
 
 type Options = { pickFiles: string[]; reelEnv: Record<string, string>; allowConsoleErrors: RegExp[] }
 
-export const test = base.extend<Options & { framevane: Framevane }>({
+/**
+ * Windows doesn't end a process's children when it exits, so a closed or killed app can leave FFmpeg, the AI sidecar
+ * (uv → python) or Chromium helpers running. Every Windows CI run then ended with "Worker teardown timeout" after all
+ * tests passed. These list an app's descendants while it runs and end the ones still alive after it has closed.
+ */
+function descendantsOf(pid: number): number[] {
+  if (process.platform !== 'win32') return []
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }'], { encoding: 'utf8', windowsHide: true, timeout: 20_000 })
+  const children = new Map<number, number[]>()
+  for (const line of (r.stdout ?? '').split(/\r?\n/)) {
+    const [p, parent] = line.trim().split(' ').map(Number)
+    if (p && parent !== undefined && !Number.isNaN(parent)) children.set(parent, [...(children.get(parent) ?? []), p])
+  }
+  const out: number[] = []
+  const queue = [pid]
+  while (queue.length) for (const c of children.get(queue.shift()!) ?? []) if (c !== pid && !out.includes(c)) { out.push(c); queue.push(c) }
+  return out
+}
+function endAll(pids: number[]) {
+  for (const p of pids) { try { process.kill(p) } catch { /* already gone */ } }
+}
+
+export const test = base.extend<Options & { framevane: Framevane }, { openHandles: void }>({
+  // after the worker's last test: list what could still keep it alive (shows in the CI log), to diagnose a hang
+  openHandles: [async ({}, use) => {
+    await use()
+    const handles = (process as unknown as { _getActiveHandles?: () => unknown[] })._getActiveHandles?.() ?? []
+    const described = handles.map((h) => {
+      const o = h as { constructor?: { name?: string }; pid?: number; spawnfile?: string; fd?: number; _type?: string }
+      return [o.constructor?.name ?? typeof h, o.pid !== undefined ? `pid ${o.pid} ${o.spawnfile ?? ''}` : '', o.fd !== undefined ? `fd ${o.fd}` : ''].filter(Boolean).join(' ')
+    })
+    console.log(`[worker] after the last test: ${handles.length} open handles${described.length ? `: ${described.join('; ')}` : ''}`)
+  }, { scope: 'worker', auto: true }],
   pickFiles: [[], { option: true }],
   reelEnv: [{}, { option: true }],
   allowConsoleErrors: [[], { option: true }],
@@ -87,9 +119,11 @@ export const test = base.extend<Options & { framevane: Framevane }>({
       root,
       exportsDir,
       async relaunch(opts = {}) {
+        const left = descendantsOf(cur.proc.pid ?? 0)
         if (opts.kill) cur.proc.kill('SIGKILL')
         else await cur.app.close()
         await new Promise((r) => setTimeout(r, 500))
+        endAll(left)
         release(cur.proc)
         cur = await start()
         return cur.page
@@ -101,7 +135,9 @@ export const test = base.extend<Options & { framevane: Framevane }>({
       // written as a file in the test's output folder (uploaded by CI): a body-only attachment lives only in reports
       try { writeFileSync(testInfo.outputPath('main-process.log'), mainLog.join('\n')) } catch { /* best effort */ }
     }
+    const left = descendantsOf(cur.proc.pid ?? 0)
     await cur.app.close().catch(() => {})
+    endAll(left)
     release(cur.proc)
     // each test's profile, projects and exports live in a temp folder: remove it (set FRAMEVANE_KEEP_TEST_DIRS=1 to inspect)
     // best effort: a killed app's helpers can still hold files; the global teardown sweeps what's left
