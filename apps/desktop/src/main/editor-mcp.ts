@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
+import { app } from 'electron'
 import { z } from 'zod'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
@@ -170,7 +171,7 @@ export class EditorMcp {
   /* ── tools ── */
 
   private build(client: string): McpServer {
-    const server = new McpServer({ name: SERVER_NAME, version: '0.1.0' }, { instructions: INSTRUCTIONS })
+    const server = new McpServer({ name: SERVER_NAME, version: app.getVersion() }, { instructions: INSTRUCTIONS })
     const d = this.d
 
     const target = (projectId?: string) => {

@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { app } from 'electron'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -123,7 +124,7 @@ export class McpHub {
       if (isSidecar) this.sidecarStatus = 'starting'
       const transport = makeTransport()
       if (transport instanceof StdioClientTransport) transport.stderr?.on('data', (d: Buffer) => process.stderr.write(`[${provider}] ${d}`))
-      const client = new Client({ name: 'framevane', version: '0.1.0' })
+      const client = new Client({ name: 'framevane', version: app.getVersion() })
       transport.onclose = () => { this.conns.delete(provider); if (isSidecar) this.sidecarStatus = 'unknown' }
       await client.connect(transport)
       const { tools } = await client.listTools()
