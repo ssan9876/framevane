@@ -30,22 +30,40 @@ type Options = { pickFiles: string[]; reelEnv: Record<string, string>; allowCons
  * Windows doesn't end a process's children when it exits, so a closed or killed app can leave FFmpeg, the AI sidecar
  * (uv → python) or Chromium helpers running. Every Windows CI run then ended with "Worker teardown timeout" after all
  * tests passed. These list an app's descendants while it runs and end the ones still alive after it has closed.
+ *
+ * A process is identified by its id AND its start time: Windows reuses ids quickly, and ending a recorded id that now
+ * belongs to something else (the CI runner's own process, say) is how a runner "loses communication with the server".
  */
-function descendantsOf(pid: number): number[] {
-  if (process.platform !== 'win32') return []
-  const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }'], { encoding: 'utf8', windowsHide: true, timeout: 20_000 })
-  const children = new Map<number, number[]>()
+type Proc = { pid: number; parent: number; started: string }
+function processTable(): Map<number, Proc> {
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.CreationDate.Ticks)" }'], { encoding: 'utf8', windowsHide: true, timeout: 20_000 })
+  const table = new Map<number, Proc>()
   for (const line of (r.stdout ?? '').split(/\r?\n/)) {
-    const [p, parent] = line.trim().split(' ').map(Number)
-    if (p && parent !== undefined && !Number.isNaN(parent)) children.set(parent, [...(children.get(parent) ?? []), p])
+    const [pid, parent, started] = line.trim().split(' ')
+    if (pid && parent && started && /^\d+$/.test(pid) && /^\d+$/.test(parent) && /^\d+$/.test(started)) table.set(Number(pid), { pid: Number(pid), parent: Number(parent), started })
   }
-  const out: number[] = []
+  return table
+}
+function descendantsOf(pid: number): Proc[] {
+  if (process.platform !== 'win32' || !pid) return []
+  const table = processTable()
+  const children = new Map<number, Proc[]>()
+  for (const p of table.values()) children.set(p.parent, [...(children.get(p.parent) ?? []), p])
+  const out: Proc[] = []
   const queue = [pid]
-  while (queue.length) for (const c of children.get(queue.shift()!) ?? []) if (c !== pid && !out.includes(c)) { out.push(c); queue.push(c) }
+  while (queue.length) for (const c of children.get(queue.shift()!) ?? []) if (c.pid !== pid && !out.some((o) => o.pid === c.pid)) { out.push(c); queue.push(c.pid) }
   return out
 }
-function endAll(pids: number[]) {
-  for (const p of pids) { try { process.kill(p) } catch { /* already gone */ } }
+function endAll(procs: Proc[]) {
+  if (!procs.length) return
+  const now = processTable()
+  const never = new Set([process.pid, process.ppid])
+  for (const p of procs) {
+    const cur = now.get(p.pid)
+    // only the very process recorded: same id and same start time (an id Windows has reused is left alone)
+    if (!cur || cur.started !== p.started || never.has(p.pid)) continue
+    try { process.kill(p.pid) } catch { /* exited meanwhile */ }
+  }
 }
 
 export const test = base.extend<Options & { framevane: Framevane }, { openHandles: void }>({
