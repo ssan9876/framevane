@@ -13,7 +13,8 @@ import { useCommitted } from './Inspector'
 const errText = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
 const look = (clipId: string, patch: Omit<Extract<OpInput, { type: 'set_look' }>, 'type' | 'clipId'>) => useApp.getState().apply([{ type: 'set_look', clipId, ...patch }])
 /** The clip as it is in the store right now (commits fire after a delay; the props may be stale by then). */
-const live = (id: string) => findClip(useApp.getState().doc!, id)?.clip as MediaClip | undefined
+// (the project can be gone by the time a delayed commit runs: then there's no clip to update)
+const live = (id: string) => { const doc = useApp.getState().doc; return doc ? findClip(doc, id)?.clip as MediaClip | undefined : undefined }
 
 const COLOR_GROUPS: { title: string; rows: { key: keyof ColorAdjust; label: string; bipolar: boolean }[] }[] = [
   { title: 'Light', rows: [

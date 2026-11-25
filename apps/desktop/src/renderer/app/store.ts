@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Clip, OpInput, Project, TrackKind } from '@framevane/doc'
 import type { AgentDefView, AgentEvent, AgentRunStatus, ExternalActivity, JobEvent, MediaInfo, ProjectSummary, ProposedOp } from '../../shared/api'
+import { flushPendingEdits } from './pending-edits'
 
 /**
  * Renderer state. The project document is owned by the main process; this store mirrors it from doc:change events.
@@ -117,6 +118,8 @@ export const useApp = create<State>((set, get) => ({
 
   go(route) {
     const cur = get().route
+    // edits still waiting in an inspector field land in this project before it closes
+    if (cur.name === 'editor') flushPendingEdits()
     if (cur.name === 'editor' && (route.name !== 'editor' || route.projectId !== cur.projectId)) void window.framevane.projects.close(cur.projectId)
     set({ route, ...(route.name !== 'editor' ? { doc: null, media: [], mediaLoaded: false, selection: [], playheadUs: 0, agentRuns: [], photoCrop: null } : {}) })
   },

@@ -193,7 +193,9 @@ function CaptionsTab() {
     try {
       const transcripts: Record<string, { text: string; start: number; end: number }[]> = {}
       for (const id of audioAssets) transcripts[id] = (await window.framevane.analysis.transcript(doc.id, id, language === 'auto' ? {} : { language })).words
-      const current = useApp.getState().doc!
+      // transcribing can take minutes: if this project was closed meanwhile, its transcripts are saved and nothing else
+      const current = useApp.getState().doc
+      if (!current || current.id !== doc.id) return
       const clips = buildCaptionClips(timelineWords(current, transcripts), { idPrefix: `cap-${Date.now().toString(36)}` })
       if (!clips.length) { toast({ tone: 'warning', title: 'No speech found on the main track' }); return }
       const ok = await useApp.getState().apply([{ type: 'add_captions', trackId: existing?.id ?? 'track-captions', trackName: 'Captions', clips, replace: replace && !!existing }])

@@ -13,6 +13,7 @@ Only reproduced bugs are listed. Each one has a test that failed before the fix 
 | BUG-006 | S3 | Tabs in Settings and the inspector point aria-controls at panels that don't exist | fixed in 16aa598 |
 | BUG-007 | S3 | Inspector slider thumbs have no accessible name | fixed in 16aa598 |
 | BUG-008 | S4 | Home requests project covers before their thumbnails exist (404) | fixed in 16aa598 |
+| BUG-018 | S3 | An inspector change made just before leaving the editor is lost and throws | fixed on fix/pending-edits |
 | BUG-017 | S2 | HEVC footage shows a blank preview on PCs without HEVC decoding | fixed on feat/templates-and-macos |
 | BUG-016 | S2 | Reverse, proxies and legacy-format conversion fail on PCs without an NVIDIA GPU | fixed on feat/templates-and-macos |
 | BUG-015 | S4 | Clearing thumbnails while a clip is being prepared records a deleted thumbnail (404) | fixed on feat/templates-and-macos |
@@ -190,6 +191,22 @@ Evidence: found while building M1. The on-canvas drag sends x then y, and x came
 Suspected cause: zod's `.partial()` keeps field defaults, so a patch `{y: 100}` parsed to `{x: 0, y: 100, scale: 1, …}`.
 Fix: `patchOf()` builds patch schemas without defaults. It's used for transform and caption-style patches, and covered by two regression tests.
 Status: fixed in b26aae5
+
+---
+
+### BUG-018: An inspector change made just before leaving the editor is lost and throws
+- Severity: S3 (the last edit silently disappears; an uncaught error in the window)
+- Build: 0.2.0; found on macOS CI (main, after merging #4), intermittent
+
+Steps
+1. Open a photo, set a filter's Strength, and click Projects within a quarter of a second.
+
+Expected: the new strength is saved; reopening the photo shows it.
+Actual: "Cannot read properties of null (reading 'tracks')", and the change is lost.
+Evidence: m7-photo.spec.ts › filters and colour work on photo layers; the photo reopens from Home.
+Cause: inspector fields commit 250 ms after the last change (useCommitted). Leaving the editor closed the project first; the timer then fired and read the closed project (LookInspector's live() asserted it was there).
+Fix: waiting commits register in pending-edits.ts and the store applies them before it closes a project; timers are cleared on unmount; live() and the caption and voiceover placement after an await check the project is still the open one. The test now changes the strength, leaves at once, and checks the value after reopening.
+Status: fix committed; waiting on CI
 
 ---
 
