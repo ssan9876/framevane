@@ -14,7 +14,17 @@ if (MAC) spawnSync('ditto', ['-x', '-k', zip, root], { stdio: 'inherit' })
 else spawnSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', zip, '-C', root], { stdio: 'inherit' })
 const exe = MAC ? join(root, 'Framevane.app', 'Contents', 'MacOS', 'Framevane') : join(root, 'Framevane-win32-x64', 'Framevane.exe')
 if (!existsSync(exe)) throw new Error(`${exe} is not in the zip`)
-const talk = resolve('../../replica/seed-media/talk.mp4')
+// the clip to import: the e2e seed media when it's there; otherwise (CI's package job runs apart from the tests) a
+// 6 s test clip with sound, made with the release's own bundled FFmpeg, which also shows that FFmpeg runs
+let talk = resolve('../../replica/seed-media/talk.mp4')
+if (!existsSync(talk)) {
+  const ff = MAC ? join(root, 'Framevane.app', 'Contents', 'Resources', 'ffmpeg', 'ffmpeg') : join(root, 'Framevane-win32-x64', 'resources', 'ffmpeg', 'ffmpeg.exe')
+  talk = join(root, 'smoke-clip.mp4')
+  const r = spawnSync(ff, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=30:duration=6', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=6',
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', talk], { encoding: 'utf8' })
+  if (r.status !== 0) throw new Error(`the bundled FFmpeg couldn't make a test clip: ${r.stderr || r.error?.message}`)
+  console.log('made a test clip with the bundled FFmpeg')
+}
 const out = join(root, 'exports')
 mkdirSync(out, { recursive: true })
 const fail = (m) => { console.error('FAIL:', m); process.exitCode = 1 }

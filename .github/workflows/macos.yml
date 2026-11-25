@@ -176,9 +176,16 @@ jobs:
             printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc_key.p8"
             { echo "ASC_KEY_PATH=$RUNNER_TEMP/asc_key.p8"; echo "ASC_KEY_ID=$ASC_KEY_ID"; echo "ASC_ISSUER_ID=$ASC_ISSUER_ID"; } >> "$GITHUB_ENV"
           fi
+      # up to 3 tries: every signature asks Apple's timestamp service, which now and then doesn't answer ("The timestamp
+      # service is not available", run 45539299579); package.mjs starts clean each time and its downloads are cached
       - name: Package (.dmg + .zip)
         working-directory: apps/desktop
-        run: node scripts/package.mjs
+        run: |
+          for attempt in 1 2 3; do
+            node scripts/package.mjs && exit 0
+            [ "$attempt" = 3 ] || { echo "packaging failed (try $attempt of 3); trying again in 30 s"; sleep 30; }
+          done
+          exit 1
       - name: Remove the signing keychain
         if: ${{ always() && steps.signing.outputs.keychain != '' }}
         run: |
