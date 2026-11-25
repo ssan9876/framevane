@@ -6,6 +6,7 @@ import {
   type AnimatableClip, type AnimProp, type BlendMode, type Easing, type MediaClip, type OpInput, type Project,
 } from '@framevane/doc'
 import { useApp } from '../app/store'
+import { trackPendingEdit } from '../app/pending-edits'
 import { deleteSelection } from './actions'
 import { detachAudio, localPlayhead, setAnimProp } from './actions-m1'
 import { useEditor } from './Editor'
@@ -87,12 +88,26 @@ export function useCommitted<T>(value: T, commit: (v: T) => void, delay = 250): 
   const [local, setLocal] = useState(value)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pending = useRef(false)
+  // the waiting commit, registered so leaving the editor applies it first (see pending-edits.ts)
+  const untrack = useRef<(() => void) | null>(null)
   useEffect(() => { if (!pending.current) setLocal(value) }, [value])
+  // unmounting drops a commit that is still waiting: the store has flushed it already if the project is closing
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); untrack.current?.() }, [])
   const set = (v: T) => {
     setLocal(v)
     pending.current = true
     if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => { pending.current = false; commit(v) }, delay)
+    untrack.current?.()
+    const fire = () => {
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = null
+      untrack.current?.()
+      untrack.current = null
+      pending.current = false
+      commit(v)
+    }
+    untrack.current = trackPendingEdit(fire)
+    timer.current = setTimeout(fire, delay)
   }
   return [local, set]
 }

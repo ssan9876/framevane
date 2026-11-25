@@ -131,10 +131,16 @@ test.describe('M7 photo editor', () => {
     const s = props(page).getByRole('spinbutton', { name: 'Strength', exact: true })
     await s.fill('100'); await s.press('Enter')
     await expect.poll(async () => { const [r, g, b] = (await previewPixel(page, 0.8, 0.5))!.rgba; return Math.abs(r! - g!) < 10 && Math.abs(g! - b!) < 10 }).toBe(true)
+    // change the strength and leave at once, inside the inspector's 250 ms commit delay: the edit must be saved, not
+    // lost (it used to fire after the project closed and throw "Cannot read properties of null (reading 'tracks')")
+    await s.fill('60'); await s.press('Enter')
     await page.getByRole('button', { name: 'Projects' }).click()
     await page.getByRole('button', { name: 'Open still' }).click()
     await expect(page.getByRole('region', { name: 'Layers and tools' })).toBeVisible()
     await expect(page.getByRole('region', { name: 'Timeline' })).toHaveCount(0)
+    await tools(page).getByRole('button', { name: /still\.png/ }).first().click()
+    await props(page).getByRole('tab', { name: 'Adjust' }).click()
+    await expect(props(page).getByRole('spinbutton', { name: 'Strength', exact: true })).toHaveValue('60')
   })
 })
 

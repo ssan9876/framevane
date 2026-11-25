@@ -132,7 +132,9 @@ export function VoiceoverRecorder() {
           console.info(`[voiceover] saving ${bytes.byteLength} bytes (${bytes === webm ? 'webm' : 'wav'})`)
           const m = await window.framevane.media.saveRecording(doc.id, bytes)
           console.info('[voiceover] saved; placing it on the timeline')
-          const cur = useApp.getState().doc!
+          // the recording is saved with the project already; if the project was closed meanwhile, it just isn't placed
+          const cur = useApp.getState().doc
+          if (!cur || cur.id !== doc.id) return
           const placed = await useApp.getState().apply(placeAudioOps(cur, m, atUs))
           console.info(`[voiceover] placed: ${placed}`)
           if (placed) toast({ tone: 'success', title: 'Voiceover added', description: `${formatUs(m.asset.durationUs ?? 0)} at ${formatUs(atUs)}` })
