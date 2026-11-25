@@ -5,7 +5,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import type { AssetRef } from '@framevane/doc'
 import type { MediaInfo } from '../shared/api'
 import { now, uuid7, type Db } from './db'
-import { hasEncoder, parseRate, probe, runFfmpeg, type ProbeResult } from './ffmpeg'
+import { h264Args, parseRate, probe, runFfmpeg, type ProbeResult } from './ffmpeg'
 import type { JobQueue } from './jobs'
 import type { AppPaths } from './paths'
 
@@ -50,6 +50,23 @@ const MEDIA_EXTS = new Set([...Object.values(MIME_EXT), '.jpeg', '.m4v', '.avi']
 
 export class Media {
   constructor(private db: Db, private paths: AppPaths, private jobs: JobQueue, private notify: (projectId: string, m: MediaInfo) => void) {}
+
+  /**
+   * Video codecs this PC's WebCodecs can't decode after all, as the renderer measured them at startup. The codec list
+   * above is what Chromium supports in general; HEVC in particular needs hardware decoding on Windows, so on a PC
+   * without it an HEVC file imported with a blank preview and no mezzanine. Those files now get a mezzanine.
+   */
+  private undecodable = new Set<string>()
+  setUndecodable(codecs: string[]) {
+    // tests can add codecs, to check the fallback on a PC that can decode them (FRAMEVANE_TEST_UNDECODABLE=hevc,...)
+    const forced = (process.env.FRAMEVANE_TEST_UNDECODABLE ?? '').split(',').filter(Boolean)
+    this.undecodable = new Set([...codecs, ...forced])
+  }
+
+  /** Whether the renderer can decode the original (else it plays the mezzanine). */
+  private playable(r: AssetRow): boolean {
+    return !!r.webcodecs_ok && !(r.video_codec && this.undecodable.has(r.video_codec))
+  }
 
   /**
    * Download a media file from an http(s) URL into the cache (for agents that get a link back from a generation
@@ -117,7 +134,7 @@ export class Media {
   playablePath(assetId: string): string | null {
     const r = this.get(assetId)
     if (!r) return null
-    return r.webcodecs_ok ? r.path : r.mezzanine_path
+    return this.playable(r) ? r.path : r.mezzanine_path
   }
 
   /** Low-resolution stand-in for preview (never used for export). */
@@ -149,7 +166,7 @@ export class Media {
             const seg = 2_000_000
             const parts: string[] = []
             const n = Math.max(1, Math.ceil((outUs - inUs) / seg))
-            const venc = hasEncoder('h264_nvenc') ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '18'] : ['-c:v', 'libx264', '-preset', 'fast', '-crf', '17']
+            const venc = h264Args('master')
             for (let i = 0; i < n; i++) {
               const a = inUs + i * seg
               const len = Math.min(seg, outUs - a)
@@ -214,15 +231,37 @@ export class Media {
     const dir = join(projectDir, 'recordings')
     await mkdir(dir, { recursive: true })
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    // the renderer sends WAV it decoded itself, or the recorder's WebM if it couldn't (see VoiceoverRecorder)
+    const isWav = data.byteLength > 12 && String.fromCharCode(...data.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...data.subarray(8, 12)) === 'WAVE'
+    const t0 = Date.now()
+    const name = `Voiceover ${stamp.replace('T', ' ')}`
+    if (isWav) {
+      // WAV (16-bit PCM) is kept as it is: the editor plays it natively, and converting it to M4A stalled in FFmpeg on
+      // macOS and Windows CI (it encoded 0.49 s, then made no progress), which left the voiceover panel spinning
+      const wav = join(dir, `${name}.wav`)
+      await writeFile(wav, data)
+      console.info(`[media] recording: saved ${data.byteLength} bytes of WAV, importing`)
+      const [info] = await this.import(projectId, [wav])
+      console.info(`[media] recording: imported in ${Date.now() - t0} ms`)
+      return info!
+    }
     const raw = join(dir, `voiceover-${stamp}.webm`)
-    const out = join(dir, `Voiceover ${stamp.replace('T', ' ')}.m4a`)
+    const out = join(dir, `${name}.m4a`)
     await writeFile(raw, data)
+    // the WebM fallback still goes through FFmpeg: each step and FFmpeg's own output are logged, and it gives up after
+    // 60 s with FFmpeg's last lines as the error instead of waiting forever
+    console.info(`[media] recording: ${data.byteLength} bytes of WebM, converting`)
     try {
-      await runFfmpeg(['-i', raw, '-vn', '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out])
+      await runFfmpeg(['-i', raw, '-vn', '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out], {
+        timeoutMs: 60_000,
+        onStderr: (text) => { for (const line of text.split('\n')) if (line.trim()) console.info(`[media] recording ffmpeg: ${line.trim()}`) },
+      })
     } finally {
       await rm(raw, { force: true })
     }
+    console.info(`[media] recording: converted in ${Date.now() - t0} ms, importing`)
     const [info] = await this.import(projectId, [out])
+    console.info(`[media] recording: imported in ${Date.now() - t0} ms`)
     return info!
   }
 
@@ -272,7 +311,7 @@ export class Media {
 
   private prepare(projectId: string, row: AssetRow) {
     if (row.status === 'unsupported') return
-    const needMezz = !row.webcodecs_ok && !row.mezzanine_path && row.kind !== 'image'
+    const needMezz = !this.playable(row) && !row.mezzanine_path && row.kind !== 'image'
     const needThumbs = !row.thumbs_path && row.kind !== 'audio'
     const needPeaks = !row.waveform_path && (row.has_audio === 1 || row.kind === 'audio')
     const needProxy = row.kind === 'video' && !row.proxy_path && Math.max(row.width ?? 0, row.height ?? 0) > PROXY_ABOVE
@@ -318,7 +357,21 @@ export class Media {
       const fast = dur > 600 ? ['-skip_frame', 'nokey'] : []
       await runFfmpeg([...fast, '-i', row.path, '-vf', `fps=${n}/${Math.max(dur, 0.1)},scale=-2:160,tile=${n}x1`, '-frames:v', '1', '-an', strip], { signal })
     }
-    this.db.prepare(`UPDATE media_assets SET thumbs_path = ?, updated_at = ? WHERE id = ?`).run(poster, now(), row.id)
+    this.recordIfPresent('thumbs_path', poster, row.kind === 'image' ? [poster] : [poster, strip], row.id)
+  }
+
+  /**
+   * Store a generated preview's path, but only if its files are all still there: "Clear thumbnails and waveforms"
+   * can run while a job is between its FFmpeg steps, and recording a deleted file would serve 404s until the next
+   * prepare. The check and the write are synchronous, so a clear can't land between them; leftovers are removed and
+   * the preview is made again the next time the project's media is listed.
+   */
+  private recordIfPresent(column: 'thumbs_path' | 'waveform_path', path: string, files: string[], id: string) {
+    if (files.every((f) => existsSync(f))) {
+      this.db.prepare(`UPDATE media_assets SET ${column} = ?, updated_at = ? WHERE id = ?`).run(path, now(), id)
+      return
+    }
+    for (const f of files) void rm(f, { force: true })
   }
 
   private async makePeaks(row: AssetRow, signal: AbortSignal) {
@@ -342,7 +395,7 @@ export class Media {
     })
     const file = join(this.paths.peaks, `${row.id}.peaks`)
     await writeFile(file, Uint8Array.from(peaks))
-    this.db.prepare(`UPDATE media_assets SET waveform_path = ?, updated_at = ? WHERE id = ?`).run(file, now(), row.id)
+    this.recordIfPresent('waveform_path', file, [file], row.id)
   }
 
   private async makeMezzanine(row: AssetRow, signal: AbortSignal, progress: (p: number) => void) {
@@ -351,7 +404,7 @@ export class Media {
     const args = isAudio
       ? ['-i', row.path, '-vn', '-c:a', 'pcm_s16le', out]
       : ['-i', row.path, '-map', '0:v:0', '-map', '0:a:0?',
-        ...(hasEncoder('h264_nvenc') ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '18'] : ['-c:v', 'libx264', '-preset', 'fast', '-crf', '17']),
+        ...h264Args('master'),
         '-pix_fmt', 'yuv420p', '-g', '30', '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart', out]
     await runFfmpeg(args, { signal, durationUs: row.duration_us ?? undefined, onProgress: progress })
     this.db.prepare(`UPDATE media_assets SET mezzanine_path = ?, updated_at = ? WHERE id = ?`).run(out, now(), row.id)
@@ -362,7 +415,7 @@ export class Media {
     const src = this.playablePath(row.id) ?? row.path
     const portrait = (row.height ?? 0) > (row.width ?? 0)
     await runFfmpeg(['-i', src, '-map', '0:v:0', '-an', '-vf', portrait ? 'scale=-2:1280' : 'scale=1280:-2',
-      ...(hasEncoder('h264_nvenc') ? ['-c:v', 'h264_nvenc', '-preset', 'p3', '-cq', '24'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24']),
+      ...h264Args('proxy'),
       '-pix_fmt', 'yuv420p', '-g', '15', '-movflags', '+faststart', out], { signal, durationUs: row.duration_us ?? undefined, onProgress: progress })
     this.db.prepare(`UPDATE media_assets SET proxy_path = ?, updated_at = ? WHERE id = ?`).run(out, now(), row.id)
   }
@@ -386,7 +439,7 @@ export class Media {
       hasVideo: r.kind === 'video' || r.kind === 'image',
       hasAudio: r.has_audio === 1,
     }
-    const ready = r.status === 'ok' && (r.webcodecs_ok === 1 || !!r.mezzanine_path || r.kind === 'image')
+    const ready = r.status === 'ok' && (this.playable(r) || !!r.mezzanine_path || r.kind === 'image')
     return {
       asset,
       hasProxy: !!(r.proxy_path && existsSync(r.proxy_path)),
@@ -421,7 +474,7 @@ async function quickHash(path: string, size: number) {
   return h.digest('hex')
 }
 
-function describe(path: string, pr: ProbeResult) {
+export function describe(path: string, pr: ProbeResult) {
   const v = pr.streams.find((s) => s.codec_type === 'video' && !s.disposition?.attached_pic)
   const a = pr.streams.find((s) => s.codec_type === 'audio')
   const ext = extname(path).toLowerCase()

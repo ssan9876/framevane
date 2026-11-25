@@ -86,6 +86,20 @@ describe('reframe maths', () => {
     expect(reframeClip(c, { width: 1920, height: 1080 }, { width: 1080, height: 1920 }, someone, 'center')).toMatchObject({ x: 0, xKeys: [] })
   })
 
+  it('a stray detection or two in empty footage stays centred; someone there for a quarter of it is followed', () => {
+    const c = media(seed())
+    const src = { width: 1920, height: 1080 }
+    const canvas = { width: 1080, height: 1920 }
+    const at = (i: number, x: number | null) => ({ t: 2 + i * 0.5, x, y: x === null ? null : 0.4, area: x === null ? 0 : 0.01 })
+    // 20 samples, 2 noisy ones (10 %): centred, as if nobody were there
+    const noise = Array.from({ length: 20 }, (_, i) => at(i, i === 5 || i === 13 ? 0.9 : null))
+    expect(reframeClip(c, src, canvas, noise, 'subject')).toMatchObject({ x: 0, y: 0, xKeys: [], yKeys: [] })
+    // the same clip with someone on the right in 6 of 20 (30 %): followed
+    const someone = Array.from({ length: 20 }, (_, i) => at(i, i < 6 ? 0.85 : null))
+    const r = reframeClip(c, src, canvas, someone, 'subject')
+    expect(r.x !== 0 || r.xKeys.length > 0).toBe(true)
+  })
+
   it('a subject standing still gives a static offset, not keyframes', () => {
     const c = media(seed())
     const still = Array.from({ length: 20 }, (_, i) => ({ t: 2 + i * 0.5, x: 0.7 + (i % 2) * 0.005, y: 0.4, area: 0.1 }))

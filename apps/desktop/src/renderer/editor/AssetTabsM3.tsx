@@ -7,6 +7,7 @@ import { useApp } from '../app/store'
 import { addText, cutWords, exportCaptions, fillerWords, importSrt, mainTrackWords, placeAudioOps } from './actions-m3'
 import { useEditor } from './Editor'
 import { TEXT_PRESETS, type TextPreset } from './textPresets'
+import { keys, isMac } from '../app/platform'
 
 const errText = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
 
@@ -56,6 +57,34 @@ export function TextTab() {
 }
 
 /** S05 · Record a voiceover at the playhead (optionally while the timeline plays). */
+/** Decode a recording with Chromium's own decoder and write it as 16-bit PCM WAV (at the decoder's sample rate). */
+async function toWav(webm: Uint8Array): Promise<Uint8Array> {
+  const ctx = new AudioContext()
+  try {
+    const buf = await ctx.decodeAudioData(webm.slice().buffer)
+    const ch = buf.numberOfChannels
+    const frames = buf.length
+    const out = new DataView(new ArrayBuffer(44 + frames * ch * 2))
+    const text = (at: number, s: string) => { for (let i = 0; i < s.length; i++) out.setUint8(at + i, s.charCodeAt(i)) }
+    text(0, 'RIFF'); out.setUint32(4, 36 + frames * ch * 2, true); text(8, 'WAVE')
+    text(12, 'fmt '); out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, ch, true)
+    out.setUint32(24, buf.sampleRate, true); out.setUint32(28, buf.sampleRate * ch * 2, true); out.setUint16(32, ch * 2, true); out.setUint16(34, 16, true)
+    text(36, 'data'); out.setUint32(40, frames * ch * 2, true)
+    const data = Array.from({ length: ch }, (_, c) => buf.getChannelData(c))
+    let at = 44
+    for (let i = 0; i < frames; i++) {
+      for (let c = 0; c < ch; c++) {
+        const v = Math.max(-1, Math.min(1, data[c]![i]!))
+        out.setInt16(at, v < 0 ? v * 0x8000 : v * 0x7fff, true)
+        at += 2
+      }
+    }
+    return new Uint8Array(out.buffer)
+  } finally {
+    void ctx.close()
+  }
+}
+
 export function VoiceoverRecorder() {
   const doc = useApp((s) => s.doc)
   const { player } = useEditor()
@@ -91,18 +120,29 @@ export function VoiceoverRecorder() {
         stream.getTracks().forEach((t) => t.stop())
         player.pause()
         setSaving(true)
+        // each step is logged: saving once hung (macOS and Windows CI, no error); the e2e log shows where
+        console.info(`[voiceover] stopped: ${chunks.length} chunks`)
         try {
-          const bytes = new Uint8Array(await new Blob(chunks, { type: 'audio/webm' }).arrayBuffer())
-          if (bytes.byteLength < 200) throw new Error('Nothing was recorded. Check the microphone.')
+          const webm = new Uint8Array(await new Blob(chunks, { type: 'audio/webm' }).arrayBuffer())
+          if (webm.byteLength < 200) throw new Error('Nothing was recorded. Check the microphone.')
+          // FFmpeg stalls on MediaRecorder's WebM (no duration; it decoded 0.49 s and then made no progress on macOS
+          // and Windows CI), so Chromium decodes it here and the main process gets plain WAV. If that fails, the WebM
+          // goes as before (the conversion then gives up after 60 s rather than hanging).
+          const bytes = await toWav(webm).catch((e) => { console.warn(`[voiceover] couldn't decode the recording here: ${errText(e)}`); return webm })
+          console.info(`[voiceover] saving ${bytes.byteLength} bytes (${bytes === webm ? 'webm' : 'wav'})`)
           const m = await window.framevane.media.saveRecording(doc.id, bytes)
+          console.info('[voiceover] saved; placing it on the timeline')
           const cur = useApp.getState().doc!
-          if (await useApp.getState().apply(placeAudioOps(cur, m, atUs))) toast({ tone: 'success', title: 'Voiceover added', description: `${formatUs(m.asset.durationUs ?? 0)} at ${formatUs(atUs)}` })
+          const placed = await useApp.getState().apply(placeAudioOps(cur, m, atUs))
+          console.info(`[voiceover] placed: ${placed}`)
+          if (placed) toast({ tone: 'success', title: 'Voiceover added', description: `${formatUs(m.asset.durationUs ?? 0)} at ${formatUs(atUs)}` })
         } catch (e) {
           toast({ tone: 'error', title: "The recording couldn't be saved", description: errText(e) })
         } finally { setSaving(false) }
       }
       recorder.current = r
       r.start(250)
+      console.info(`[voiceover] recording (${stream.getAudioTracks()[0]?.label ?? 'no track'})`)
       setElapsed(0)
       setRec({ startedAt: Date.now(), atUs })
       if (playAlong) void player.play(atUs)
@@ -111,6 +151,7 @@ export function VoiceoverRecorder() {
     }
   }
   function stop() {
+    console.info(`[voiceover] stop clicked (recorder ${recorder.current?.state ?? 'missing'})`)
     recorder.current?.stop()
     recorder.current = null
     setRec(null)
@@ -173,7 +214,7 @@ export function TranscriptEditor() {
 
   const cut = async (list: TimelineWord[], what: string) => {
     if (!list.length) return
-    if (await cutWords(list)) toast({ tone: 'success', title: `Cut ${list.length} ${what}`, description: 'Ctrl+Z puts them back.' })
+    if (await cutWords(list)) toast({ tone: 'success', title: `Cut ${list.length} ${what}`, description: `${keys('Ctrl+Z')} puts them back.` })
   }
   const click = (i: number, e: React.MouseEvent) => {
     const w = words![i]!
@@ -230,7 +271,7 @@ export function TranscriptEditor() {
           })}
         </div>
       )}
-      <p className="text-xs text-muted">Click to jump · Shift+click to select a run · Ctrl+click to pick words · Delete to cut</p>
+      <p className="text-xs text-muted">Click to jump · Shift+click to select a run · {isMac() ? '⌘-click' : 'Ctrl+click'} to pick words · Delete to cut</p>
     </section>
   )
 }

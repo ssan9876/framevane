@@ -54,7 +54,9 @@ test.describe('F13 connect Claude Code (Framevane as an MCP server)', () => {
     expect((frames.content as { type: string }[]).some((c) => c.type === 'image')).toBe(true)
 
     // the user undoes the agent's last edit in the app
-    await page.locator('body').click({ position: { x: 700, y: 900 } })
+    // an empty spot under the timeline tracks, as a share of the window (it opens smaller than 1600x960 on small screens)
+    const win = await page.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }))
+    await page.locator('body').click({ position: { x: Math.round(win.w * 0.44), y: Math.round(win.h * 0.94) } })
     await page.keyboard.press('Control+z')
     await expect(clips(page, 'cap-')).toHaveCount(0)
 

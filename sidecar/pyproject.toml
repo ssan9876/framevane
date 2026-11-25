@@ -16,6 +16,10 @@ dependencies = [
   "onnxruntime==1.24.4; sys_platform != 'win32'",
   "numpy",
   "pillow==11.3.0",
+  # on-screen text in videos (templates); PP-OCR models ship inside the wheel
+  "rapidocr-onnxruntime==1.4.4",
+  # 4.12 still has macOS 13+ wheels (5.x needs macOS 15); onnxruntime sets the floor at macOS 14
+  "opencv-python==4.12.0.88",
 ]
 
 [tool.uv]

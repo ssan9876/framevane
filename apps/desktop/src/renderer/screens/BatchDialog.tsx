@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Badge, Button, Dialog, Select, Switch, TextField } from '@framevane/ui'
 import type { BatchItem, ProjectSummary } from '../../shared/api'
 import { useApp } from '../app/store'
+import { keys } from '../app/platform'
 
 const STATUS: Record<BatchItem['status'], { label: string; tone: 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'agent' }> = {
   queued: { label: 'Waiting', tone: 'neutral' },
@@ -59,7 +60,7 @@ export function BatchDialog({ projects, onClose }: { projects: ProjectSummary[];
             options={defs.map((d) => ({ value: d.id, label: d.name }))} />
           {def && <p className="text-sm text-muted">{def.description}</p>}
           <TextField label="Request" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="What should it do in each project?" />
-          <Switch label="Apply the edits automatically" description={autoApply ? 'Each project is changed right away (Ctrl+Z in that project undoes it).' : 'Edits wait in each project’s agent panel for you to review.'}
+          <Switch label="Apply the edits automatically" description={autoApply ? `Each project is changed right away (${keys('Ctrl+Z')} in that project undoes it).` : 'Edits wait in each project’s agent panel for you to review.'}
             checked={autoApply} onCheckedChange={setAutoApply} />
         </div>
       ) : (

@@ -4,7 +4,7 @@ import { basename, extname, join } from 'node:path'
 import type { CustomFont } from '../shared/api'
 
 /**
- * Fonts for text: families installed in Windows (Chromium draws them by name, nothing to load) and font files the user
+ * Fonts for text: families installed on the computer (Chromium draws them by name, nothing to load) and font files the user
  * imports, copied into the app's fonts folder and served to the window as framevane-media://font/<file>.
  */
 
@@ -18,13 +18,22 @@ export class Fonts {
   /** Installed font family names (once per session; ~1 s the first time). */
   systemFamilies(): Promise<string[]> {
     this.system ??= new Promise((resolve) => {
-      if (process.platform !== 'win32') return resolve([])
-      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-        '[Console]::OutputEncoding=[Text.Encoding]::UTF8; Add-Type -AssemblyName System.Drawing; (New-Object System.Drawing.Text.InstalledFontCollection).Families | ForEach-Object { $_.Name }'],
-      { windowsHide: true, timeout: 20_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      const done = (err: Error | null, stdout: string) => {
         if (err) return resolve([])
-        resolve([...new Set(stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)))
-      })
+        // families starting with "." are macOS system UI fonts that apps aren't meant to pick
+        resolve([...new Set(stdout.split(/\r?\n/).map((s) => s.trim()).filter((s) => s && !s.startsWith('.')))].sort((a, b) => a.localeCompare(b)))
+      }
+      if (process.platform === 'win32') {
+        execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+          '[Console]::OutputEncoding=[Text.Encoding]::UTF8; Add-Type -AssemblyName System.Drawing; (New-Object System.Drawing.Text.InstalledFontCollection).Families | ForEach-Object { $_.Name }'],
+        { windowsHide: true, timeout: 20_000, maxBuffer: 4 * 1024 * 1024 }, done)
+      } else if (process.platform === 'darwin') {
+        // AppKit's own list of installed families, through JavaScript for Automation (no permissions needed)
+        execFile('/usr/bin/osascript', ['-l', 'JavaScript', '-e', "ObjC.import('AppKit'); ObjC.deepUnwrap($.NSFontManager.sharedFontManager.availableFontFamilies).join('\\n')"],
+          { timeout: 20_000, maxBuffer: 4 * 1024 * 1024 }, done)
+      } else {
+        execFile('fc-list', [':', 'family'], { timeout: 20_000, maxBuffer: 4 * 1024 * 1024 }, (err, out) => done(err, out.split(/\r?\n/).map((l) => l.split(',')[0] ?? '').join('\n')))
+      }
     })
     return this.system
   }

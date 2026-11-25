@@ -222,7 +222,7 @@ export function SpeechPanel({ text, atUs }: { text: string; atUs: number }) {
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted">Reads the text aloud and puts the audio under it. Runs on your computer, free.</p>
       <Select label="Voice" value={voice} width={210} onValueChange={setVoice}
-        options={voices.map((v) => ({ value: v.id, label: v.name, hint: `${v.engine === 'kokoro' ? 'natural' : 'Windows'} · ${v.language}`, disabled: !v.ready }))} />
+        options={voices.map((v) => ({ value: v.id, label: v.name, hint: `${v.engine === 'kokoro' ? 'natural' : v.engine === 'macos' ? 'Mac' : 'Windows'} · ${v.language}`, disabled: !v.ready }))} />
       {kokoroMissing && (
         <div className="flex items-center gap-2 rounded-md border border-border p-2 text-sm">
           <span className="flex-1 text-muted">Natural voices need a one-time 120 MB download.</span>

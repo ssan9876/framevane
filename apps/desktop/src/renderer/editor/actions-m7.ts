@@ -63,7 +63,7 @@ export function addTextLayer(preset?: TextPreset, text?: string) {
 /** Emoji stickers are text layers drawn with the system's colour emoji font. */
 export function addEmojiLayer(emoji: string) {
   const H = st().doc?.canvas.height ?? 1080
-  const style = TextStyle.parse({ ...DEFAULT_CAPTION_STYLE, y: 0.5, fontFamily: 'Segoe UI Emoji', fontSize: Math.round(H / 5), strokeWidth: 0, fontWeight: 400 })
+  const style = TextStyle.parse({ ...DEFAULT_CAPTION_STYLE, y: 0.5, fontFamily: window.framevane.app.platform === 'darwin' ? 'Apple Color Emoji' : 'Segoe UI Emoji', fontSize: Math.round(H / 5), strokeWidth: 0, fontWeight: 400 })
   return addLayer('text', 'Sticker', {
     id: newId('sticker'), kind: 'text', startUs: 0, durationUs: PHOTO_DURATION_US, enabled: true, text: emoji, style, transform: IDENTITY_TRANSFORM, keyframes: {}, anim: NO_TEXT_ANIM,
   })

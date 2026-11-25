@@ -1,7 +1,7 @@
 """Background removal and subject tracking.
 
-Video: Robust Video Matting (recurrent, so mattes are stable frame to frame) on the GPU through DirectML, CPU if that
-fails. The result is a grayscale matte video with the source's own timestamps, which the editor uses as alpha (the
+Video: Robust Video Matting (recurrent, so mattes are stable frame to frame) on the GPU through DirectML (Windows) or
+CoreML (Mac), CPU if that fails; on the CPU the matte is worked out at a smaller size and scaled up. The result is a grayscale matte video with the source's own timestamps, which the editor uses as alpha (the
 original file is never changed). Photos: BiRefNet lite on the CPU (its graph hangs DirectML on some drivers).
 Subject tracking reuses the video matte model at low resolution: the person mask gives where the subject is.
 """
@@ -9,6 +9,8 @@ Subject tracking reuses the video matte model at low resolution: the person mask
 from __future__ import annotations
 
 import os
+import sys
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -17,20 +19,46 @@ import numpy as np
 _sessions: dict[tuple[str, bool], Any] = {}
 
 
+_GPU_PROVIDERS = ("DmlExecutionProvider", "CoreMLExecutionProvider")
+
+
+def _gpu_provider(ort: Any) -> Any:
+    """DirectML on Windows (any GPU), CoreML on a Mac (GPU / Neural Engine); None when neither is there."""
+    available = ort.get_available_providers()
+    if "DmlExecutionProvider" in available:
+        return "DmlExecutionProvider"
+    if "CoreMLExecutionProvider" in available:
+        # MLProgram runs on more of the graph than the older NeuralNetwork format; RVM's inputs change size per video
+        return ("CoreMLExecutionProvider", {"ModelFormat": "MLProgram", "MLComputeUnits": "ALL", "RequireStaticInputShapes": "0"})
+    return None
+
+
 def session(model_path: Path, gpu: bool = True):
-    """A cached ONNX Runtime session: DirectML first (any Windows GPU), CPU as the fallback."""
+    """A cached ONNX Runtime session: the GPU provider first (DirectML / CoreML), CPU as the fallback."""
     import onnxruntime as ort
 
-    gpu = gpu and os.environ.get("FRAMEVANE_FORCE_CPU") != "1" and "DmlExecutionProvider" in ort.get_available_providers()
-    key = (str(model_path), gpu)
+    provider = _gpu_provider(ort) if gpu and os.environ.get("FRAMEVANE_FORCE_CPU") != "1" else None
+    key = (str(model_path), provider is not None)
     if key not in _sessions:
-        providers = ["DmlExecutionProvider", "CPUExecutionProvider"] if gpu else ["CPUExecutionProvider"]
-        _sessions[key] = ort.InferenceSession(str(model_path), providers=providers)
+        if provider is not None:
+            try:
+                _sessions[key] = ort.InferenceSession(str(model_path), providers=[provider, "CPUExecutionProvider"])
+            except Exception:
+                # the provider can refuse the graph (CoreML and some ops): the CPU still works
+                return session(model_path, gpu=False)
+        else:
+            _sessions[key] = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
     return _sessions[key]
 
 
 def _device(s: Any) -> str:
-    return "gpu" if "DmlExecutionProvider" in s.get_providers() else "cpu"
+    return "gpu" if any(p in s.get_providers() for p in _GPU_PROVIDERS) else "cpu"
+
+
+# On the CPU the matte is worked out at this size and scaled up to the video's: the edge refiner runs at the input's
+# full size, so a 1080p frame costs about 4x a 960 px one, for edges that are only slightly softer.
+CPU_MATTE_SIDE = 960
+GPU_MATTE_SIDE = 1920
 
 
 def _rotation(frame: Any) -> int:
@@ -51,6 +79,15 @@ class Rvm:
         self.s = session(model_path, gpu)
         self.rec = [np.zeros([1, 1, 1, 1], np.float32)] * 4
         self.device = _device(self.s)
+        if self.device == "gpu":
+            # a provider can load the graph and still fail to run it (CoreML on some ops): find out before the first
+            # real frame, so the caller sizes frames for the device that will actually do the work
+            try:
+                self.alpha(np.zeros([64, 64, 3], np.uint8))
+            except Exception:
+                self.s = session(model_path, gpu=False)
+                self.device = "cpu"
+            self.rec = [np.zeros([1, 1, 1, 1], np.float32)] * 4
 
     def alpha(self, rgb: np.ndarray) -> np.ndarray:
         h, w = rgb.shape[:2]
@@ -73,6 +110,44 @@ def _fit(w: int, h: int, cap: int) -> tuple[int, int]:
     return max(2, int(round(w * k / 2)) * 2), max(2, int(round(h * k / 2)) * 2)
 
 
+def _seconds_per_frame(rvm: Rvm, w: int, h: int, runs: int = 2) -> float:
+    """Time `rvm` on a w×h frame (after one warm-up run, which also compiles for that size); its state is reset after."""
+    frame = np.zeros([h, w, 3], np.uint8)
+    rvm.alpha(frame)
+    t = time.perf_counter()
+    for _ in range(runs):
+        rvm.alpha(frame)
+    rvm.rec = [np.zeros([1, 1, 1, 1], np.float32)] * 4
+    return (time.perf_counter() - t) / runs
+
+
+# (model, width, height) -> whether CoreML beat the CPU for it, measured once per run of the sidecar
+_coreml_wins: dict[tuple[str, int, int], bool] = {}
+
+
+def _pick_matting(model: Path, rvm: Rvm, w: int, h: int) -> tuple[Rvm, int]:
+    """The matting session and frame size for a w×h video. DirectML is a proven win on Windows. CoreML is timed against
+    the CPU first: on a real Mac it can run the graph on the GPU / Neural Engine, but on a Mac without them (a CI
+    virtual machine) or for parts of the graph it won't take, it is no faster than the CPU at full size, and the CPU
+    at the smaller size is then several times quicker."""
+    if rvm.device != "gpu":
+        return rvm, CPU_MATTE_SIDE
+    if "CoreMLExecutionProvider" not in rvm.s.get_providers():
+        return rvm, GPU_MATTE_SIDE
+    key = (str(model), w, h)
+    if key not in _coreml_wins:
+        cpu = Rvm(model, gpu=False)
+        try:
+            gpu_s = _seconds_per_frame(rvm, *_fit(w, h, GPU_MATTE_SIDE))
+        except Exception:
+            gpu_s = float("inf")
+        cpu_s = _seconds_per_frame(cpu, *_fit(w, h, CPU_MATTE_SIDE))
+        # (a CoreML run that failed mid-timing has already moved this session to the CPU, at the big size: a loss)
+        _coreml_wins[key] = rvm.device == "gpu" and gpu_s < cpu_s
+        print(f"[vision] matting {w}x{h}: CoreML {gpu_s:.3f} s/frame at {GPU_MATTE_SIDE}, CPU {cpu_s:.3f} s/frame at {CPU_MATTE_SIDE} -> {'CoreML' if _coreml_wins[key] else 'CPU'}", file=sys.stderr, flush=True)
+    return (rvm, GPU_MATTE_SIDE) if _coreml_wins[key] else (Rvm(model, gpu=False), CPU_MATTE_SIDE)
+
+
 def matte_video(model: Path, src: str, out: str, progress: Callable[[float], None], cancelled: Callable[[], bool]) -> dict[str, Any]:
     import av
 
@@ -80,6 +155,10 @@ def matte_video(model: Path, src: str, out: str, progress: Callable[[float], Non
     inp = av.open(src)
     try:
         vs = inp.streams.video[0]
+        # picked once: the recurrent state is tied to the input size, so it stays the same even if the GPU drops out
+        rvm, side = _pick_matting(model, rvm, vs.codec_context.width or 1920, vs.codec_context.height or 1080)
+        started = time.perf_counter()
+        print(f"[vision] matting {Path(src).name} on {rvm.device} ({', '.join(rvm.s.get_providers()[:1])}) at {side} px", file=sys.stderr, flush=True)
         vs.thread_type = "AUTO"
         duration = float(vs.duration * vs.time_base) if vs.duration else float(inp.duration or 0) / 1e6
         rate = float(vs.average_rate or 30)
@@ -103,7 +182,7 @@ def matte_video(model: Path, src: str, out: str, progress: Callable[[float], Non
                 os_.codec_context.time_base = vs.time_base
                 os_.codec_context.gop_size = 30
                 os_.options = {"crf": "17", "preset": "veryfast"}
-            cw, ch = _fit(frame.width, frame.height, 1920)
+            cw, ch = _fit(frame.width, frame.height, side)
             rgb = _upright(frame.to_ndarray(format="rgb24", width=cw, height=ch), rot)
             a = rvm.alpha(rgb)
             gray = (np.clip(a, 0, 1) * 255 + 0.5).astype(np.uint8)
@@ -117,6 +196,8 @@ def matte_video(model: Path, src: str, out: str, progress: Callable[[float], Non
             n += 1
             if n % 10 == 0:
                 progress(min(0.99, n / expected))
+            if n % 150 == 0:
+                print(f"[vision] {n}/{expected} frames, {n / (time.perf_counter() - started):.1f} fps", file=sys.stderr, flush=True)
         if os_ is None:
             raise RuntimeError("No video frames found")
         for p in os_.encode():

@@ -20,6 +20,8 @@ const api = {
     readTextFile: inv('app:readTextFile') as ReelApi['app']['readTextFile'],
     showItemInFolder: inv('app:showItemInFolder') as ReelApi['app']['showItemInFolder'],
     pathForFile: (file: File) => webUtils.getPathForFile(file),
+    platform: process.platform,
+    onMenu: on<string>('menu:command'),
   },
   projects: {
     list: inv('projects:list') as ReelApi['projects']['list'],
@@ -43,6 +45,7 @@ const api = {
     relink: inv('media:relink') as ReelApi['media']['relink'],
     processAudio: inv('media:processAudio') as ReelApi['media']['processAudio'],
     saveRecording: inv('media:saveRecording') as ReelApi['media']['saveRecording'],
+    setUndecodable: inv('media:setUndecodable') as ReelApi['media']['setUndecodable'],
     onChange: on('media:change'),
   },
   ai: {
@@ -70,6 +73,15 @@ const api = {
     speak: inv('tts:speak') as ReelApi['tts']['speak'],
   },
   jobs: { onEvent: on('jobs:event'), cancel: inv('jobs:cancel') as ReelApi['jobs']['cancel'] },
+  templates: {
+    list: inv('templates:list') as ReelApi['templates']['list'],
+    get: inv('templates:get') as ReelApi['templates']['get'],
+    create: inv('templates:create') as ReelApi['templates']['create'],
+    wait: inv('templates:wait') as ReelApi['templates']['wait'],
+    rename: inv('templates:rename') as ReelApi['templates']['rename'],
+    remove: inv('templates:remove') as ReelApi['templates']['remove'],
+    use: inv('templates:use') as ReelApi['templates']['use'],
+  },
   analysis: {
     transcript: inv('analysis:transcript') as ReelApi['analysis']['transcript'],
     silences: inv('analysis:silences') as ReelApi['analysis']['silences'],

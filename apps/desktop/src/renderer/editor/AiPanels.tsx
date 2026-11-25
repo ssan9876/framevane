@@ -6,6 +6,7 @@ import type { AiModel } from '../../shared/api'
 import { useApp } from '../app/store'
 import { autoReframe, matteJob, removeBackground, restoreBackground } from './actions-m5'
 import { useCommitted } from './Inspector'
+import { keys } from '../app/platform'
 
 /** M5: background removal (inspector), auto reframe (dialog), and the local model manager (settings). */
 
@@ -66,7 +67,7 @@ export function ReframeDialog() {
     try {
       const r = await autoReframe(ratio, follow, scope === 'selected' ? visual : undefined)
       if (r) {
-        toast({ tone: 'success', title: `Reframed to ${ratio}`, description: `${follow === 'center' ? 'Clips fill the frame, centred.' : r.followed === r.clips ? (r.clips === 1 ? 'The clip follows the person.' : `All ${r.clips} clips follow a person.`) : `${r.followed} of ${r.clips} clips follow a person; the others had nobody to follow and are centred.`} Ctrl+Z undoes it.` })
+        toast({ tone: 'success', title: `Reframed to ${ratio}`, description: `${follow === 'center' ? 'Clips fill the frame, centred.' : r.followed === r.clips ? (r.clips === 1 ? 'The clip follows the person.' : `All ${r.clips} clips follow a person.`) : `${r.followed} of ${r.clips} clips follow a person; the others had nobody to follow and are centred.`} ${keys('Ctrl+Z')} undoes it.` })
         close()
       }
     } catch (e) { toast({ tone: 'error', title: "Reframing didn't work", description: errText(e) }) } finally { setBusy(false) }

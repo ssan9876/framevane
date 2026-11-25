@@ -74,6 +74,9 @@ export interface ReframeResult { scale: number; x: number; y: number; xKeys: Key
  * Where to put one clip in the new canvas: scaled to cover it, offset so the subject's centre (x) and upper body (y, at
  * 35 % of the height) stay in frame. Without a subject, or with follow "center", the clip is centred.
  */
+/** The share of a clip's samples that must find the subject before the clip follows them (else it's centred). */
+export const MIN_SUBJECT_SHARE = 0.25
+
 export function reframeClip(clip: MediaClip, src: { width: number; height: number }, canvas: { width: number; height: number }, samples: SubjectSample[], follow: Follow): ReframeResult {
   const { width: W, height: H } = canvas
   const fit = Math.min(W / src.width, H / src.height)
@@ -87,7 +90,10 @@ export function reframeClip(clip: MediaClip, src: { width: number; height: numbe
     const local = (s.t * 1e6 - clip.inUs) / clip.speed
     return local >= -1e5 && local <= clip.durationUs + 1e5
   })
-  if (follow === 'center' || !inRange.some((s) => s.x !== null)) return centred
+  // follow only someone who is there for a real share of the clip: on the CPU the matte can flag a frame or two of
+  // empty footage (colour bars on Windows CI), and one stray detection made the whole clip pan after nobody
+  const found = inRange.filter((s) => s.x !== null).length
+  if (follow === 'center' || found === 0 || found < inRange.length * MIN_SUBJECT_SHARE) return centred
   const times = inRange.map((s) => clamp(Math.round((s.t * 1e6 - clip.inUs) / clip.speed), 0, clip.durationUs))
   const xs = fillGaps(inRange.map((s) => s.x)).map((u) => clamp((0.5 - u) * picW, -maxX, maxX))
   const ys = fillGaps(inRange.map((s) => s.y), 0.4).map((v) => clamp(-0.15 * H - (v - 0.5) * picH, -maxY, maxY))

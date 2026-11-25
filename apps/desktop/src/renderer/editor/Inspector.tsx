@@ -15,6 +15,7 @@ import type { AudioPreset } from '../../shared/api'
 import { AdjustPanel, ChromaPanel, EffectsPanel } from './LookInspector'
 import { CutoutPanel } from './AiPanels'
 import { ShapeInspector } from './PhotoPanels'
+import { keys } from '../app/platform'
 
 /** S14–S19 · Inspector: properties of the selection, or project details (with S02 Modify) when nothing is selected. */
 export function Inspector() {
@@ -268,7 +269,7 @@ function AudioTools({ clip, isMain }: { clip: MediaClip; isMain: boolean }) {
         <Button size="sm" loading={busy === 'clean'} onClick={async () => {
           setBusy('clean')
           try {
-            if (await cleanUpAudio(clip.id, preset)) toast({ tone: 'success', title: `${CLEANUP.find((c) => c.value === preset)!.label}: done`, description: clip.kind === 'video' ? 'The cleaned sound is on a linked audio clip. Ctrl+Z undoes it.' : 'Ctrl+Z undoes it.' })
+            if (await cleanUpAudio(clip.id, preset)) toast({ tone: 'success', title: `${CLEANUP.find((c) => c.value === preset)!.label}: done`, description: clip.kind === 'video' ? `The cleaned sound is on a linked audio clip. ${keys('Ctrl+Z')} undoes it.` : `${keys('Ctrl+Z')} undoes it.` })
           } catch (e) { toast({ tone: 'error', title: "The sound couldn't be cleaned up", description: msg(e) }) } finally { setBusy(null) }
         }}>Apply</Button>
       </div>

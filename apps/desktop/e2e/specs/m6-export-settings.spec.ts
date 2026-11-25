@@ -85,6 +85,8 @@ test.describe('M6 export formats', () => {
     await newProjectFromFiles(page)
     const d = await openExport(page)
     await pick(page, 'Resolution', '720p')
+    // the encoder check is asynchronous: read the codec list only once it's done
+    await expect(d.locator('[data-codecs="checked"]')).toBeAttached({ timeout: 30_000 })
     await d.getByRole('combobox', { name: 'Codec' }).click()
     const av1 = page.getByRole('option', { name: /^AV1/ })
     if (await av1.getAttribute('aria-disabled') === 'true' || await av1.getAttribute('data-disabled') !== null) {

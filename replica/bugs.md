@@ -13,6 +13,9 @@ Only reproduced bugs are listed. Each one has a test that failed before the fix 
 | BUG-006 | S3 | Tabs in Settings and the inspector point aria-controls at panels that don't exist | fixed in 16aa598 |
 | BUG-007 | S3 | Inspector slider thumbs have no accessible name | fixed in 16aa598 |
 | BUG-008 | S4 | Home requests project covers before their thumbnails exist (404) | fixed in 16aa598 |
+| BUG-017 | S2 | HEVC footage shows a blank preview on PCs without HEVC decoding | fixed on feat/templates-and-macos |
+| BUG-016 | S2 | Reverse, proxies and legacy-format conversion fail on PCs without an NVIDIA GPU | fixed on feat/templates-and-macos |
+| BUG-015 | S4 | Clearing thumbnails while a clip is being prepared records a deleted thumbnail (404) | fixed on feat/templates-and-macos |
 | BUG-014 | S3 | Auto reframe frames the gap between two people instead of the speaker | fixed in M5 (before release) |
 | BUG-013 | S2 | Chroma key leaves a real green screen in place at the default settings | fixed in M4 (before release) |
 | BUG-012 | S3 | Agent library tool checkboxes are too small and too close together to hit reliably (WCAG 2.5.8) | fixed in M3 |
@@ -187,6 +190,54 @@ Evidence: found while building M1. The on-canvas drag sends x then y, and x came
 Suspected cause: zod's `.partial()` keeps field defaults, so a patch `{y: 100}` parsed to `{x: 0, y: 100, scale: 1, …}`.
 Fix: `patchOf()` builds patch schemas without defaults. It's used for transform and caption-style patches, and covered by two regression tests.
 Status: fixed in b26aae5
+
+---
+
+### BUG-017: HEVC footage shows a blank preview on PCs without HEVC decoding
+- Severity: S2 (common phone footage can't be previewed or edited by eye; no workaround in the UI)
+- Build: v0.1.0; found on the GPU-less Windows CI runner (windows-2025)
+
+Steps
+1. On a Windows PC without hardware HEVC decoding, import an HEVC video (e.g. 10-bit from a phone).
+
+Expected: the clip previews (from a playable copy if need be).
+Actual: the preview stays black; no copy is made.
+Evidence: f01-import.spec.ts › F01-E4 HEVC 10-bit decodes in the preview (Windows CI run 45329315204).
+Cause: whether the renderer can decode a file came from a fixed codec list in media.ts (h264, hevc, vp9, av1, vp8). Chromium on Windows decodes HEVC only with hardware support, so the list was wrong there.
+Fix: at startup the renderer asks WebCodecs (`VideoDecoder.isConfigSupported`, HEVC at 8 and 10 bits) and reports codecs it can't decode; those files get the H.264 mezzanine like other unsupported formats. New test F01-E11 forces HEVC off (FRAMEVANE_TEST_UNDECODABLE) and checks the copy is made and previews.
+Status: fix committed; waiting on CI
+
+---
+
+### BUG-016: Reverse, proxies and legacy-format conversion fail on PCs without an NVIDIA GPU
+- Severity: S2 (whole features fail with an FFmpeg error on most non-NVIDIA Windows PCs; no workaround in the UI)
+- Build: v0.1.0; found on a Windows 11 ARM64 laptop (Qualcomm Adreno GPU)
+
+Steps
+1. On a PC without an NVIDIA GPU, import 4K footage, a legacy .avi, or reverse a clip.
+
+Expected: a proxy / converted copy / reversed clip.
+Actual: "ffmpeg exited with 4294967295" (`[h264_nvenc] Cannot load nvcuda.dll`); the 4K proxy retries every second.
+Evidence: f01-import.spec.ts › F01-E3 AVI, m1-editing.spec.ts › reverse, › 4K media gets a proxy.
+Cause: `h264Args` picked h264_nvenc whenever FFmpeg was built with it (`hasEncoder` reads `-encoders`), and the bundled FFmpeg builds include it everywhere. The dev machine had an NVIDIA GPU, so it never showed.
+Fix: `encoderWorks()` runs a tiny test encode once per encoder (cached) and falls back to libx264; VideoToolbox on a Mac gets the same check.
+Status: fix committed; confirmed on the ARM64 PC by those three tests
+
+---
+
+### BUG-015: Clearing thumbnails while a clip is being prepared records a deleted thumbnail (404)
+- Severity: S4 (a missing thumbnail and a console error; it comes back after the project is reopened)
+- Build: v0.1.0; found on macOS CI (Apple Silicon runner), where preparing is slower
+
+Steps
+1. Import talk.mp4 into a new project and, while it is still being prepared, Settings → Performance → Clear "Thumbnails and waveforms".
+
+Expected: the cache is empty and the thumbnail is made again later.
+Actual: the media card asks for `framevane-media://thumb/<id>` and gets a 404.
+Evidence: m6-export-settings.spec.ts › projects folder, AI device…, caches with sizes and clearing (it clears as soon as the poster exists).
+Cause: making thumbnails is two FFmpeg steps (poster, then filmstrip) and the path is stored at the end. A clear in between deleted the poster, the filmstrip was written after it, and the job stored the deleted poster's path.
+Fix: previews (thumbnails and waveform peaks) are stored only if all their files still exist, checked and written synchronously so a clear can't land in between; leftovers are removed and made again the next time the media is listed.
+Status: fixed; the M6 settings test passes on macOS CI since run 45257270688
 
 ---
 

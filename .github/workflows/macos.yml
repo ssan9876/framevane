@@ -1,0 +1,205 @@
+# macOS (Apple Silicon), in parallel jobs:
+#   models   the local AI models, downloaded once into a cache shared with every shard (and the Windows workflow)
+#   e2e      the Electron e2e suite in 3 shards
+#   package  the .dmg/.zip release (Developer ID signed and notarized when the secrets exist) and its smoke test
+# Unit tests and typecheck run once for every platform in checks.yml. Artifacts: the release, and the Playwright
+# results of any shard that fails.
+name: macOS
+
+on:
+  # pushes to a branch with an open PR are tested by the pull_request run; pushing to feat/** too ran everything twice
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: Run the e2e suite
+        type: boolean
+        default: true
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      # one cache for both platforms (enableCrossOsArchive: Windows runners read and write it too)
+      - name: Restore AI models
+        id: models
+        uses: actions/cache/restore@v4
+        with:
+          path: .models
+          key: models-v2-${{ hashFiles('sidecar/framevane_sidecar/models.py') }}
+          enableCrossOsArchive: true
+      - uses: astral-sh/setup-uv@v6
+        if: steps.models.outputs.cache-hit != 'true'
+        with:
+          version: 0.11.28
+      - name: Download the models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: uv run --no-project --with faster-whisper==1.2.1 python .github/scripts/fetch-models.py .models
+      - name: Save AI models
+        if: steps.models.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .models
+          key: ${{ steps.models.outputs.cache-primary-key }}
+          enableCrossOsArchive: true
+
+  e2e:
+    needs: models
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.e2e }}
+    runs-on: macos-15
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      FRAMEVANE_MODELS_DIR: ${{ github.workspace }}/.models
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.11.28
+      # the same static build the release bundles (Homebrew's ffmpeg has no drawtext, which the test media needs)
+      - name: FFmpeg for the tests
+        run: |
+          set -euo pipefail
+          base=https://ffmpeg.martin-riedl.de/download/macos/arm64/1795207104_9.1
+          mkdir -p "$HOME/ffmpeg-bin" && cd "$HOME/ffmpeg-bin"
+          curl -fsSL -o ffmpeg.zip "$base/ffmpeg.zip" && curl -fsSL -o ffprobe.zip "$base/ffprobe.zip"
+          echo "1f66e9a690a7f1c9e60b012379f8869c11818d1797f45b21dbb2f2564ba61ae1  ffmpeg.zip" | shasum -a 256 -c -
+          echo "6ef2df5f575042923a28537ab37adf936f28bf3e7b85de23a1447ed447ec1dbd  ffprobe.zip" | shasum -a 256 -c -
+          unzip -oq ffmpeg.zip && unzip -oq ffprobe.zip && chmod +x ffmpeg ffprobe && rm -f *.zip
+          echo "$HOME/ffmpeg-bin" >> "$GITHUB_PATH"
+          ./ffmpeg -hide_banner -filters | grep -q drawtext
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        working-directory: apps/desktop
+        run: node scripts/build.mjs
+      - name: Restore AI models
+        uses: actions/cache/restore@v4
+        with:
+          path: .models
+          key: models-v2-${{ hashFiles('sidecar/framevane_sidecar/models.py') }}
+          enableCrossOsArchive: true
+      - name: Restore seed media
+        id: seed
+        uses: actions/cache/restore@v4
+        with:
+          path: replica/seed-media
+          key: seed-media-mac-${{ hashFiles('apps/desktop/scripts/make-seed-media.sh', 'apps/desktop/e2e/global-setup.ts') }}
+      - name: E2E (Playwright + Electron), shard ${{ matrix.shard }} of 3
+        working-directory: apps/desktop
+        run: npx playwright test --shard=${{ matrix.shard }}/3 --reporter=list,github
+      # every shard makes the same seed media; one saves it (a cache can't be saved twice under one key)
+      - name: Save seed media
+        if: ${{ !cancelled() && matrix.shard == 1 && steps.seed.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: replica/seed-media
+          key: ${{ steps.seed.outputs.cache-primary-key }}
+      - name: Upload e2e results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-mac-${{ matrix.shard }}
+          path: apps/desktop/test-results
+          retention-days: 7
+
+  package:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      # only whether the signing certificate secret exists (a step's if can't read secrets directly)
+      HAS_MAC_CERT: ${{ secrets.MAC_CERT_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        working-directory: apps/desktop
+        run: node scripts/build.mjs
+
+      # Developer ID signing and notarization, when the repository has the secrets (pull requests from forks don't get
+      # them, and then the release is ad-hoc signed as before):
+      #   MAC_CERT_P12       the "Developer ID Application" certificate and its private key, exported as .p12, base64
+      #   MAC_CERT_PASSWORD  the .p12's password
+      #   ASC_KEY_P8         an App Store Connect API key (.p8 file contents), for notarytool
+      #   ASC_KEY_ID, ASC_ISSUER_ID   that key's ID and the issuer ID shown next to it
+      - name: Signing identity
+        id: signing
+        if: ${{ env.HAS_MAC_CERT == 'true' }}
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          # a throwaway keychain for this job, with a random password, removed in "Remove the signing keychain"
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kcpass="$(openssl rand -hex 24)"
+          security create-keychain -p "$kcpass" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpass" "$kc"
+          echo "$MAC_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpass" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          identity="$(security find-identity -v -p codesigning "$kc" | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')"
+          [ -n "$identity" ] || { echo "no Developer ID Application identity in MAC_CERT_P12"; exit 1; }
+          echo "MAC_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "keychain=$kc" >> "$GITHUB_OUTPUT"
+          if [ -n "$ASC_KEY_P8" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ]; then
+            printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc_key.p8"
+            { echo "ASC_KEY_PATH=$RUNNER_TEMP/asc_key.p8"; echo "ASC_KEY_ID=$ASC_KEY_ID"; echo "ASC_ISSUER_ID=$ASC_ISSUER_ID"; } >> "$GITHUB_ENV"
+          fi
+      # up to 3 tries: every signature asks Apple's timestamp service, which now and then doesn't answer ("The timestamp
+      # service is not available", run 45539299579); package.mjs starts clean each time and its downloads are cached
+      - name: Package (.dmg + .zip)
+        working-directory: apps/desktop
+        run: |
+          for attempt in 1 2 3; do
+            node scripts/package.mjs && exit 0
+            [ "$attempt" = 3 ] || { echo "packaging failed (try $attempt of 3); trying again in 30 s"; sleep 30; }
+          done
+          exit 1
+      - name: Remove the signing keychain
+        if: ${{ always() && steps.signing.outputs.keychain != '' }}
+        run: |
+          security delete-keychain "${{ steps.signing.outputs.keychain }}" || true
+          rm -f "$RUNNER_TEMP/asc_key.p8"
+      - name: Smoke-test the release
+        working-directory: apps/desktop
+        run: node scripts/smoke-release.mjs release/Framevane-*-mac-arm64.zip
+      - name: Upload the release
+        uses: actions/upload-artifact@v4
+        with:
+          name: Framevane-mac-arm64
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.sha256
+          retention-days: 14

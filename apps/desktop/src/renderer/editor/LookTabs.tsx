@@ -10,6 +10,7 @@ import { LookRenderer } from '../engine/gl'
 import { load as loadLut } from '../engine/luts'
 import { addEffect, applyFilter, applyLut, applyTransitionToAll, cutsOn, importLuts, selectedVisuals, setTransition } from './actions-m4'
 import { useCommitted } from './Inspector'
+import { keys } from '../app/platform'
 
 const errText = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
 const TW = 320
@@ -129,7 +130,7 @@ export function EffectsTab() {
   const add = async (kind: string, name: string) => {
     if (!clips.length) { toast({ tone: 'warning', title: 'Select a video or photo first', description: 'Effects go on the clips you select on the timeline.' }); return }
     try {
-      if (await addEffect(clips.map((c) => c.id), kind)) toast({ tone: 'success', title: `${name} added`, description: 'Change it under Effects in the inspector. Ctrl+Z undoes it.' })
+      if (await addEffect(clips.map((c) => c.id), kind)) toast({ tone: 'success', title: `${name} added`, description: `Change it under Effects in the inspector. ${keys('Ctrl+Z')} undoes it.` })
     } catch (e) { toast({ tone: 'error', title: "The effect wasn't added", description: errText(e) }) }
   }
   return (
@@ -254,7 +255,7 @@ export function TransitionsTab() {
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={async () => {
                   const n = await applyTransitionToAll(f!.track.id, tr.kind, tr.durationUs)
-                  if (n) toast({ tone: 'success', title: `Applied to ${n} cut${n === 1 ? '' : 's'}`, description: 'Ctrl+Z undoes it.' })
+                  if (n) toast({ tone: 'success', title: `Applied to ${n} cut${n === 1 ? '' : 's'}`, description: `${keys('Ctrl+Z')} undoes it.` })
                 }}>Apply to all cuts</Button>
                 <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={() => void setTransition(clip.id, null)}>Remove</Button>
               </div>

@@ -1,6 +1,6 @@
 import { _electron as electron } from '@playwright/test'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 /** Launch the built app with an isolated profile. Collects console errors so every run can assert "no console errors". */
@@ -14,7 +14,7 @@ export async function launch({ pickFiles = [], saveDir, env = {} } = {}) {
       ...process.env,
       FRAMEVANE_USER_DATA: join(root, 'userdata'),
       FRAMEVANE_PROJECTS_DIR: join(root, 'projects'),
-      FRAMEVANE_MODELS_DIR: process.env.FRAMEVANE_MODELS_DIR ?? join(process.env.APPDATA ?? '', 'Framevane', 'models'),
+      FRAMEVANE_MODELS_DIR: process.env.FRAMEVANE_MODELS_DIR ?? join(process.platform === 'darwin' ? join(homedir(), 'Library', 'Application Support') : process.env.APPDATA ?? '', 'Framevane', 'models'),
       FRAMEVANE_TEST_PICK_FILES: pickFiles.join(';'),
       FRAMEVANE_TEST_SAVE_DIR: out,
       ...env,

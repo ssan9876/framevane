@@ -31,7 +31,17 @@ $synth.Speak($p)
 $synth.Dispose()
 
 $ff = (Get-Command ffmpeg).Source
-& $ff -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=1920x1080:rate=30" -i $wav -shortest -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart (Join-Path $Out 'talk.mp4')
+# The specs expect talk.mp4 to be exactly 29.13 s (what the first machine's voice produced), but how fast a voice
+# speaks varies by machine (28.7 s on another PC). Stretch the voice track to that length, so lines and pauses keep
+# their proportions, then pin it. make-seed-media.sh does the same for macOS voices.
+$inv = [Globalization.CultureInfo]::InvariantCulture
+$talkSeconds = '29.13'  # a string, so it reaches FFmpeg with a dot whatever the system's decimal separator
+$voiceSeconds = [double]::Parse((& (Get-Command ffprobe).Source -v error -show_entries format=duration -of csv=p=0 $wav).Trim(), $inv)
+$tempo = ($voiceSeconds / [double]::Parse($talkSeconds, $inv)).ToString('0.000000', $inv)
+$fit = Join-Path $Out 'talk-voice-fit.wav'
+& $ff -hide_banner -loglevel error -y -i $wav -af "atempo=$tempo,apad" -t $talkSeconds -c:a pcm_s16le $fit
+Move-Item -Force $fit $wav
+& $ff -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=1920x1080:rate=30" -i $wav -t $talkSeconds -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart (Join-Path $Out 'talk.mp4')
 & $ff -hide_banner -loglevel error -y -f lavfi -i "gradients=size=1920x1080:rate=30:speed=0.02:duration=12" -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -movflags +faststart (Join-Path $Out 'broll.mp4')
 & $ff -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=220:duration=20" -f lavfi -i "sine=frequency=330:duration=20" -filter_complex "[0][1]amix=inputs=2,volume=0.25,afade=t=in:d=2,afade=t=out:st=18:d=2[a]" -map "[a]" -c:a aac -b:a 160k (Join-Path $Out 'music.m4a')
 & $ff -hide_banner -loglevel error -y -f lavfi -i "gradients=size=1920x1080:c0=0x203a5c:c1=0xd07a3c:duration=1" -frames:v 1 (Join-Path $Out 'still.png')
