@@ -1,5 +1,9 @@
-# Windows (x64): unit tests, typecheck, build, the full Electron e2e suite, then the portable .zip release and its
-# smoke test. Artifacts: the release, and the Playwright results when something fails.
+# Windows (x64), in parallel jobs:
+#   models   the local AI models, downloaded once into a cache shared with every shard (and the macOS workflow)
+#   e2e      the Electron e2e suite in 3 shards
+#   package  the portable .zip release and its smoke test
+# Unit tests and typecheck run once for every platform in checks.yml. Artifacts: the release, and the Playwright
+# results of any shard that fails.
 name: Windows
 
 on:
@@ -14,18 +18,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  windows:
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      # one cache for both platforms (enableCrossOsArchive: Windows runners read and write it too)
+      - name: Restore AI models
+        id: models
+        uses: actions/cache/restore@v4
+        with:
+          path: .models
+          key: models-v2-${{ hashFiles('sidecar/framevane_sidecar/models.py') }}
+          enableCrossOsArchive: true
+      - uses: astral-sh/setup-uv@v6
+        if: steps.models.outputs.cache-hit != 'true'
+        with:
+          version: 0.11.28
+      - name: Download the models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: uv run --no-project --with faster-whisper==1.2.1 python .github/scripts/fetch-models.py .models
+      - name: Save AI models
+        if: steps.models.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .models
+          key: ${{ steps.models.outputs.cache-primary-key }}
+          enableCrossOsArchive: true
+
+  e2e:
+    needs: models
     runs-on: windows-2025
-    timeout-minutes: 240
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     env:
-      # the AI models (Whisper, mattes, Kokoro) are cached between runs
       FRAMEVANE_MODELS_DIR: ${{ github.workspace }}\.models
     defaults:
       run:
         shell: pwsh
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -48,46 +84,28 @@ jobs:
           Add-Content $env:GITHUB_PATH $bin
           & "$bin\ffmpeg.exe" -hide_banner -version | Select-Object -First 1
           if (-not (& "$bin\ffmpeg.exe" -hide_banner -filters | Select-String -SimpleMatch ' drawtext ')) { throw 'this FFmpeg has no drawtext' }
-
       - run: pnpm install --frozen-lockfile
-
-      - name: Unit tests (packages/doc)
-        run: pnpm --filter @framevane/doc test
-      - name: Typecheck
-        run: pnpm -r typecheck
-
       - name: Build
         working-directory: apps/desktop
         run: node scripts/build.mjs
-
-      # restore and save are separate steps so the caches are saved even when a test fails
       - name: Restore AI models
-        id: models
         uses: actions/cache/restore@v4
         with:
           path: .models
-          key: models-win-${{ hashFiles('sidecar/framevane_sidecar/models.py', 'apps/desktop/src/main/tts.ts') }}
-          restore-keys: models-win-
+          key: models-v2-${{ hashFiles('sidecar/framevane_sidecar/models.py') }}
+          enableCrossOsArchive: true
       - name: Restore seed media
         id: seed
         uses: actions/cache/restore@v4
         with:
           path: replica/seed-media
           key: seed-media-win-${{ hashFiles('apps/desktop/scripts/make-seed-media.ps1', 'apps/desktop/e2e/global-setup.ts') }}
-
-      - name: E2E (Playwright + Electron)
+      - name: E2E (Playwright + Electron), shard ${{ matrix.shard }} of 3
         working-directory: apps/desktop
-        run: npx playwright test --reporter=list,github
-      # (a missing folder only means nothing was downloaded: never fail the job over a cache)
-      - name: Save AI models
-        if: ${{ !cancelled() && steps.models.outputs.cache-hit != 'true' }}
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: .models
-          key: ${{ steps.models.outputs.cache-primary-key }}
+        run: npx playwright test --shard=${{ matrix.shard }}/3 --reporter=list,github
+      # every shard makes the same seed media; one saves it (a cache can't be saved twice under one key)
       - name: Save seed media
-        if: ${{ !cancelled() && steps.seed.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && matrix.shard == 1 && steps.seed.outputs.cache-hit != 'true' }}
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
@@ -97,20 +115,34 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-results-windows
+          name: e2e-results-windows-${{ matrix.shard }}
           path: apps/desktop/test-results
           retention-days: 7
 
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        working-directory: apps/desktop
+        run: node scripts/build.mjs
       - name: Package (.zip)
-        if: ${{ !cancelled() }}
         working-directory: apps/desktop
         run: node scripts/package.mjs
       - name: Smoke-test the release
-        if: ${{ !cancelled() }}
         working-directory: apps/desktop
         run: node scripts/smoke-release.mjs (Get-ChildItem release/Framevane-*-win-x64.zip).FullName
       - name: Upload the release
-        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: Framevane-win-x64

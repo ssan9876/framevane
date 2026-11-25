@@ -57,7 +57,7 @@ cd ../../packages/doc && npx vitest run   # unit tests
 cd apps/desktop && node scripts/package.mjs   # release for this OS in apps/desktop/release/ (Windows zip, or Mac .dmg + .zip)
 ```
 
-CI: `.github/workflows/macos.yml` runs the unit tests, the e2e suite and the Mac packaging on GitHub's Apple Silicon runners, and uploads the .dmg; `.github/workflows/windows.yml` runs the unit tests and the e2e suite on Windows.
+CI, as parallel jobs: `checks.yml` runs the unit tests and typecheck once (Linux). `macos.yml` and `windows.yml` each download the AI models once into a cache both share, run the e2e suite in 3 shards, and, at the same time, build, smoke-test and upload the release (.dmg/.zip on GitHub's Apple Silicon runners, the portable .zip on Windows).
 
 Mac signing: with the repository secrets `MAC_CERT_P12` / `MAC_CERT_PASSWORD` (a Developer ID Application certificate as base64 .p12) and `ASC_KEY_P8` / `ASC_KEY_ID` / `ASC_ISSUER_ID` (an App Store Connect API key), the Mac release is signed with that Developer ID (hardened runtime, `build/entitlements.mac.plist`), notarized and stapled. Without them, as on pull requests from forks, it's ad-hoc signed and Gatekeeper asks users to approve it once (System Settings → Privacy & Security → Open Anyway). Locally, `package.mjs` reads `MAC_SIGN_IDENTITY` and `ASC_KEY_PATH` / `ASC_KEY_ID` / `ASC_ISSUER_ID` instead.
 
